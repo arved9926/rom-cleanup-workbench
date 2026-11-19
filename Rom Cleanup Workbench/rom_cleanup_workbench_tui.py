@@ -4,7 +4,8 @@ The rules are in the Review object from rom_cleanup_workbench.py, the shared sta
 Like the window, this module does not import the program, because it would otherwise be loaded a
 second time when started as a script.
 
-Done so far (see docs/tui-plan.md): start, title row, the read-only list with background analysis.
+Done so far (see docs/tui-plan.md): start, title row, the read-only list with background analysis,
+moving the cursor and selecting several rows.
 """
 
 from __future__ import annotations
@@ -15,12 +16,56 @@ from rich.text import Text
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal
+from textual.geometry import Region
 from textual.widgets import DataTable, ProgressBar, Static
 
 from translations import tr
 from workbench_state import SETTINGS_PATH, format_kb, load_confirmed_saves, load_scope, scope_flags
 
 APP_NAME = "Rom Cleanup Workbench"
+
+
+def _game_of(key: str) -> int | None:
+    """Returns the game number of a row key such as g3, g3k or g3f5; None for the empty rows between games."""
+    if not key.startswith("g"):
+        return None
+    digits = ""
+    for char in key[1:]:
+        if not char.isdigit():
+            break
+        digits += char
+    return int(digits) if digits else None
+
+
+class GameTable(DataTable):
+    """The game list: one cursor row plus a selection of several rows, as in the window's list.
+
+    The table's own Up/Down would stop on the empty rows between the games and know no Shift,
+    so the app moves the cursor itself.
+    """
+
+    COMPONENT_CLASSES = DataTable.COMPONENT_CLASSES | {"datatable--selected"}
+    BINDINGS = [
+        Binding("up", "app.move_cursor(-1, False)", show=False),
+        Binding("down", "app.move_cursor(1, False)", show=False),
+        Binding("shift+up", "app.move_cursor(-1, True)", show=False),
+        Binding("shift+down", "app.move_cursor(1, True)", show=False),
+    ]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.selected: set[str] = set()
+
+    def set_selection(self, keys) -> None:
+        self.selected = set(keys)
+        self._clear_caches()
+        self.refresh()
+
+    def _get_row_style(self, row_index: int, base_style):
+        style = super()._get_row_style(row_index, base_style)
+        if 0 <= row_index < self.row_count and self.ordered_rows[row_index].key.value in self.selected:
+            style += self.get_component_styles("datatable--selected").rich_style
+        return style
 
 
 class WorkbenchApp(App):
@@ -37,11 +82,18 @@ class WorkbenchApp(App):
     #games { height: 1fr; background: #000000; }
     #games > .datatable--header { background: #222222; color: #ffffff; text-style: bold; }
     #games > .datatable--cursor { background: #0a4a8a; color: #ffffff; }
+    #games > .datatable--selected { background: #0a4a8a; color: #ffffff; }
     #nothing { height: 1fr; content-align: center middle; text-style: bold; display: none; }
     #progress { height: 1; padding: 0 1; display: none; }
     #status { height: auto; background: #1a7f37; color: #ffffff; padding: 0 1; }
     """
-    BINDINGS = [Binding("q", "quit", show=False), Binding("escape", "quit", show=False)]
+    BINDINGS = [
+        Binding("q", "quit", show=False),
+        Binding("escape", "quit", show=False),
+        # priority: otherwise Tab would move the focus to the next widget, as usual in Textual.
+        Binding("tab", "move_game(1)", show=False, priority=True),
+        Binding("shift+tab", "move_game(-1)", show=False, priority=True),
+    ]
 
     def __init__(self, analyze, directory: Path | None, scope: str | None = None, config_file=None,
                  settings_path: Path = SETTINGS_PATH):
@@ -55,6 +107,8 @@ class WorkbenchApp(App):
         self.review = None
         self.files = {}  # row key -> (game, file)
         self._analysis = 0  # Counts analyses, so that a replaced one cannot overwrite the newer result.
+        # The row the app itself has just moved the cursor to: its highlight message must not reset the selection.
+        self._expected_cursor: str | None = None
 
     def compose(self) -> ComposeResult:
         with Horizontal(id="title-row"):
@@ -62,7 +116,7 @@ class WorkbenchApp(App):
             yield Static(self._folder_text(), id="folder", markup=False)
         yield Static(tr("tui.help"), id="help", markup=False)
         yield Static("", id="info", markup=False)
-        table = DataTable(id="games", cursor_type="row", zebra_stripes=False)
+        table = GameTable(id="games", cursor_type="row", zebra_stripes=False)
         table.add_column(tr("window.column.file"), key="file")
         table.add_column(Text(tr("window.column.size"), justify="right"), key="size")
         table.add_column(tr("window.column.note"), key="note")
@@ -128,13 +182,16 @@ class WorkbenchApp(App):
 
     def _clear_list(self) -> None:
         self.files = {}
-        self.query_one("#games", DataTable).clear()
+        table = self.query_one("#games", GameTable)
+        table.clear()
+        table.set_selection(())
         self._show_nothing_to_do(False)
 
     def show_games(self) -> None:
         """Fills the list with the games of the current view, as the window does."""
-        table = self.query_one("#games", DataTable)
+        table = self.query_one("#games", GameTable)
         table.clear()
+        table.set_selection(())
         self.files = {}
         review = self.review
         flags = scope_flags(self.scope)
@@ -169,7 +226,107 @@ class WorkbenchApp(App):
                         Text("; ".join(entry.notes), style="italic"),
                         key=key,
                     )
+        self._select_first_file()
         self._set_status(review.status(*flags))
+
+    # Cursor and selection ---------------------------------------------------------------------
+
+    def _keys(self) -> list[str]:
+        return [row.key.value for row in self.query_one("#games", GameTable).ordered_rows]
+
+    def cursor_key(self) -> str | None:
+        """The row under the cursor; None when the list is empty."""
+        table = self.query_one("#games", GameTable)
+        if not table.row_count:
+            return None
+        return table.ordered_rows[table.cursor_row].key.value
+
+    def selected_keys(self) -> list[str]:
+        """The selected rows from top to bottom (D and P will work on the file rows among them)."""
+        selected = self.query_one("#games", GameTable).selected
+        return [key for key in self._keys() if key in selected]
+
+    def _place_cursor(self, key: str, selection) -> None:
+        table = self.query_one("#games", GameTable)
+        table.set_selection(selection)
+        index = table.get_row_index(key)
+        if index != table.cursor_row:
+            self._expected_cursor = key
+            table.move_cursor(row=index)
+
+    def _select_first_file(self) -> None:
+        first = next((key for key in self._keys() if key in self.files), None)
+        if first:
+            self._place_cursor(first, {first})
+
+    def action_move_cursor(self, step: int, extend: bool) -> None:
+        """Moves the selection across the empty rows; with extend it grows or shrinks, as in the window."""
+        if not self._list_shown():
+            return
+        keys = self._keys()
+        current = self.cursor_key()
+        index = keys.index(current) + step
+        while 0 <= index < len(keys) and _game_of(keys[index]) is None:
+            index += step
+        if not 0 <= index < len(keys):
+            return
+        target = keys[index]
+        selected = set(self.query_one("#games", GameTable).selected)
+        if not extend:
+            selected = {target}
+        elif target in selected:
+            selected.discard(current)  # Backwards: The selection shrinks again.
+        else:
+            selected.add(target)
+        self._place_cursor(target, selected)
+
+    def action_move_game(self, step: int) -> None:
+        """Jumps to the neighboring game and selects its first file, so that D and P work at once."""
+        if not self._list_shown():
+            return
+        keys = self._keys()
+        current = self.cursor_key()
+        game = _game_of(current) if current else None
+        if game is None and current:
+            game = _game_of(keys[keys.index(current) - 1])  # an empty row belongs to the game above it
+        games = sorted({_game_of(key) for key in keys} - {None})
+        if not games:
+            return
+        target = games[0] if game is None else game + step
+        if target not in games:
+            return
+        rows = [key for key in keys if _game_of(key) == target]
+        row = next((key for key in rows if key in self.files), rows[0])
+        self._place_cursor(row, {row})
+        table = self.query_one("#games", GameTable)
+        # First the end, then the title: This shows the whole game if it fits.
+        table.call_after_refresh(self._show_rows, rows[-1], rows[0])
+
+    def _show_rows(self, *keys: str) -> None:
+        table = self.query_one("#games", GameTable)
+        for key in keys:
+            if key in table.rows:
+                _x, y, width, height = table._get_row_region(table.get_row_index(key))
+                region = Region(int(table.scroll_x), y, width, height)
+                table.scroll_to_region(region, animate=False, spacing=table._get_fixed_offset(), force=True,
+                                       immediate=True)
+
+    def on_data_table_row_highlighted(self, event: DataTable.RowHighlighted) -> None:
+        """A click or a key of the table itself (Page Up, Home, ...) selects only the new row."""
+        key = event.row_key.value
+        if key == self._expected_cursor:
+            self._expected_cursor = None
+            return
+        self._expected_cursor = None
+        event.data_table.set_selection({key} if _game_of(key) is not None else ())
+
+    def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
+        """A click on the cursor row, or Enter, leaves only that row selected."""
+        key = event.row_key.value
+        event.data_table.set_selection({key} if _game_of(key) is not None else ())
+
+    def _list_shown(self) -> bool:
+        return self.review is not None and self.query_one("#games", GameTable).row_count > 0
 
     def _show_nothing_to_do(self, shown: bool) -> None:
         self.query_one("#games", DataTable).display = not shown

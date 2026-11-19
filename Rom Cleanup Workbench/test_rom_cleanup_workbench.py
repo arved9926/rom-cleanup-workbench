@@ -3094,3 +3094,105 @@ class TerminalVersionTests(unittest.IsolatedAsyncioTestCase):
         async with app.run_test() as pilot:
             await self.analyzed(app, pilot)
             self.assertTrue(app.query_one("#nothing").display)
+
+    # Step 4: moving the cursor ------------------------------------------------------------------
+
+    TWO_GAMES = {"A (USA).bin": b"a", "A (Japan).bin": b"b", "B (USA).bin": b"c", "B (Japan).bin": b"d"}
+
+    async def test_first_file_is_selected_after_the_analysis(self):
+        app = self.app_for(self.TWO_GAMES)
+        async with app.run_test() as pilot:
+            await self.analyzed(app, pilot)
+            self.assertEqual(app.cursor_key(), "g0f0")
+            self.assertEqual(app.selected_keys(), ["g0f0"])
+
+    async def test_arrows_move_the_selection_across_the_empty_rows(self):
+        app = self.app_for(self.TWO_GAMES)
+        async with app.run_test() as pilot:
+            await self.analyzed(app, pilot)
+            await pilot.press("down")
+            self.assertEqual(app.selected_keys(), ["g0h"])
+            await pilot.press("down", "down")
+            self.assertEqual(app.selected_keys(), ["g1"])  # not the empty row s1
+            await pilot.press("up")
+            self.assertEqual(app.selected_keys(), ["g0f1"])
+            await pilot.press("up", "up", "up", "up", "up", "up")
+            self.assertEqual(app.selected_keys(), ["g0"])  # stops at the top
+
+    async def test_shift_arrows_grow_and_shrink_the_selection(self):
+        app = self.app_for(self.TWO_GAMES)
+        async with app.run_test() as pilot:
+            await self.analyzed(app, pilot)
+            await pilot.press("shift+down", "shift+down")
+            self.assertEqual(app.selected_keys(), ["g0f0", "g0h", "g0f1"])
+            table = app.query_one("#games")
+            from rich.style import Style
+            colors = [table._get_row_style(index, Style()).bgcolor for index in range(6)]
+            self.assertEqual(colors[2], colors[3])  # selected rows are painted like the cursor row
+            self.assertNotEqual(colors[0], colors[2])
+            await pilot.press("shift+up")
+            self.assertEqual(app.selected_keys(), ["g0f0", "g0h"])
+            self.assertEqual(app.cursor_key(), "g0h")
+            await pilot.press("shift+down", "shift+down")
+            self.assertEqual(app.selected_keys(), ["g0f0", "g0h", "g0f1", "g1"])
+            await pilot.press("down")
+            self.assertEqual(app.selected_keys(), ["g1k"])
+
+    async def test_tab_jumps_to_the_first_file_of_the_next_game(self):
+        app = self.app_for(self.TWO_GAMES)
+        async with app.run_test() as pilot:
+            await self.analyzed(app, pilot)
+            await pilot.press("shift+down")
+            await pilot.press("tab")
+            self.assertEqual(app.selected_keys(), ["g1f0"])
+            await pilot.press("tab")  # the last game: stays
+            self.assertEqual(app.selected_keys(), ["g1f0"])
+            self.assertIs(app.focused, app.query_one("#games"))
+            await pilot.press("shift+tab")
+            self.assertEqual(app.selected_keys(), ["g0f0"])
+            await pilot.press("shift+tab")
+            self.assertEqual(app.selected_keys(), ["g0f0"])
+
+    async def test_tab_shows_the_whole_next_game(self):
+        files = {}
+        for number in range(30):
+            files[f"Game {number:02} (USA).bin"] = b"a"
+            files[f"Game {number:02} (Japan).bin"] = b"b"
+        app = self.app_for(files)
+        async with app.run_test(size=(80, 24)) as pilot:
+            await self.analyzed(app, pilot)
+            table = app.query_one("#games")
+            for _ in range(5):
+                await pilot.press("tab")
+            await pilot.pause()
+            self.assertEqual(app.cursor_key(), "g5f0")
+            top = int(table.scroll_y)
+            visible = table.scrollable_content_region.height - 1  # minus the header
+            title, last = table.get_row_index("g5"), table.get_row_index("g5f1")
+            self.assertTrue(top <= title and last < top + visible, (top, title, last, visible))
+
+    async def test_mouse_click_selects_one_row_and_the_wheel_scrolls(self):
+        files = {}
+        for number in range(30):
+            files[f"Game {number:02} (USA).bin"] = b"a"
+            files[f"Game {number:02} (Japan).bin"] = b"b"
+        app = self.app_for(files)
+        async with app.run_test(size=(80, 24)) as pilot:
+            await self.analyzed(app, pilot)
+            await pilot.press("shift+down", "shift+down")
+            # Row 0 of the table is the header; row 5 of the list is g0f1 ("- Game 00 (Japan).bin").
+            await pilot.click("#games", offset=(10, 5))
+            await pilot.pause()
+            self.assertEqual(app.selected_keys(), ["g0f1"])
+            await pilot.click("#games", offset=(10, 6))  # the empty row between two games
+            await pilot.pause()
+            self.assertEqual(app.selected_keys(), [])
+            table = app.query_one("#games")
+            self.assertEqual(table.scroll_y, 0)
+            await pilot.hover("#games", offset=(10, 5))
+            from textual import events
+            for _ in range(3):
+                table.post_message(events.MouseScrollDown(table, 10, 5, 0, 0, 0, False, False, False))
+            await pilot.pause()
+            await pilot.wait_for_scheduled_animations()
+            self.assertGreater(table.scroll_y, 0)
