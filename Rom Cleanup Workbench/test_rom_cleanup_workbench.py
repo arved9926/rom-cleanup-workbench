@@ -2,6 +2,7 @@ import contextlib
 import gc
 import io
 import os
+import sys
 import queue
 import tempfile
 import threading
@@ -2673,6 +2674,55 @@ class MainTests(RedundanzTestCase):
         patcher = mock.patch.object(rf, "DEFAULT_CONFIG_PATH", self.dir.with_name(self.dir.name + "-missing.json"))
         patcher.start()
         self.addCleanup(patcher.stop)
+        # These tests expect the window; on a Linux test machine without a display the program
+        # would otherwise choose the terminal version on its own.
+        display = mock.patch.dict(os.environ, {"DISPLAY": ":0"})
+        display.start()
+        self.addCleanup(display.stop)
+
+    def choose_front_end(self, *args, platform="win32", environment=None):
+        """Starts main and reports which front end it chose; neither one really opens."""
+        try:
+            # Loaded before sys.platform is changed below: Textual reads it once when it is imported.
+            import rom_cleanup_workbench_tui  # noqa: F401
+        except ImportError as error:
+            self.skipTest(f"Textual is not installed: {error}")
+        chosen = []
+        environment = environment if environment is not None else {}
+        with mock.patch.object(rf.sys, "platform", platform), mock.patch.dict(os.environ, environment), mock.patch(
+            "rom_cleanup_workbench_window.run_window", lambda *a: chosen.append("window") or 0
+        ), mock.patch("rom_cleanup_workbench_tui.run_tui", lambda *a: chosen.append(("tui", a[1:])) or 0):
+            for name in ("DISPLAY", "WAYLAND_DISPLAY"):
+                if name not in environment:
+                    os.environ.pop(name, None)
+            code = rf.main([str(self.dir), *args])
+        return code, chosen
+
+    def test_tui_option_starts_the_terminal_version(self):
+        code, chosen = self.choose_front_end("--tui", "--review", "problems")
+        self.assertEqual(code, 0)
+        self.assertEqual(chosen[0][0], "tui")
+        directory, scope, config_file = chosen[0][1]
+        self.assertEqual((directory, scope), (self.dir, "problems"))
+        self.assertIsInstance(config_file, rf.ConfigFile)
+
+    def test_linux_without_display_starts_the_terminal_version(self):
+        self.assertEqual(self.choose_front_end(platform="linux")[1][0][0], "tui")
+        self.assertEqual(self.choose_front_end(platform="linux", environment={"DISPLAY": ":0"})[1], ["window"])
+        self.assertEqual(self.choose_front_end(platform="linux", environment={"WAYLAND_DISPLAY": "w"})[1], ["window"])
+
+    def test_windows_starts_the_window_without_tui(self):
+        self.assertEqual(self.choose_front_end(platform="win32")[1], ["window"])
+
+    def test_missing_textual_is_reported_and_nothing_is_deleted(self):
+        self.prepare()
+        error = io.StringIO()
+        with mock.patch.dict(sys.modules, {"rom_cleanup_workbench_tui": None}), contextlib.redirect_stderr(error):
+            code, output = self.run_main("--tui")
+        self.assertEqual(code, 1)
+        self.assertIn("pip install textual", error.getvalue())
+        self.assertIn("Nothing was deleted.", output)
+        self.assertEqual(len(self.remaining()), 2)
 
     def run_main(self, *args):
         output = io.StringIO()
@@ -2903,3 +2953,40 @@ class MainTests(RedundanzTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TerminalVersionTests(unittest.IsolatedAsyncioTestCase):
+    """The terminal version runs invisibly here; Textual's Pilot presses the keys."""
+
+    def setUp(self):
+        translations.set_language("en")
+        self.addCleanup(translations.set_language, "en")
+        try:
+            import rom_cleanup_workbench_tui
+        except ImportError as error:
+            self.skipTest(f"Textual is not installed: {error}")
+        self.tui = rom_cleanup_workbench_tui
+
+    @staticmethod
+    def text(app, selector):
+        return str(app.query_one(selector).render())
+
+    async def test_title_row_names_the_program_and_the_folder(self):
+        app = self.tui.WorkbenchApp(None, Path("/home/user/games"))
+        async with app.run_test():
+            self.assertEqual(self.text(app, "#title"), "Rom Cleanup Workbench")
+            self.assertIn("games", self.text(app, "#folder"))
+            self.assertTrue(self.text(app, "#folder").startswith("Folder: "))
+
+    async def test_title_row_speaks_the_language(self):
+        translations.set_language("de")
+        app = self.tui.WorkbenchApp(None, None)
+        async with app.run_test():
+            self.assertEqual(self.text(app, "#folder"), "Ordner: noch keiner gewählt (Strg+O)")
+
+    async def test_q_ends_the_program(self):
+        app = self.tui.WorkbenchApp(None, None)
+        async with app.run_test() as pilot:
+            await pilot.press("q")
+            await pilot.pause()
+            self.assertFalse(app.is_running)

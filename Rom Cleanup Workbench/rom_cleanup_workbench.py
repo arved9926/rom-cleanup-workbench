@@ -927,7 +927,20 @@ def build_parser() -> argparse.ArgumentParser:
         "--review", choices=[REVIEW_ALL, REVIEW_PROBLEMS],
         help="open the window with all marked or only the problematic games",
     )
+    parser.add_argument(
+        "--tui", action="store_true",
+        help="use the terminal version instead of the window (automatic on Linux without a graphical display)",
+    )
     return parser
+
+
+def _use_terminal_version(args: argparse.Namespace) -> bool:
+    """--tui, or Linux without a graphical display, for example over SSH or on the console."""
+    if args.tui:
+        return True
+    if not sys.platform.startswith("linux"):
+        return False
+    return not (os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY"))
 
 
 def _run_in_terminal(args: argparse.Namespace, parser: argparse.ArgumentParser, analyze) -> int:
@@ -1006,13 +1019,24 @@ def main(argv: list[str] | None = None) -> int:
     if args.report_only or args.yes:
         return _run_in_terminal(args, parser, analyze)
 
+    # The settings change the file the analysis reads; without one they create redundanz_config.json.
+    config_file = ConfigFile(_config_path(args) or DEFAULT_CONFIG_PATH)
+    scope = _REVIEW_SCOPES.get(args.review)
+    if _use_terminal_version(args):
+        # Loaded only here: The window does not need Textual, the terminal version not tkinter.
+        try:
+            from rom_cleanup_workbench_tui import run_tui
+        except ImportError as error:
+            print(tr("terminal.no_textual", error=error), file=sys.stderr)
+            print(tr("terminal.nothing_deleted"))
+            return 1
+        return run_tui(analyze, args.directory, scope, config_file)
+
     # Loaded only here: Without the window the program also runs without tkinter.
     try:
         from rom_cleanup_workbench_window import run_window
 
-        # The dialog changes the file the analysis reads; without one it creates redundanz_config.json.
-        config_file = ConfigFile(_config_path(args) or DEFAULT_CONFIG_PATH)
-        return run_window(analyze, args.directory, _REVIEW_SCOPES.get(args.review), config_file)
+        return run_window(analyze, args.directory, scope, config_file)
     except (ImportError, RuntimeError) as error:
         print(tr("terminal.no_window", error=error), file=sys.stderr)
         print(tr("terminal.nothing_deleted"))
