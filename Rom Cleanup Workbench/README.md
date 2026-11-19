@@ -49,6 +49,7 @@ The window remembers the most recently chosen view and the confirmed status or s
 | `D` (Demote) | mark the file for deletion; it moves to the end of its game |
 | `P` (Promote) | keep the file; it moves to the position the rules give it |
 | `Ctrl` + mouse wheel | enlarge or shrink the font (8 to 32 pt, applies until the window is closed) |
+| `Ctrl+E` | same as the button `Settings...`: edit language, region priority and low priority tags (see [Settings](#settings)) |
 | `Ctrl+F` | go to the filter field |
 | `Ctrl+L` | same as the button `Proceed...`: delete after a confirmation and confirm the suspected status or save files (rule 9) |
 | `Ctrl+O` | choose another folder |
@@ -71,6 +72,16 @@ The filter field on the left of the bottom row narrows the current view to games
 
 **The filter only changes the display. Marked files hidden by the filter are still deleted when you delete**; the confirmation states their number.
 
+### Settings
+
+The button `Settings...` in the bottom row, or `Ctrl+E`, opens a dialog for the most frequent changes to `redundanz_config.json`:
+
+- **Language:** choose from the six languages. A new language applies from the next start of the program.
+- **Region priority:** the best region at the top. Select a region and move it with `Up` and `Down`, remove it with `Remove` or the `Delete` key, and add a new one with the field below the list and `Add` (or `Enter`).
+- **Low priority tags:** separated by commas, for example `Beta, Proto`.
+
+`Save` writes the file and analyzes the folder again if the priority or the tags have changed; if you have changed marks by hand, the program asks first, because these changes are lost. All other entries of the file stay as they are. Wrong values, such as an empty region list or the same region twice, are reported and nothing is written. If the file cannot be read, the dialog does not open, so that it cannot overwrite entries it does not know. With `--config`, the dialog edits that file; with `--priority`, the priority given there still applies to this run.
+
 A game counts as problematic if
 
 - none of its files would be kept,
@@ -86,7 +97,7 @@ The window uses `tkinter`, which is part of the usual Python installation on Win
 
 ## Configuration: `redundanz_config.json`
 
-The file is next to the program and is read again for every analysis. To change the priority, it is enough to rearrange the order in `region_priority` and save the file:
+The file is next to the program and is read again for every analysis. Language, region priority and low priority tags are easiest to change in the window with `Settings...` (see [Settings](#settings)). In the file itself, it is enough to rearrange the order in `region_priority` and save the file:
 
 ```json
 "region_priority": ["Germany", "Europe", "USA", "none", "Japan"],

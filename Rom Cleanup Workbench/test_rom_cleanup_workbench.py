@@ -986,6 +986,74 @@ class LanguageTests(RedundanzTestCase):
             self.assertEqual(window_module.format_kb(1234 * 1024), expected, language)
 
 
+class ConfigFileTests(RedundanzTestCase):
+    def config_file(self, content=None):
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        path = Path(temp.name) / "redundanz_config.json"
+        if content is not None:
+            path.write_text(content, encoding="utf-8")
+        return rf.ConfigFile(path)
+
+    def test_missing_file_shows_the_defaults(self):
+        values = self.config_file().read()
+        self.assertEqual(values, {
+            "language": "en", "region_priority": ["USA", "Europe", "Japan", "none"], "low_priority_tags": ["Beta"],
+        })
+
+    def test_write_keeps_other_entries_and_their_order(self):
+        config = self.config_file(
+            '{\n  "region_priority": ["USA"],\n  "region_aliases": {"Germany": ["DE"]},\n  "delete_tags": []\n}\n'
+        )
+        config.write("de", ["Germany", "Europe", "none"], ["Beta", "Proto"])
+        text = config.path.read_text(encoding="utf-8")
+        self.assertEqual(text, (
+            '{\n  "region_priority": ["Germany", "Europe", "none"],\n'
+            '  "region_aliases": {\n    "Germany": ["DE"]\n  },\n'
+            '  "delete_tags": [],\n  "language": "de",\n  "low_priority_tags": ["Beta", "Proto"]\n}\n'
+        ))
+        loaded = rf.Config.load(config.path)
+        self.assertEqual(loaded.region_aliases, {"Germany": ["DE"]})
+        self.assertEqual(config.read()["region_priority"], ["Germany", "Europe", "none"])
+
+    def test_write_creates_a_missing_file(self):
+        config = self.config_file()
+        config.write("ja", ["Japan", "USA"], [])
+        self.assertEqual(rf.Config.load(config.path).language, "ja")
+        self.assertEqual(config.read()["low_priority_tags"], [])
+
+    def test_write_drops_empty_entries_and_spaces(self):
+        config = self.config_file()
+        config.write("en", [" USA ", "", "Japan"], [" Beta ", " "])
+        self.assertEqual(config.read()["region_priority"], ["USA", "Japan"])
+        self.assertEqual(config.read()["low_priority_tags"], ["Beta"])
+
+    def test_wrong_values_leave_the_file_unchanged(self):
+        original = '{"region_priority": ["USA"], "language": "en"}'
+        config = self.config_file(original)
+        for language, regions, tags, message in (
+            ("en", [], [], "at least one region"),
+            ("en", [" "], [], "at least one region"),
+            ("en", ["USA", "usa"], [], '"usa" appears more than once'),
+            ("en", ["USA"], ["Beta", "beta"], '"beta" appears more than once'),
+            ("xx", ["USA"], [], 'Unknown language "xx"'),
+        ):
+            with self.subTest(message), self.assertRaisesRegex(ValueError, message):
+                config.write(language, regions, tags)
+            self.assertEqual(config.path.read_text(encoding="utf-8"), original)
+        self.assertEqual(sorted(path.name for path in config.path.parent.iterdir()), ["redundanz_config.json"])
+
+    def test_broken_file_is_neither_read_nor_overwritten(self):
+        for content in ("{not json", "[1, 2]"):
+            config = self.config_file(content)
+            with self.subTest(content):
+                with self.assertRaises(ValueError):
+                    config.read()
+                with self.assertRaises(ValueError):
+                    config.write("en", ["USA"], [])
+                self.assertEqual(config.path.read_text(encoding="utf-8"), content)
+
+
 class ProgressTests(RedundanzTestCase):
     def test_scan_ignores_files_starting_with_gamelist(self):
         for name in ("gamelist.xml", "gamelist.xml.old", "GameList (USA).txt", "gamelist2 (Proto).bin"):
@@ -1315,6 +1383,129 @@ class ReviewWindowTests(RedundanzTestCase):
             self.assertEqual(re.findall(r"\S\|| \|\S|\|\s?\S", text.replace("  |  ", "")), [], language)
         translations.set_language("en")
         self.assertIn("Ctrl+L: Proceed  |  Ctrl+O: Folder", translations.tr("window.help"))
+
+    def window_with_settings(self, content='{"language": "en", "region_priority": ["USA", "Japan"]}'):
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        path = Path(temp.name) / "redundanz_config.json"
+        path.write_text(content, encoding="utf-8")
+        self.write("Title (USA).bin")
+        self.write("Title (Japan).bin")
+        window = self.open_window()
+        window.config_file = rf.ConfigFile(path)
+        return window
+
+    def test_settings_button_is_shown_with_a_configuration_file(self):
+        import rom_cleanup_workbench_window
+
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        window = rom_cleanup_workbench_window.ReviewWindow(
+            lambda _directory, _progress=None: rf.Review(self.scan(), self.config), self.dir, "marked",
+            self.settings_file(), config_file=rf.ConfigFile(Path(temp.name) / "c.json"),
+        )
+        self.addCleanup(window.root.destroy)
+        window.root.withdraw()
+        self.assertIn(window.settings_button, window.bottom_row.pack_slaves())
+        plain = self.open_window()
+        self.assertNotIn(plain.settings_button, plain.bottom_row.pack_slaves())
+        plain.open_settings()  # Without a configuration file nothing opens.
+        self.assertIsNone(plain.settings_dialog)
+
+    def test_settings_dialog_shows_the_current_values(self):
+        window = self.window_with_settings()
+        window.open_settings()
+        dialog = window.settings_dialog
+        self.assertEqual(dialog.language.get(), "English")
+        self.assertEqual(dialog.region_list(), ["USA", "Japan"])
+        self.assertEqual(dialog.tag_list(), ["Beta"])
+        window.open_settings()  # A second Ctrl+E brings the same dialog to the front.
+        self.assertIs(window.settings_dialog, dialog)
+
+    def test_settings_dialog_moves_adds_and_removes_regions(self):
+        window = self.window_with_settings()
+        window.open_settings()
+        dialog = window.settings_dialog
+        dialog.regions.selection_set(1)
+        dialog.move(-1)
+        self.assertEqual(dialog.region_list(), ["Japan", "USA"])
+        dialog.move(-1)  # Already at the top: nothing changes.
+        self.assertEqual(dialog.region_list(), ["Japan", "USA"])
+        dialog.new_region.set(" Germany ")
+        dialog.add()
+        dialog.new_region.set("usa")
+        dialog.add()  # Already there: selected instead of added twice.
+        self.assertEqual(dialog.region_list(), ["Japan", "USA", "Germany"])
+        self.assertEqual(dialog.regions.curselection(), (1,))
+        dialog.remove()
+        self.assertEqual(dialog.region_list(), ["Japan", "Germany"])
+        self.assertEqual(dialog.new_region.get(), "")
+
+    def test_saving_settings_writes_the_file_and_analyzes_again(self):
+        window = self.window_with_settings()
+        window.open_settings()
+        dialog = window.settings_dialog
+        dialog.regions.selection_set(1)
+        dialog.move(-1)
+        dialog.tags.set("Beta, Proto")
+        with mock.patch.object(window, "start_analysis") as analysis, mock.patch(
+            "rom_cleanup_workbench_window.messagebox.showinfo"
+        ) as info:
+            window.save_settings(dialog)
+        analysis.assert_called_once()
+        info.assert_not_called()  # The language stayed the same.
+        self.assertIsNone(window.settings_dialog)
+        values = window.config_file.read()
+        self.assertEqual(values["region_priority"], ["Japan", "USA"])
+        self.assertEqual(values["low_priority_tags"], ["Beta", "Proto"])
+
+    def test_new_language_is_announced_for_the_next_start(self):
+        window = self.window_with_settings()
+        window.open_settings()
+        dialog = window.settings_dialog
+        dialog.language.set("Italiano")
+        with mock.patch.object(window, "start_analysis") as analysis, mock.patch(
+            "rom_cleanup_workbench_window.messagebox.showinfo"
+        ) as info:
+            window.save_settings(dialog)
+        self.assertEqual(window.config_file.read()["language"], "it")
+        self.assertIn("next start", info.call_args.args[1])
+        analysis.assert_not_called()  # Priority and tags are unchanged: nothing to analyze again.
+        self.assertEqual(translations.current_language(), "en")  # The open window keeps its language.
+
+    def test_saving_settings_asks_before_dropping_changes_by_hand(self):
+        window = self.window_with_settings()
+        window.tree.selection_set(self.row_of(window, "Title (USA).bin"))
+        window.demote_selected()
+        original = window.config_file.path.read_text(encoding="utf-8")
+        window.open_settings()
+        dialog = window.settings_dialog
+        dialog.regions.selection_set(1)
+        dialog.move(-1)
+        with mock.patch("rom_cleanup_workbench_window.messagebox.askyesno", return_value=False) as ask:
+            window.save_settings(dialog)
+        ask.assert_called_once()
+        self.assertEqual(window.config_file.path.read_text(encoding="utf-8"), original)
+        self.assertIs(window.settings_dialog, dialog)
+        self.assertEqual(window.review.moved_count(), 1)
+
+    def test_wrong_settings_are_reported_and_the_dialog_stays_open(self):
+        window = self.window_with_settings()
+        window.open_settings()
+        dialog = window.settings_dialog
+        dialog.regions.delete(0, "end")
+        with mock.patch("rom_cleanup_workbench_window.messagebox.showerror") as error:
+            window.save_settings(dialog)
+        self.assertIn("at least one region", error.call_args.args[1])
+        self.assertIs(window.settings_dialog, dialog)
+
+    def test_broken_configuration_is_not_opened_for_editing(self):
+        window = self.window_with_settings("{not json")
+        with mock.patch("rom_cleanup_workbench_window.messagebox.showerror") as error:
+            window.open_settings()
+        error.assert_called_once()
+        self.assertIsNone(window.settings_dialog)
+        self.assertEqual(window.config_file.path.read_text(encoding="utf-8"), "{not json")
 
     def test_window_speaks_the_chosen_language(self):
         translations.set_language("de")
@@ -2251,8 +2442,9 @@ class MainTests(RedundanzTestCase):
         """Replaces the window and carries out the requested changes directly."""
         self.window_calls = []
 
-        def run(analyze, directory, scope):
+        def run(analyze, directory, scope, config_file=None):
             self.window_calls.append((directory, scope))
+            self.config_file = config_file
             if directory is None:
                 return 0
             review = analyze(directory)
@@ -2308,7 +2500,7 @@ class MainTests(RedundanzTestCase):
     def test_missing_directory_reaches_the_window_as_error(self):
         captured = []
 
-        def run(analyze, directory, _only_problems):
+        def run(analyze, directory, _only_problems, _config_file=None):
             with self.assertRaisesRegex(ValueError, "not found"):
                 analyze(directory)
             captured.append(directory)
@@ -2323,7 +2515,7 @@ class MainTests(RedundanzTestCase):
         path = self.write_config("{not json")
         captured = []
 
-        def run(analyze, directory, _only_problems):
+        def run(analyze, directory, _only_problems, _config_file=None):
             with self.assertRaisesRegex(ValueError, "Configuration unreadable"):
                 analyze(directory)
             captured.append(directory)
@@ -2339,7 +2531,7 @@ class MainTests(RedundanzTestCase):
         path = self.write_config('{"region_priority": ["Japan", "USA"]}')
         priorities = []
 
-        def run(analyze, directory, _only_problems):
+        def run(analyze, directory, _only_problems, _config_file=None):
             priorities.append(analyze(directory).config.region_priority)
             path.write_text('{"region_priority": ["USA", "Japan"]}', encoding="utf-8")
             priorities.append(analyze(directory).config.region_priority)
@@ -2424,6 +2616,14 @@ class MainTests(RedundanzTestCase):
         self.assertIn("Priorität: USA > Europe", output)
         self.assertIn("Es wurde nichts gelöscht.", output)
         self.assertEqual(translations.current_language(), "de")
+
+    def test_window_gets_the_configuration_file_the_analysis_reads(self):
+        self.prepare()
+        path = self.write_config('{"language": "en"}')
+        self.run_window_main("--config", str(path))
+        self.assertEqual(self.config_file.path, path)
+        self.run_window_main()
+        self.assertEqual(self.config_file.path, rf.DEFAULT_CONFIG_PATH)
 
     def test_broken_config_falls_back_to_english_texts(self):
         self.prepare()

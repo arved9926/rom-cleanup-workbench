@@ -249,6 +249,73 @@ class Config:
         return frozenset(tag for tag in tags if not _matches_tag(tag, self.part_tags))
 
 
+# The entries the settings dialog of the window may change; all others stay as they are.
+EDITABLE_CONFIG_KEYS = ("language", "region_priority", "low_priority_tags")
+
+
+def _format_json(value, indent: int = 0) -> str:
+    """Like json.dumps with indent, but lists stay on one line, as in a hand-written file."""
+    if isinstance(value, dict) and value:
+        pad = " " * indent
+        items = (f'{pad}  {json.dumps(key, ensure_ascii=False)}: {_format_json(item, indent + 2)}'
+                 for key, item in value.items())
+        return "{\n" + ",\n".join(items) + f"\n{pad}}}"
+    return json.dumps(value, ensure_ascii=False)
+
+
+@dataclass
+class ConfigFile:
+    """The configuration file as the settings dialog reads and changes it."""
+
+    path: Path
+
+    def _load_raw(self) -> dict:
+        if not self.path.exists():
+            return {}
+        try:
+            with open(self.path, encoding="utf-8-sig") as handle:
+                raw = json.load(handle)
+        except (OSError, ValueError) as error:
+            raise ValueError(tr("config.unreadable", error=error)) from error
+        if not isinstance(raw, dict):
+            raise ValueError(tr("config.unreadable", error=tr("config.not_object")))
+        return raw
+
+    def read(self) -> dict:
+        """The editable entries; missing ones come from the defaults."""
+        raw = self._load_raw()
+        return {key: raw.get(key, DEFAULT_CONFIG[key]) for key in EDITABLE_CONFIG_KEYS}
+
+    def write(self, language: str, region_priority: list[str], low_priority_tags: list[str]) -> None:
+        """Checks the values and saves them; the file stays unchanged if anything is wrong."""
+        regions = _clean_names(region_priority)
+        if not regions:
+            raise ValueError(tr("settings.no_regions"))
+        tags = _clean_names(low_priority_tags)
+        raw = self._load_raw()
+        raw.update({"language": language, "region_priority": regions, "low_priority_tags": tags})
+        # The same checks as when loading, before anything is written.
+        temporary = self.path.with_name(self.path.name + ".tmp")
+        temporary.write_text(_format_json(raw) + "\n", encoding="utf-8")
+        try:
+            Config.load(temporary)
+            os.replace(temporary, self.path)
+        finally:
+            temporary.unlink(missing_ok=True)
+
+
+def _clean_names(names: list[str]) -> list[str]:
+    """Drops empty entries and refuses the same name twice, regardless of case."""
+    cleaned = []
+    for name in (name.strip() for name in names):
+        if not name:
+            continue
+        if any(normalize(name) == normalize(other) for other in cleaned):
+            raise ValueError(tr("settings.duplicate", name=name))
+        cleaned.append(name)
+    return cleaned
+
+
 @dataclass
 class ZipMember:
     name: str
@@ -943,7 +1010,9 @@ def main(argv: list[str] | None = None) -> int:
     try:
         from rom_cleanup_workbench_window import run_window
 
-        return run_window(analyze, args.directory, _REVIEW_SCOPES.get(args.review))
+        # The dialog changes the file the analysis reads; without one it creates redundanz_config.json.
+        config_file = ConfigFile(_config_path(args) or DEFAULT_CONFIG_PATH)
+        return run_window(analyze, args.directory, _REVIEW_SCOPES.get(args.review), config_file)
     except (ImportError, RuntimeError) as error:
         print(tr("terminal.no_window", error=error), file=sys.stderr)
         print(tr("terminal.nothing_deleted"))

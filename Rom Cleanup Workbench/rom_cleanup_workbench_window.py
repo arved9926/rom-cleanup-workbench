@@ -18,7 +18,7 @@ from tkinter import filedialog
 from tkinter import font as tkfont
 from tkinter import messagebox, ttk
 
-from translations import tr
+from translations import LANGUAGE_NAMES, current_language, tr
 
 _BLACK = "#000000"
 _WHITE = "#ffffff"
@@ -116,9 +116,131 @@ class _AnalysisReplaced(Exception):
     """A newer analysis has replaced this one."""
 
 
+class SettingsDialog:
+    """Edits language, region priority and low priority tags in the configuration file."""
+
+    def __init__(self, window: "ReviewWindow"):
+        self.window = window
+        self.values = window.config_file.read()  # A broken file raises ValueError before anything opens.
+        top = self.top = tk.Toplevel(window.root)
+        top.title(tr("settings.title"))
+        top.configure(background=_BLACK)
+        top.transient(window.root)
+        frame = ttk.Frame(top, padding=16)
+        frame.pack(fill="both", expand=True)
+        frame.columnconfigure(1, weight=1)
+        frame.rowconfigure(4, weight=1)
+
+        ttk.Label(frame, text=tr("settings.file", path=window.config_file.path)).grid(
+            row=0, column=0, columnspan=3, sticky="w", pady=(0, 12),
+        )
+        ttk.Label(frame, text=tr("settings.language")).grid(row=1, column=0, sticky="w", padx=(0, 8))
+        name = LANGUAGE_NAMES.get(self.values["language"], LANGUAGE_NAMES[current_language()])
+        self.language = tk.StringVar(top, name)
+        ttk.Combobox(
+            frame, textvariable=self.language, values=list(LANGUAGE_NAMES.values()), state="readonly", width=16,
+        ).grid(row=1, column=1, sticky="w")
+        ttk.Label(frame, text=tr("settings.language_hint")).grid(row=2, column=0, columnspan=3, sticky="w", pady=(4, 16))
+
+        ttk.Label(frame, text=tr("settings.regions")).grid(row=3, column=0, columnspan=3, sticky="w", pady=(0, 4))
+        self.regions = tk.Listbox(
+            frame, height=8, activestyle="none", exportselection=False, font="TkDefaultFont",
+            background=_DARK_GRAY, foreground=_WHITE, selectbackground=_SELECTED, selectforeground=_WHITE,
+            highlightthickness=1, highlightbackground=_GRAY, highlightcolor=_LINE_COLOR, borderwidth=0,
+        )
+        self.regions.grid(row=4, column=0, columnspan=2, sticky="nsew")
+        for region in self.values["region_priority"]:
+            self.regions.insert("end", region)
+        self.regions.bind("<Delete>", lambda _event: self.remove())
+        buttons = ttk.Frame(frame)
+        buttons.grid(row=4, column=2, sticky="n", padx=(8, 0))
+        for key, command in (("settings.up", lambda: self.move(-1)), ("settings.down", lambda: self.move(1)),
+                             ("settings.remove", self.remove)):
+            ttk.Button(buttons, text=tr(key), command=command).pack(fill="x", pady=(0, 4))
+        self.new_region = tk.StringVar(top)
+        new_entry = ttk.Entry(frame, textvariable=self.new_region)
+        new_entry.grid(row=5, column=0, columnspan=2, sticky="ew", pady=(8, 0))
+        new_entry.bind("<Return>", lambda _event: self.add())
+        ttk.Button(frame, text=tr("settings.add"), command=self.add).grid(row=5, column=2, sticky="ew", padx=(8, 0), pady=(8, 0))
+
+        ttk.Label(frame, text=tr("settings.low_priority")).grid(row=6, column=0, columnspan=3, sticky="w", pady=(16, 4))
+        self.tags = tk.StringVar(top, ", ".join(self.values["low_priority_tags"]))
+        ttk.Entry(frame, textvariable=self.tags).grid(row=7, column=0, columnspan=3, sticky="ew")
+
+        actions = ttk.Frame(frame)
+        actions.grid(row=8, column=0, columnspan=3, sticky="e", pady=(16, 0))
+        ttk.Button(actions, text=tr("settings.cancel"), command=self.close).pack(side="right")
+        ttk.Button(actions, text=tr("settings.save"), command=lambda: window.save_settings(self)).pack(side="right", padx=8)
+        top.bind("<Escape>", lambda _event: self.close())
+        top.protocol("WM_DELETE_WINDOW", self.close)
+        window._use_dark_title_bar(top)
+        try:
+            top.grab_set()  # Modal: The list behind it must not change while the settings are open.
+        except tk.TclError:
+            pass  # Not possible while the main window is hidden, for example in the tests.
+        top.focus_set()
+
+    def language_code(self) -> str:
+        chosen = self.language.get()
+        return next((code for code, name in LANGUAGE_NAMES.items() if name == chosen), current_language())
+
+    def region_list(self) -> list[str]:
+        return list(self.regions.get(0, "end"))
+
+    def tag_list(self) -> list[str]:
+        return [tag.strip() for tag in self.tags.get().split(",") if tag.strip()]
+
+    def _select(self, index: int) -> None:
+        self.regions.selection_clear(0, "end")
+        if self.regions.size():
+            index = max(0, min(index, self.regions.size() - 1))
+            self.regions.selection_set(index)
+            self.regions.see(index)
+
+    def move(self, step: int) -> None:
+        selection = self.regions.curselection()
+        if not selection:
+            return
+        index = selection[0]
+        target = index + step
+        if 0 <= target < self.regions.size():
+            region = self.regions.get(index)
+            self.regions.delete(index)
+            self.regions.insert(target, region)
+            self._select(target)
+
+    def remove(self) -> None:
+        selection = self.regions.curselection()
+        if selection:
+            self.regions.delete(selection[0])
+            self._select(selection[0])
+
+    def add(self) -> None:
+        region = self.new_region.get().strip()
+        if not region:
+            return
+        existing = [index for index, other in enumerate(self.region_list()) if other.casefold() == region.casefold()]
+        if existing:
+            self._select(existing[0])  # Already in the list: show it instead of adding it twice.
+        else:
+            self.regions.insert("end", region)
+            self._select(self.regions.size() - 1)
+        self.new_region.set("")
+
+    def close(self) -> None:
+        self.top.destroy()
+        self.window.settings_dialog = None
+
+
 class ReviewWindow:
-    def __init__(self, analyze, directory: Path | None, scope: str | None = None, settings_path: Path = SETTINGS_PATH):
+    def __init__(
+        self, analyze, directory: Path | None, scope: str | None = None, settings_path: Path = SETTINGS_PATH,
+        config_file=None,
+    ):
         self.settings_path = settings_path
+        # The ConfigFile from rom_cleanup_workbench.py; without one, the settings dialog is not offered.
+        self.config_file = config_file
+        self.settings_dialog = None
         self.analyze = analyze
         self.directory = directory
         self.review = None
@@ -353,15 +475,29 @@ class ReviewWindow:
             "TEntry", fieldbackground=_DARK_GRAY, foreground=_WHITE, insertcolor=_WHITE,
             bordercolor=_GRAY, selectbackground=_SELECTED, selectforeground=_WHITE,
         )
+        style.configure(
+            "TCombobox", fieldbackground=_DARK_GRAY, background=_DARK_GRAY, foreground=_WHITE,
+            arrowcolor=_WHITE, bordercolor=_GRAY,
+        )
+        style.map(
+            "TCombobox",
+            fieldbackground=[("readonly", _DARK_GRAY)], foreground=[("readonly", _WHITE)],
+            selectbackground=[("readonly", _DARK_GRAY)], selectforeground=[("readonly", _WHITE)],
+        )
+        # The open list of a combobox is a plain Tk listbox; it only takes colors from the option database.
+        for option, color in (("background", _DARK_GRAY), ("foreground", _WHITE),
+                              ("selectBackground", _SELECTED), ("selectForeground", _WHITE)):
+            self.root.option_add(f"*TCombobox*Listbox.{option}", color)
         style.configure("Horizontal.TProgressbar", background=_GREEN, troughcolor=_DARK_GRAY, bordercolor=_GRAY, thickness=24)
         style.configure("Vertical.TScrollbar", background=_GRAY, troughcolor=_BLACK, arrowcolor=_WHITE, bordercolor=_BLACK)
         style.map("Vertical.TScrollbar", background=[("active", _LIGHT_GRAY)])
 
-    def _use_dark_title_bar(self) -> None:
+    def _use_dark_title_bar(self, toplevel=None) -> None:
         """Switches the Windows title bar to dark; if it stays light, no harm is done."""
+        toplevel = toplevel or self.root
         try:
-            self.root.update_idletasks()
-            handle = ctypes.windll.user32.GetParent(self.root.winfo_id())
+            toplevel.update_idletasks()
+            handle = ctypes.windll.user32.GetParent(toplevel.winfo_id())
             enabled = ctypes.c_int(1)
             ctypes.windll.dwmapi.DwmSetWindowAttribute(handle, 20, ctypes.byref(enabled), ctypes.sizeof(enabled))
         except (AttributeError, OSError):
@@ -410,6 +546,9 @@ class ReviewWindow:
         ttk.Button(bottom, text=tr("window.button.proceed"), command=self.confirm_delete).pack(side="right", padx=8)
         ttk.Button(bottom, text=tr("window.button.reanalyze"), command=self.reanalyze).pack(side="right")
         ttk.Button(bottom, text=tr("window.button.folder"), command=self.choose_directory).pack(side="right", padx=8)
+        self.settings_button = ttk.Button(bottom, text=tr("window.button.settings"), command=self.open_settings)
+        if self.config_file is not None:
+            self.settings_button.pack(side="right")
         ttk.Label(bottom, text=tr("window.filter")).pack(side="left", padx=(0, 8))
         self.search_entry = ttk.Entry(bottom, textvariable=self.search, width=_FILTER_MIN_CHARS)
         self.search_entry.pack(side="left", fill="x", expand=True)
@@ -464,6 +603,8 @@ class ReviewWindow:
         self.root.bind("<Control-o>", lambda _event: self.choose_directory())
         self.root.bind("<Control-O>", lambda _event: self.choose_directory())
         self.root.bind("<F5>", lambda _event: self.reanalyze())
+        self.root.bind("<Control-e>", lambda _event: self.open_settings())
+        self.root.bind("<Control-E>", lambda _event: self.open_settings())
         self.root.bind("<Control-f>", lambda _event: self.focus_search())
         self.root.bind("<Control-F>", lambda _event: self.focus_search())
         # "break" prevents Tab from passing the focus to the next button as usual.
@@ -754,6 +895,36 @@ class ReviewWindow:
         # The Review object has dropped the deleted files; the folder is not analyzed again.
         self.show_review(self.review)
 
+    def open_settings(self) -> None:
+        if self.config_file is None:
+            return
+        if self.settings_dialog is not None:
+            self.settings_dialog.top.lift()
+            return
+        try:
+            self.settings_dialog = SettingsDialog(self)
+        except ValueError as error:
+            # A broken file is not overwritten: It may contain entries the dialog does not know.
+            messagebox.showerror(tr("settings.error_title"), str(error), parent=self.root)
+
+    def save_settings(self, dialog: SettingsDialog) -> None:
+        """Writes the settings; a new priority or new tags take effect at once through a new analysis."""
+        language, regions, tags = dialog.language_code(), dialog.region_list(), dialog.tag_list()
+        before = dialog.values
+        rules_changed = regions != before["region_priority"] or tags != before["low_priority_tags"]
+        if rules_changed and not self._may_discard_changes(tr("settings.discard")):
+            return
+        try:
+            self.config_file.write(language, regions, tags)
+        except (OSError, ValueError) as error:
+            messagebox.showerror(tr("settings.error_title"), str(error), parent=dialog.top)
+            return
+        dialog.close()
+        if language != before["language"]:
+            messagebox.showinfo(tr("settings.restart_title"), tr("settings.language_hint"), parent=self.root)
+        if rules_changed:
+            self.start_analysis()
+
     def _confirm_save_files_only(self) -> None:
         """Without marked files, Ctrl+L can still confirm the suspected status or save files."""
         save_files = self.review.save_file_keys()
@@ -815,6 +986,6 @@ class ReviewWindow:
         return 1 if self.had_errors else 0
 
 
-def run_window(analyze, directory: Path | None, scope: str | None = None) -> int:
+def run_window(analyze, directory: Path | None, scope: str | None = None, config_file=None) -> int:
     """Shows the window and returns the program's exit code."""
-    return ReviewWindow(analyze, directory, scope).run()
+    return ReviewWindow(analyze, directory, scope, config_file=config_file).run()

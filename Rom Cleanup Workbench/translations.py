@@ -74,7 +74,7 @@ _EN = {
     "window.help": (
         "D: Demote, delete file  |  P: Promote, keep file  |  Tab / Shift+Tab: next / previous game\n"
         "Arrow keys: select row (Shift: several)  |  Ctrl+mouse wheel: font size  |  "
-        "Ctrl+F: Filter (* and ?)  |  Ctrl+L: Proceed  |  Ctrl+O: Folder  |  F5: Analyze again  |  Esc: Close"
+        "Ctrl+F: Filter (* and ?)  |  Ctrl+E: Settings  |  Ctrl+L: Proceed  |  Ctrl+O: Folder  |  F5: Analyze again  |  Esc: Close"
     ),
     "window.folder": "Folder: {directory}",
     "window.no_folder": "Folder: none chosen yet (Ctrl+O)",
@@ -114,6 +114,26 @@ _EN = {
     "window.partly_deleted_title": "Not everything was deleted",
     "window.partly_deleted": "{count} file(s) deleted.\n\nErrors:\n{errors}",
     "window.deleted_title": "Deleted",
+    "window.button.settings": "Settings...",
+    "settings.title": "Settings",
+    "settings.file": "File: {path}",
+    "settings.language": "Language:",
+    "settings.language_hint": "A new language applies from the next start of the program.",
+    "settings.regions": "Region priority (best first):",
+    "settings.up": "Up",
+    "settings.down": "Down",
+    "settings.remove": "Remove",
+    "settings.add": "Add",
+    "settings.low_priority": "Low priority tags (separated by commas):",
+    "settings.save": "Save",
+    "settings.cancel": "Cancel",
+    "settings.error_title": "Settings not saved",
+    "settings.no_regions": "Enter at least one region.",
+    "settings.duplicate": '"{name}" appears more than once.',
+    "settings.discard": (
+        "Your changes will be lost, and nothing will be deleted. Save the settings and analyze again?"
+    ),
+    "settings.restart_title": "Language changed",
     "number.thousands": ",",
     "unit.kb": "KB",
 }
@@ -185,7 +205,7 @@ _DE = {
     "window.help": (
         "D: Demote, Datei löschen  |  P: Promote, Datei behalten  |  Tab / Umschalt+Tab: nächstes / voriges Spiel\n"
         "Pfeiltasten: Zeile wählen (Umschalt: mehrere)  |  Strg+Scrollrad: Schriftgröße  |  "
-        "Strg+F: Filter (* und ?)  |  Strg+L: Ausführen  |  Strg+O: Ordner  |  F5: Neu analysieren  |  Esc: Schließen"
+        "Strg+F: Filter (* und ?)  |  Strg+E: Einstellungen  |  Strg+L: Ausführen  |  Strg+O: Ordner  |  F5: Neu analysieren  |  Esc: Schließen"
     ),
     "window.folder": "Ordner: {directory}",
     "window.no_folder": "Ordner: noch keiner gewählt (Strg+O)",
@@ -225,6 +245,26 @@ _DE = {
     "window.partly_deleted_title": "Nicht alles gelöscht",
     "window.partly_deleted": "{count} Datei(en) gelöscht.\n\nFehler:\n{errors}",
     "window.deleted_title": "Gelöscht",
+    "window.button.settings": "Einstellungen...",
+    "settings.title": "Einstellungen",
+    "settings.file": "Datei: {path}",
+    "settings.language": "Sprache:",
+    "settings.language_hint": "Eine neue Sprache gilt ab dem nächsten Start des Programms.",
+    "settings.regions": "Regionen-Priorität (beste zuerst):",
+    "settings.up": "Hoch",
+    "settings.down": "Runter",
+    "settings.remove": "Entfernen",
+    "settings.add": "Hinzufügen",
+    "settings.low_priority": "Zusatzinfos mit niedrigster Priorität (durch Kommas getrennt):",
+    "settings.save": "Speichern",
+    "settings.cancel": "Abbrechen",
+    "settings.error_title": "Einstellungen nicht gespeichert",
+    "settings.no_regions": "Bitte mindestens eine Region angeben.",
+    "settings.duplicate": "„{name}“ kommt mehrfach vor.",
+    "settings.discard": (
+        "Deine Änderungen gehen verloren, und es wird nichts gelöscht. Einstellungen speichern und neu analysieren?"
+    ),
+    "settings.restart_title": "Sprache geändert",
     "number.thousands": ".",
     "unit.kb": "KB",
 }
@@ -294,7 +334,7 @@ _IT = {
     "window.help": (
         "D: Demote, elimina file  |  P: Promote, mantieni file  |  Tab / Maiusc+Tab: gioco successivo / precedente\n"
         "Frecce: seleziona riga (Maiusc: più righe)  |  Ctrl+rotellina: dimensione del testo  |  "
-        "Ctrl+F: Filtro (* e ?)  |  Ctrl+L: Esegui  |  Ctrl+O: Cartella  |  F5: Analizza di nuovo  |  Esc: Chiudi"
+        "Ctrl+F: Filtro (* e ?)  |  Ctrl+E: Impostazioni  |  Ctrl+L: Esegui  |  Ctrl+O: Cartella  |  F5: Analizza di nuovo  |  Esc: Chiudi"
     ),
     "window.folder": "Cartella: {directory}",
     "window.no_folder": "Cartella: nessuna scelta (Ctrl+O)",
@@ -334,6 +374,26 @@ _IT = {
     "window.partly_deleted_title": "Non tutto è stato eliminato",
     "window.partly_deleted": "{count} file eliminati.\n\nErrori:\n{errors}",
     "window.deleted_title": "Eliminati",
+    "window.button.settings": "Impostazioni...",
+    "settings.title": "Impostazioni",
+    "settings.file": "File: {path}",
+    "settings.language": "Lingua:",
+    "settings.language_hint": "Una nuova lingua vale dal prossimo avvio del programma.",
+    "settings.regions": "Priorità delle regioni (la migliore prima):",
+    "settings.up": "Su",
+    "settings.down": "Giù",
+    "settings.remove": "Rimuovi",
+    "settings.add": "Aggiungi",
+    "settings.low_priority": "Info con priorità più bassa (separate da virgole):",
+    "settings.save": "Salva",
+    "settings.cancel": "Annulla",
+    "settings.error_title": "Impostazioni non salvate",
+    "settings.no_regions": "Inserisci almeno una regione.",
+    "settings.duplicate": '"{name}" compare più volte.',
+    "settings.discard": (
+        "Le modifiche andranno perse e non verrà eliminato nulla. Salvare le impostazioni e analizzare di nuovo?"
+    ),
+    "settings.restart_title": "Lingua cambiata",
     "number.thousands": ".",
     "unit.kb": "KB",
 }
@@ -403,7 +463,7 @@ _ES = {
     "window.help": (
         "D: Demote, eliminar archivo  |  P: Promote, conservar archivo  |  Tab / Mayús+Tab: juego siguiente / anterior\n"
         "Flechas: elegir fila (Mayús: varias)  |  Ctrl+rueda: tamaño de letra  |  "
-        "Ctrl+F: Filtro (* y ?)  |  Ctrl+L: Ejecutar  |  Ctrl+O: Carpeta  |  F5: Analizar de nuevo  |  Esc: Cerrar"
+        "Ctrl+F: Filtro (* y ?)  |  Ctrl+E: Ajustes  |  Ctrl+L: Ejecutar  |  Ctrl+O: Carpeta  |  F5: Analizar de nuevo  |  Esc: Cerrar"
     ),
     "window.folder": "Carpeta: {directory}",
     "window.no_folder": "Carpeta: ninguna elegida (Ctrl+O)",
@@ -443,6 +503,24 @@ _ES = {
     "window.partly_deleted_title": "No se eliminó todo",
     "window.partly_deleted": "{count} archivo(s) eliminados.\n\nErrores:\n{errors}",
     "window.deleted_title": "Eliminado",
+    "window.button.settings": "Ajustes...",
+    "settings.title": "Ajustes",
+    "settings.file": "Archivo: {path}",
+    "settings.language": "Idioma:",
+    "settings.language_hint": "Un idioma nuevo se aplica a partir del próximo inicio del programa.",
+    "settings.regions": "Prioridad de regiones (la mejor primero):",
+    "settings.up": "Subir",
+    "settings.down": "Bajar",
+    "settings.remove": "Quitar",
+    "settings.add": "Añadir",
+    "settings.low_priority": "Información con la prioridad más baja (separada por comas):",
+    "settings.save": "Guardar",
+    "settings.cancel": "Cancelar",
+    "settings.error_title": "Ajustes no guardados",
+    "settings.no_regions": "Indica al menos una región.",
+    "settings.duplicate": '"{name}" aparece más de una vez.',
+    "settings.discard": "Tus cambios se perderán y no se eliminará nada. ¿Guardar los ajustes y analizar de nuevo?",
+    "settings.restart_title": "Idioma cambiado",
     "number.thousands": ".",
     "unit.kb": "KB",
 }
@@ -512,7 +590,7 @@ _FR = {
     "window.help": (
         "D : Demote, supprimer le fichier  |  P : Promote, garder le fichier  |  Tab / Maj+Tab : jeu suivant / précédent\n"
         "Flèches : choisir la ligne (Maj : plusieurs)  |  Ctrl+molette : taille du texte  |  "
-        "Ctrl+F : Filtre (* et ?)  |  Ctrl+L : Exécuter  |  Ctrl+O : Dossier  |  F5 : Analyser à nouveau  |  Échap : Fermer"
+        "Ctrl+F : Filtre (* et ?)  |  Ctrl+E : Paramètres  |  Ctrl+L : Exécuter  |  Ctrl+O : Dossier  |  F5 : Analyser à nouveau  |  Échap : Fermer"
     ),
     "window.folder": "Dossier : {directory}",
     "window.no_folder": "Dossier : aucun choisi (Ctrl+O)",
@@ -552,6 +630,26 @@ _FR = {
     "window.partly_deleted_title": "Tout n'a pas été supprimé",
     "window.partly_deleted": "{count} fichier(s) supprimé(s).\n\nErreurs :\n{errors}",
     "window.deleted_title": "Supprimé",
+    "window.button.settings": "Paramètres...",
+    "settings.title": "Paramètres",
+    "settings.file": "Fichier : {path}",
+    "settings.language": "Langue :",
+    "settings.language_hint": "Une nouvelle langue s'applique au prochain démarrage du programme.",
+    "settings.regions": "Priorité des régions (la meilleure d'abord) :",
+    "settings.up": "Monter",
+    "settings.down": "Descendre",
+    "settings.remove": "Retirer",
+    "settings.add": "Ajouter",
+    "settings.low_priority": "Infos de priorité la plus basse (séparées par des virgules) :",
+    "settings.save": "Enregistrer",
+    "settings.cancel": "Annuler",
+    "settings.error_title": "Paramètres non enregistrés",
+    "settings.no_regions": "Indiquez au moins une région.",
+    "settings.duplicate": "« {name} » apparaît plusieurs fois.",
+    "settings.discard": (
+        "Vos modifications seront perdues et rien ne sera supprimé. Enregistrer les paramètres et analyser à nouveau ?"
+    ),
+    "settings.restart_title": "Langue modifiée",
     "number.thousands": " ",
     "unit.kb": "Ko",
 }
@@ -621,7 +719,7 @@ _JA = {
     "window.help": (
         "D: Demote、ファイルを削除  |  P: Promote、ファイルを保持  |  Tab / Shift+Tab: 次 / 前のゲーム\n"
         "矢印キー: 行を選択 (Shift: 複数)  |  Ctrl+ホイール: 文字サイズ  |  "
-        "Ctrl+F: フィルター (* と ?)  |  Ctrl+L: 実行  |  Ctrl+O: フォルダー  |  F5: 再分析  |  Esc: 閉じる"
+        "Ctrl+F: フィルター (* と ?)  |  Ctrl+E: 設定  |  Ctrl+L: 実行  |  Ctrl+O: フォルダー  |  F5: 再分析  |  Esc: 閉じる"
     ),
     "window.folder": "フォルダー: {directory}",
     "window.no_folder": "フォルダー: 未選択 (Ctrl+O)",
@@ -661,12 +759,31 @@ _JA = {
     "window.partly_deleted_title": "一部を削除できませんでした",
     "window.partly_deleted": "{count} ファイルを削除しました。\n\nエラー:\n{errors}",
     "window.deleted_title": "削除しました",
+    "window.button.settings": "設定...",
+    "settings.title": "設定",
+    "settings.file": "ファイル: {path}",
+    "settings.language": "言語:",
+    "settings.language_hint": "新しい言語は次回の起動から適用されます。",
+    "settings.regions": "地域の優先順位 (上が優先):",
+    "settings.up": "上へ",
+    "settings.down": "下へ",
+    "settings.remove": "削除",
+    "settings.add": "追加",
+    "settings.low_priority": "優先度が最も低い追加情報 (カンマ区切り):",
+    "settings.save": "保存",
+    "settings.cancel": "キャンセル",
+    "settings.error_title": "設定を保存できません",
+    "settings.no_regions": "地域を 1 つ以上入力してください。",
+    "settings.duplicate": "「{name}」が重複しています。",
+    "settings.discard": "変更は失われ、何も削除されません。設定を保存して再分析しますか?",
+    "settings.restart_title": "言語を変更しました",
     "number.thousands": ",",
     "unit.kb": "KB",
 }
 
 LANGUAGES = {"en": _EN, "de": _DE, "it": _IT, "es": _ES, "fr": _FR, "ja": _JA}
-
+# Each language under its own name, for the choice in the settings dialog.
+LANGUAGE_NAMES = {"en": "English", "de": "Deutsch", "it": "Italiano", "es": "Español", "fr": "Français", "ja": "日本語"}
 # What a file without a known region is called in region_priority; every language's word works.
 NO_REGION_WORDS = ("none", "keine", "nessuna", "ninguna", "aucune", "なし")
 
