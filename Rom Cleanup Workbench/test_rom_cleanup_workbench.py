@@ -1410,22 +1410,22 @@ class ReviewWindowTests(RedundanzTestCase):
         plain = self.open_window()
         self.assertNotIn(plain.settings_button, plain.bottom_row.pack_slaves())
         plain.open_settings()  # Without a configuration file nothing opens.
-        self.assertIsNone(plain.settings_dialog)
+        self.assertIsNone(plain.settings_panel)
 
-    def test_settings_dialog_shows_the_current_values(self):
+    def test_settings_panel_shows_the_current_values(self):
         window = self.window_with_settings()
         window.open_settings()
-        dialog = window.settings_dialog
+        dialog = window.settings_panel
         self.assertEqual(dialog.language.get(), "English")
         self.assertEqual(dialog.region_list(), ["USA", "Japan"])
         self.assertEqual(dialog.tag_list(), ["Beta"])
-        window.open_settings()  # A second Ctrl+E brings the same dialog to the front.
-        self.assertIs(window.settings_dialog, dialog)
+        window.open_settings()  # Already open: nothing happens.
+        self.assertIs(window.settings_panel, dialog)
 
-    def test_settings_dialog_moves_adds_and_removes_regions(self):
+    def test_settings_panel_moves_adds_and_removes_regions(self):
         window = self.window_with_settings()
         window.open_settings()
-        dialog = window.settings_dialog
+        dialog = window.settings_panel
         dialog.regions.selection_set(1)
         dialog.move(-1)
         self.assertEqual(dialog.region_list(), ["Japan", "USA"])
@@ -1444,7 +1444,7 @@ class ReviewWindowTests(RedundanzTestCase):
     def test_saving_settings_writes_the_file_and_analyzes_again(self):
         window = self.window_with_settings()
         window.open_settings()
-        dialog = window.settings_dialog
+        dialog = window.settings_panel
         dialog.regions.selection_set(1)
         dialog.move(-1)
         dialog.tags.set("Beta, Proto")
@@ -1454,7 +1454,7 @@ class ReviewWindowTests(RedundanzTestCase):
             window.save_settings(dialog)
         analysis.assert_called_once()
         info.assert_not_called()  # The language stayed the same.
-        self.assertIsNone(window.settings_dialog)
+        self.assertIsNone(window.settings_panel)
         values = window.config_file.read()
         self.assertEqual(values["region_priority"], ["Japan", "USA"])
         self.assertEqual(values["low_priority_tags"], ["Beta", "Proto"])
@@ -1462,7 +1462,7 @@ class ReviewWindowTests(RedundanzTestCase):
     def test_new_language_is_announced_for_the_next_start(self):
         window = self.window_with_settings()
         window.open_settings()
-        dialog = window.settings_dialog
+        dialog = window.settings_panel
         dialog.language.set("Italiano")
         with mock.patch.object(window, "start_analysis") as analysis, mock.patch(
             "rom_cleanup_workbench_window.messagebox.showinfo"
@@ -1479,33 +1479,101 @@ class ReviewWindowTests(RedundanzTestCase):
         window.demote_selected()
         original = window.config_file.path.read_text(encoding="utf-8")
         window.open_settings()
-        dialog = window.settings_dialog
+        dialog = window.settings_panel
         dialog.regions.selection_set(1)
         dialog.move(-1)
         with mock.patch("rom_cleanup_workbench_window.messagebox.askyesno", return_value=False) as ask:
             window.save_settings(dialog)
         ask.assert_called_once()
         self.assertEqual(window.config_file.path.read_text(encoding="utf-8"), original)
-        self.assertIs(window.settings_dialog, dialog)
+        self.assertIs(window.settings_panel, dialog)
         self.assertEqual(window.review.moved_count(), 1)
 
     def test_wrong_settings_are_reported_and_the_dialog_stays_open(self):
         window = self.window_with_settings()
         window.open_settings()
-        dialog = window.settings_dialog
+        dialog = window.settings_panel
         dialog.regions.delete(0, "end")
         with mock.patch("rom_cleanup_workbench_window.messagebox.showerror") as error:
             window.save_settings(dialog)
         self.assertIn("at least one region", error.call_args.args[1])
-        self.assertIs(window.settings_dialog, dialog)
+        self.assertIs(window.settings_panel, dialog)
 
     def test_broken_configuration_is_not_opened_for_editing(self):
         window = self.window_with_settings("{not json")
         with mock.patch("rom_cleanup_workbench_window.messagebox.showerror") as error:
             window.open_settings()
         error.assert_called_once()
-        self.assertIsNone(window.settings_dialog)
+        self.assertIsNone(window.settings_panel)
         self.assertEqual(window.config_file.path.read_text(encoding="utf-8"), "{not json")
+        self.assertTrue(window.list_frame.winfo_manager())  # The list stays in place.
+
+    def test_settings_take_the_place_of_the_list_in_the_main_window(self):
+        window = self.window_with_settings()
+        window.toggle_settings()
+        panel = window.settings_panel
+        self.assertIs(panel.frame.master, window.middle)
+        self.assertEqual(panel.frame.winfo_manager(), "pack")
+        self.assertEqual(window.list_frame.winfo_manager(), "")
+        self.assertFalse([child for child in window.root.winfo_children() if child.winfo_class() == "Toplevel"])
+        window.toggle_settings()  # Settings... or Ctrl+E a second time: back to the list.
+        self.assertIsNone(window.settings_panel)
+        self.assertEqual(window.list_frame.winfo_manager(), "pack")
+        self.assertEqual(window.tree.item("g0", "text"), "Title")
+
+    def test_list_is_locked_while_the_settings_are_open(self):
+        window = self.window_with_settings()
+        window.tree.selection_set(self.row_of(window, "Title (USA).bin"))
+        window.open_settings()
+        self.assertTrue(all(widget.instate(["disabled"]) for widget in window._list_controls))
+        self.assertFalse(window.settings_button.instate(["disabled"]))
+        window.demote_selected()
+        window.promote_selected()
+        self.assertEqual(window.review.moved_count(), 0)
+        with mock.patch("rom_cleanup_workbench_window.messagebox.askyesno") as ask, mock.patch.object(
+            window, "start_analysis"
+        ) as analysis, mock.patch("rom_cleanup_workbench_window.filedialog.askdirectory") as folder:
+            window.confirm_delete()
+            window.reanalyze()
+            window.choose_directory()
+        ask.assert_not_called()
+        analysis.assert_not_called()
+        folder.assert_not_called()
+        self.assertIsNone(window._move_game(1))  # Tab moves between the fields instead.
+        self.assertEqual(len(list(self.dir.iterdir())), 2)
+        window.close_settings()
+        self.assertFalse(any(widget.instate(["disabled"]) for widget in window._list_controls))
+
+    def test_typing_in_the_settings_never_reaches_the_list(self):
+        window = self.window_with_settings()
+        window.open_settings()
+        panel = window.settings_panel
+        for widget in (panel.regions, *[w for w in self._descendants(panel.frame) if w.winfo_class() == "TEntry"]):
+            self.assertNotIn(str(window.root), widget.bindtags())
+
+    @staticmethod
+    def _descendants(widget):
+        for child in widget.winfo_children():
+            yield child
+            yield from ReviewWindowTests._descendants(child)
+
+    def test_settings_make_a_low_window_tall_enough_and_closing_restores_the_minimum(self):
+        window = self.window_with_settings()
+        before = window.root.minsize()
+        window.open_settings()
+        window.root.update_idletasks()
+        self.assertGreaterEqual(window.root.minsize()[1], min(window.root.winfo_reqheight(), window.root.winfo_screenheight()))
+        window.close_settings()
+        self.assertEqual(window.root.minsize(), before)
+
+    def test_escape_closes_only_the_settings(self):
+        window = self.window_with_settings()
+        window.open_settings()
+        with mock.patch.object(window, "close") as close:
+            window.settings_panel.close()
+        close.assert_not_called()
+        self.assertIsNone(window.settings_panel)
+        self.assertTrue(window.root.winfo_exists())
 
     def test_window_speaks_the_chosen_language(self):
         translations.set_language("de")

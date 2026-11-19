@@ -116,69 +116,81 @@ class _AnalysisReplaced(Exception):
     """A newer analysis has replaced this one."""
 
 
-class SettingsDialog:
-    """Edits language, region priority and low priority tags in the configuration file."""
+class SettingsPanel:
+    """Edits language, region priority and low priority tags in place of the file list.
+
+    The list and everything that acts on it is locked meanwhile (see ReviewWindow._lock_list).
+    """
 
     def __init__(self, window: "ReviewWindow"):
         self.window = window
         self.values = window.config_file.read()  # A broken file raises ValueError before anything opens.
-        top = self.top = tk.Toplevel(window.root)
-        top.title(tr("settings.title"))
-        top.configure(background=_BLACK)
-        top.transient(window.root)
-        frame = ttk.Frame(top, padding=16)
-        frame.pack(fill="both", expand=True)
-        frame.columnconfigure(1, weight=1)
-        frame.rowconfigure(4, weight=1)
+        frame = self.frame = ttk.Frame(window.middle, padding=(16, 8, 16, 8))
+        frame.columnconfigure(0, weight=1, uniform="half")
+        frame.columnconfigure(1, weight=1, uniform="half")
+        frame.rowconfigure(1, weight=1)
+        heading = ttk.Frame(frame)
+        heading.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 8))
+        # Save and Cancel at the top, so that they stay visible even in a low window.
+        ttk.Button(heading, text=tr("settings.cancel"), command=self.close).pack(side="right")
+        ttk.Button(heading, text=tr("settings.save"), command=lambda: window.save_settings(self)).pack(side="right", padx=8)
+        ttk.Label(heading, text=tr("settings.title"), font=window.bold_font).pack(side="left", padx=(0, 16))
+        ttk.Label(heading, text=tr("settings.file", path=window.config_file.path)).pack(side="left")
 
-        ttk.Label(frame, text=tr("settings.file", path=window.config_file.path)).grid(
-            row=0, column=0, columnspan=3, sticky="w", pady=(0, 12),
-        )
-        ttk.Label(frame, text=tr("settings.language")).grid(row=1, column=0, sticky="w", padx=(0, 8))
-        name = LANGUAGE_NAMES.get(self.values["language"], LANGUAGE_NAMES[current_language()])
-        self.language = tk.StringVar(top, name)
-        ttk.Combobox(
-            frame, textvariable=self.language, values=list(LANGUAGE_NAMES.values()), state="readonly", width=16,
-        ).grid(row=1, column=1, sticky="w")
-        ttk.Label(frame, text=tr("settings.language_hint")).grid(row=2, column=0, columnspan=3, sticky="w", pady=(4, 16))
-
-        ttk.Label(frame, text=tr("settings.regions")).grid(row=3, column=0, columnspan=3, sticky="w", pady=(0, 4))
+        # Two columns side by side, so that the region list keeps its height in a low window.
+        left = ttk.Frame(frame)
+        left.grid(row=1, column=0, sticky="nsew", padx=(0, 16))
+        left.columnconfigure(0, weight=1)
+        left.rowconfigure(1, weight=1, minsize=4 * window._row_height())
+        ttk.Label(left, text=tr("settings.regions")).grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, 4))
         self.regions = tk.Listbox(
-            frame, height=8, activestyle="none", exportselection=False, font="TkDefaultFont",
+            left, height=6, activestyle="none", exportselection=False, font="TkDefaultFont",
             background=_DARK_GRAY, foreground=_WHITE, selectbackground=_SELECTED, selectforeground=_WHITE,
             highlightthickness=1, highlightbackground=_GRAY, highlightcolor=_LINE_COLOR, borderwidth=0,
         )
-        self.regions.grid(row=4, column=0, columnspan=2, sticky="nsew")
+        self.regions.grid(row=1, column=0, sticky="nsew")
         for region in self.values["region_priority"]:
             self.regions.insert("end", region)
         self.regions.bind("<Delete>", lambda _event: self.remove())
-        buttons = ttk.Frame(frame)
-        buttons.grid(row=4, column=2, sticky="n", padx=(8, 0))
+        buttons = ttk.Frame(left)
+        buttons.grid(row=1, column=1, sticky="n", padx=(8, 0))
         for key, command in (("settings.up", lambda: self.move(-1)), ("settings.down", lambda: self.move(1)),
                              ("settings.remove", self.remove)):
             ttk.Button(buttons, text=tr(key), command=command).pack(fill="x", pady=(0, 4))
-        self.new_region = tk.StringVar(top)
-        new_entry = ttk.Entry(frame, textvariable=self.new_region)
-        new_entry.grid(row=5, column=0, columnspan=2, sticky="ew", pady=(8, 0))
+        self.new_region = tk.StringVar(frame)
+        new_entry = ttk.Entry(left, textvariable=self.new_region)
+        new_entry.grid(row=2, column=0, sticky="ew", pady=(8, 0))
         new_entry.bind("<Return>", lambda _event: self.add())
-        ttk.Button(frame, text=tr("settings.add"), command=self.add).grid(row=5, column=2, sticky="ew", padx=(8, 0), pady=(8, 0))
+        ttk.Button(left, text=tr("settings.add"), command=self.add).grid(row=2, column=1, sticky="ew", padx=(8, 0), pady=(8, 0))
 
-        ttk.Label(frame, text=tr("settings.low_priority")).grid(row=6, column=0, columnspan=3, sticky="w", pady=(16, 4))
-        self.tags = tk.StringVar(top, ", ".join(self.values["low_priority_tags"]))
-        ttk.Entry(frame, textvariable=self.tags).grid(row=7, column=0, columnspan=3, sticky="ew")
+        right = ttk.Frame(frame)
+        right.grid(row=1, column=1, sticky="nsew")
+        right.columnconfigure(0, weight=1)
+        right.rowconfigure(5, weight=1)
+        ttk.Label(right, text=tr("settings.language")).grid(row=0, column=0, sticky="w", pady=(0, 4))
+        name = LANGUAGE_NAMES.get(self.values["language"], LANGUAGE_NAMES[current_language()])
+        self.language = tk.StringVar(frame, name)
+        language_box = ttk.Combobox(
+            right, textvariable=self.language, values=list(LANGUAGE_NAMES.values()), state="readonly", width=16,
+        )
+        language_box.grid(row=1, column=0, sticky="w")
+        hint = ttk.Label(right, text=tr("settings.language_hint"))
+        hint.grid(row=2, column=0, sticky="ew", pady=(4, 12))
+        hint.bind("<Configure>", lambda event: hint.configure(wraplength=max(event.width, 1)))
+        tags_label = ttk.Label(right, text=tr("settings.low_priority"))
+        tags_label.grid(row=3, column=0, sticky="ew", pady=(0, 4))
+        tags_label.bind("<Configure>", lambda event: tags_label.configure(wraplength=max(event.width, 1)))
+        self.tags = tk.StringVar(frame, ", ".join(self.values["low_priority_tags"]))
+        tags_entry = ttk.Entry(right, textvariable=self.tags)
+        tags_entry.grid(row=4, column=0, sticky="ew")
 
-        actions = ttk.Frame(frame)
-        actions.grid(row=8, column=0, columnspan=3, sticky="e", pady=(16, 0))
-        ttk.Button(actions, text=tr("settings.cancel"), command=self.close).pack(side="right")
-        ttk.Button(actions, text=tr("settings.save"), command=lambda: window.save_settings(self)).pack(side="right", padx=8)
-        top.bind("<Escape>", lambda _event: self.close())
-        top.protocol("WM_DELETE_WINDOW", self.close)
-        window._use_dark_title_bar(top)
-        try:
-            top.grab_set()  # Modal: The list behind it must not change while the settings are open.
-        except tk.TclError:
-            pass  # Not possible while the main window is hidden, for example in the tests.
-        top.focus_set()
+        # Where text is typed, the window's keys must not fire: A "d" in a region name is no Demote.
+        for widget in (language_box, self.regions, new_entry, tags_entry):
+            widget.bindtags((str(widget), widget.winfo_class(), "all"))
+            widget.bind("<Escape>", lambda _event: self.close())
+            widget.bind("<Control-MouseWheel>", window._on_zoom)
+        self.regions.bind("<Control-e>", lambda _event: self.close())
+        new_entry.focus_set()
 
     def language_code(self) -> str:
         chosen = self.language.get()
@@ -227,9 +239,10 @@ class SettingsDialog:
             self._select(self.regions.size() - 1)
         self.new_region.set("")
 
-    def close(self) -> None:
-        self.top.destroy()
-        self.window.settings_dialog = None
+    def close(self) -> str:
+        """Returns to the file list without saving."""
+        self.window.close_settings()
+        return "break"
 
 
 class ReviewWindow:
@@ -238,9 +251,9 @@ class ReviewWindow:
         config_file=None,
     ):
         self.settings_path = settings_path
-        # The ConfigFile from rom_cleanup_workbench.py; without one, the settings dialog is not offered.
+        # The ConfigFile from rom_cleanup_workbench.py; without one, the settings are not offered.
         self.config_file = config_file
-        self.settings_dialog = None
+        self.settings_panel = None
         self.analyze = analyze
         self.directory = directory
         self.review = None
@@ -382,11 +395,11 @@ class ReviewWindow:
         return messagebox.askyesno(tr("window.discard_title"), question, default="no", parent=self.root)
 
     def reanalyze(self) -> None:
-        if self._may_discard_changes(tr("window.discard_reanalyze")):
+        if self.settings_panel is None and self._may_discard_changes(tr("window.discard_reanalyze")):
             self.start_analysis()
 
     def choose_directory(self) -> None:
-        if not self._may_discard_changes(tr("window.discard_folder")):
+        if self.settings_panel is not None or not self._may_discard_changes(tr("window.discard_folder")):
             return
         chosen = filedialog.askdirectory(
             parent=self.root, mustexist=True, title=tr("window.choose_folder"), initialdir=self.directory or None,
@@ -451,7 +464,7 @@ class ReviewWindow:
         style.configure("Treeview.Heading", background=_DARK_GRAY, foreground=_WHITE, relief="flat")
         style.map("Treeview.Heading", background=[("active", _GRAY)])
         style.configure("TButton", background=_DARK_GRAY, foreground=_WHITE, bordercolor=_GRAY)
-        style.map("TButton", background=[("active", _GRAY)])
+        style.map("TButton", background=[("active", _GRAY)], foreground=[("disabled", _LIGHT_GRAY)])
         style.configure("TCheckbutton", background=_BLACK, foreground=_WHITE, indicatorbackground=_BLACK)
         style.map(
             "TCheckbutton",
@@ -466,7 +479,9 @@ class ReviewWindow:
         style.map(
             "TRadiobutton",
             background=[("active", _BLACK)],
+            foreground=[("disabled", _LIGHT_GRAY)],
             indicatorbackground=[("active", _GRAY)],
+            indicatorforeground=[("disabled", _LIGHT_GRAY)],
         )
         self._fit_radio_indicator()
         style.configure(_HIGHLIGHT_STYLE, background=_GREEN, foreground=_WHITE)
@@ -543,10 +558,13 @@ class ReviewWindow:
         self.status_label.bind("<Configure>", lambda event: self.status_label.configure(wraplength=event.width - 16))
         ttk.Button(bottom, text=tr("window.button.close"), command=self.close).pack(side="right")
         # "Proceed": Besides deleting, the button also confirms the suspected save files.
-        ttk.Button(bottom, text=tr("window.button.proceed"), command=self.confirm_delete).pack(side="right", padx=8)
-        ttk.Button(bottom, text=tr("window.button.reanalyze"), command=self.reanalyze).pack(side="right")
-        ttk.Button(bottom, text=tr("window.button.folder"), command=self.choose_directory).pack(side="right", padx=8)
-        self.settings_button = ttk.Button(bottom, text=tr("window.button.settings"), command=self.open_settings)
+        proceed = ttk.Button(bottom, text=tr("window.button.proceed"), command=self.confirm_delete)
+        proceed.pack(side="right", padx=8)
+        reanalyze = ttk.Button(bottom, text=tr("window.button.reanalyze"), command=self.reanalyze)
+        reanalyze.pack(side="right")
+        folder = ttk.Button(bottom, text=tr("window.button.folder"), command=self.choose_directory)
+        folder.pack(side="right", padx=8)
+        self.settings_button = ttk.Button(bottom, text=tr("window.button.settings"), command=self.toggle_settings)
         if self.config_file is not None:
             self.settings_button.pack(side="right")
         ttk.Label(bottom, text=tr("window.filter")).pack(side="left", padx=(0, 8))
@@ -554,20 +572,27 @@ class ReviewWindow:
         self.search_entry.pack(side="left", fill="x", expand=True)
         self._bind_search_entry()
         self.bottom_row = bottom
+        # Everything that acts on the file list; locked while the settings take its place.
+        self._list_controls = [proceed, reanalyze, folder, self.search_entry]
 
         # Above the green row, so that it stays the second-to-last row of the window.
         options = ttk.Frame(self.root, padding=(8, 8, 8, 0))
         options.pack(side="bottom", fill="x")
         for value, label in _SCOPES:
-            ttk.Radiobutton(
+            button = ttk.Radiobutton(
                 options, text=tr(label), value=value, variable=self.scope, command=self._scope_changed,
-            ).pack(side="left", padx=(0, 16))
+            )
+            button.pack(side="left", padx=(0, 16))
+            self._list_controls.append(button)
 
-        middle = ttk.Frame(self.root)
+        middle = self.middle = ttk.Frame(self.root)
         middle.pack(fill="both", expand=True)
+        # The list and its scrollbar, hidden together while the settings are open.
+        self.list_frame = ttk.Frame(middle)
+        self.list_frame.pack(fill="both", expand=True)
         # "hint" stays the first value of every row; only the display puts the size before it.
         self.tree = ttk.Treeview(
-            middle, columns=("hint", "size"), displaycolumns=("size", "hint"), selectmode="extended",
+            self.list_frame, columns=("hint", "size"), displaycolumns=("size", "hint"), selectmode="extended",
         )
         self.tree.heading("#0", text=tr("window.column.file"), anchor="w")
         self.tree.heading("size", text=tr("window.column.size") + _CELL_GAP, anchor="e")
@@ -576,7 +601,7 @@ class ReviewWindow:
         self.tree.column("size", anchor="e", stretch=False)
         self.tree.column("hint", width=500, stretch=True)
         self._fit_size_column()
-        scrollbar = ttk.Scrollbar(middle, orient="vertical", command=self.tree.yview)
+        scrollbar = ttk.Scrollbar(self.list_frame, orient="vertical", command=self.tree.yview)
         self.tree.configure(yscrollcommand=scrollbar.set)
         scrollbar.pack(side="right", fill="y")
         self.tree.pack(side="left", fill="both", expand=True)
@@ -603,14 +628,15 @@ class ReviewWindow:
         self.root.bind("<Control-o>", lambda _event: self.choose_directory())
         self.root.bind("<Control-O>", lambda _event: self.choose_directory())
         self.root.bind("<F5>", lambda _event: self.reanalyze())
-        self.root.bind("<Control-e>", lambda _event: self.open_settings())
-        self.root.bind("<Control-E>", lambda _event: self.open_settings())
+        self.root.bind("<Control-e>", lambda _event: self.toggle_settings())
+        self.root.bind("<Control-E>", lambda _event: self.toggle_settings())
         self.root.bind("<Control-f>", lambda _event: self.focus_search())
         self.root.bind("<Control-F>", lambda _event: self.focus_search())
         # "break" prevents Tab from passing the focus to the next button as usual.
         self.root.bind("<Tab>", lambda _event: self._move_game(1))
         self.root.bind("<Shift-Tab>", lambda _event: self._move_game(-1))
-        self.root.bind("<Escape>", lambda _event: self.close())
+        # With the settings open, Esc only returns to the list.
+        self.root.bind("<Escape>", lambda _event: self.close_settings() if self.settings_panel else self.close())
         # The list needs its own binding, because its default binding would otherwise scroll first.
         self.root.bind("<Control-MouseWheel>", self._on_zoom)
         self.tree.bind("<Control-MouseWheel>", self._on_zoom)
@@ -634,7 +660,9 @@ class ReviewWindow:
         entry.bind("<Escape>", lambda _event: self.leave_search(clear=True))
         entry.bind("<Control-MouseWheel>", self._on_zoom)
 
-    def focus_search(self) -> str:
+    def focus_search(self) -> str | None:
+        if self.settings_panel is not None:
+            return None
         self.search_entry.focus_set()
         self.search_entry.selection_range(0, "end")
         self.search_entry.icursor("end")
@@ -691,7 +719,7 @@ class ReviewWindow:
         self._restore_selection(selection)
         self._update_status()
         # Also when an analysis ends during typing: In the list, the next letter could be a D or P.
-        if self.root.focus_get() is not self.search_entry:
+        if self.root.focus_get() is not self.search_entry and self.settings_panel is None:
             self.tree.focus_set()
 
     def _scope_flags(self) -> tuple[bool, bool, str]:
@@ -794,8 +822,10 @@ class ReviewWindow:
             self.tree.see(target)
         return "break"
 
-    def _move_game(self, step: int) -> str:
+    def _move_game(self, step: int) -> str | None:
         """Jumps to the neighboring game and selects its first file, so that D and P work at once."""
+        if self.settings_panel is not None:
+            return None  # Tab moves between the fields of the settings as usual.
         game = self.tree.focus()
         while game and self.tree.parent(game):
             game = self.tree.parent(game)
@@ -847,7 +877,8 @@ class ReviewWindow:
         self.status.set(self.review.status(*self._scope_flags()))
 
     def _move_selected(self, move_name: str) -> None:
-        if self.review is None:
+        # With the settings open, the list is hidden: D and P must not change what cannot be seen.
+        if self.review is None or self.settings_panel is not None:
             return
         move = getattr(self.review, move_name)
         rows = [row for row in self.tree.selection() if row in self._files]
@@ -869,7 +900,7 @@ class ReviewWindow:
         self._move_selected("promote")
 
     def confirm_delete(self) -> None:
-        if self.review is None:
+        if self.review is None or self.settings_panel is not None:
             return
         if not any(result.marked for result in self.review.results):
             self._confirm_save_files_only()
@@ -895,31 +926,63 @@ class ReviewWindow:
         # The Review object has dropped the deleted files; the folder is not analyzed again.
         self.show_review(self.review)
 
+    def toggle_settings(self) -> str:
+        """Settings... and Ctrl+E open the settings in place of the list, and a second time close them."""
+        if self.settings_panel is not None:
+            self.close_settings()
+        else:
+            self.open_settings()
+        return "break"
+
     def open_settings(self) -> None:
-        if self.config_file is None:
-            return
-        if self.settings_dialog is not None:
-            self.settings_dialog.top.lift()
+        if self.config_file is None or self.settings_panel is not None:
             return
         try:
-            self.settings_dialog = SettingsDialog(self)
+            panel = SettingsPanel(self)
         except ValueError as error:
-            # A broken file is not overwritten: It may contain entries the dialog does not know.
+            # A broken file is not overwritten: It may contain entries the settings do not know.
             messagebox.showerror(tr("settings.error_title"), str(error), parent=self.root)
+            return
+        self.settings_panel = panel
+        self._hide_nothing_to_do()
+        self.list_frame.pack_forget()
+        panel.frame.pack(fill="both", expand=True)
+        self._lock_list(True)
+        # A low window grows until every field of the settings fits; closing restores the old minimum.
+        self.root.update_idletasks()
+        width, height = self.root.minsize()
+        self.root.minsize(width, max(height, min(self.root.winfo_reqheight(), self.root.winfo_screenheight())))
 
-    def save_settings(self, dialog: SettingsDialog) -> None:
+    def close_settings(self) -> None:
+        """Brings the file list back, as it was."""
+        if self.settings_panel is None:
+            return
+        self.settings_panel.frame.destroy()
+        self.settings_panel = None
+        self.list_frame.pack(fill="both", expand=True)
+        self._lock_list(False)
+        self._fit_bottom_row()  # Back to the usual minimum size.
+        if self.review is not None and self._analysis is None:
+            self._show_all_groups()  # Also brings back "Nothing to do." if it applies.
+        self.tree.focus_set()
+
+    def _lock_list(self, locked: bool) -> None:
+        for widget in self._list_controls:
+            widget.state(["disabled"] if locked else ["!disabled"])
+
+    def save_settings(self, panel: SettingsPanel) -> None:
         """Writes the settings; a new priority or new tags take effect at once through a new analysis."""
-        language, regions, tags = dialog.language_code(), dialog.region_list(), dialog.tag_list()
-        before = dialog.values
+        language, regions, tags = panel.language_code(), panel.region_list(), panel.tag_list()
+        before = panel.values
         rules_changed = regions != before["region_priority"] or tags != before["low_priority_tags"]
         if rules_changed and not self._may_discard_changes(tr("settings.discard")):
             return
         try:
             self.config_file.write(language, regions, tags)
         except (OSError, ValueError) as error:
-            messagebox.showerror(tr("settings.error_title"), str(error), parent=dialog.top)
+            messagebox.showerror(tr("settings.error_title"), str(error), parent=self.root)
             return
-        dialog.close()
+        self.close_settings()
         if language != before["language"]:
             messagebox.showinfo(tr("settings.restart_title"), tr("settings.language_hint"), parent=self.root)
         if rules_changed:
