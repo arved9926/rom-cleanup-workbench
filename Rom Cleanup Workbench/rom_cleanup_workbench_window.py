@@ -16,7 +16,8 @@ import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog
 from tkinter import font as tkfont
-from tkinter import messagebox, ttk
+from tkinter import messagebox as _system_messagebox
+from tkinter import ttk
 
 from translations import LANGUAGE_NAMES, current_language, tr
 
@@ -112,6 +113,44 @@ def add_confirmed_saves(path: Path, files: dict[str, int]) -> None:
     _save_settings(path, **{_CONFIRMED_KEY: {**load_confirmed_saves(path), **files}})
 
 
+# Every open window under the name of its Tk root, so that a question finds the window it belongs to.
+_WINDOWS: dict = {}
+
+
+class _InWindowMessages:
+    """Questions and messages inside the program window instead of Windows popups.
+
+    Windows labels the buttons of its popups in its own language, whatever language the program speaks.
+    The calls are the same as those of tkinter.messagebox, so the code and its tests stay as they are.
+    """
+
+    @staticmethod
+    def _ask(kind, title, message, buttons, default, parent):
+        window = _WINDOWS.get(str(parent))
+        if window is None:  # No program window, for example a test of a single function.
+            show = {"question": _system_messagebox.askyesno, "info": _system_messagebox.showinfo,
+                    "warning": _system_messagebox.showwarning, "error": _system_messagebox.showerror}[kind]
+            return show(title, message, parent=parent)
+        return window.ask(kind, title, message, buttons, default)
+
+    def askyesno(self, title, message, *, parent=None, default="yes", icon="question", **_options) -> bool:
+        buttons = (("dialog.yes", True), ("dialog.no", False))
+        return bool(self._ask("warning" if icon == "warning" else "question", title, message, buttons,
+                              default == "yes", parent))
+
+    def showinfo(self, title, message, *, parent=None, **_options) -> None:
+        self._ask("info", title, message, (("dialog.ok", None),), None, parent)
+
+    def showwarning(self, title, message, *, parent=None, **_options) -> None:
+        self._ask("warning", title, message, (("dialog.ok", None),), None, parent)
+
+    def showerror(self, title, message, *, parent=None, **_options) -> None:
+        self._ask("error", title, message, (("dialog.ok", None),), None, parent)
+
+
+messagebox = _InWindowMessages()
+
+
 class _AnalysisReplaced(Exception):
     """A newer analysis has replaced this one."""
 
@@ -119,7 +158,7 @@ class _AnalysisReplaced(Exception):
 class SettingsPanel:
     """Edits language, region priority and low priority tags in place of the file list.
 
-    The list and everything that acts on it is locked meanwhile (see ReviewWindow._lock_list).
+    The list and everything that acts on it is locked meanwhile (see ReviewWindow._refresh_locks).
     """
 
     def __init__(self, window: "ReviewWindow"):
@@ -281,6 +320,11 @@ class ReviewWindow:
         self._group_ids = {}
         self._file_ids = {}
         self._files = {}
+        # Open questions, the newest last: each (frame, answer variable, values, index for Esc).
+        self._questions = []
+        _WINDOWS[str(self.root)] = self
+        self.root.bind("<Destroy>", lambda event: _WINDOWS.pop(str(self.root), None) if event.widget is self.root else None,
+                       add="+")
 
         self._build_widgets()
         self._fit_bottom_row()
@@ -395,11 +439,11 @@ class ReviewWindow:
         return messagebox.askyesno(tr("window.discard_title"), question, default="no", parent=self.root)
 
     def reanalyze(self) -> None:
-        if self.settings_panel is None and self._may_discard_changes(tr("window.discard_reanalyze")):
+        if not self._list_locked() and self._may_discard_changes(tr("window.discard_reanalyze")):
             self.start_analysis()
 
     def choose_directory(self) -> None:
-        if self.settings_panel is not None or not self._may_discard_changes(tr("window.discard_folder")):
+        if self._list_locked() or not self._may_discard_changes(tr("window.discard_folder")):
             return
         chosen = filedialog.askdirectory(
             parent=self.root, mustexist=True, title=tr("window.choose_folder"), initialdir=self.directory or None,
@@ -556,7 +600,8 @@ class ReviewWindow:
         self.status_label = ttk.Label(self.root, textvariable=self.status, style=_HIGHLIGHT_STYLE, padding=8)
         self.status_label.pack(side="bottom", fill="x")
         self.status_label.bind("<Configure>", lambda event: self.status_label.configure(wraplength=event.width - 16))
-        ttk.Button(bottom, text=tr("window.button.close"), command=self.close).pack(side="right")
+        self.close_button = ttk.Button(bottom, text=tr("window.button.close"), command=self.close)
+        self.close_button.pack(side="right")
         # "Proceed": Besides deleting, the button also confirms the suspected save files.
         proceed = ttk.Button(bottom, text=tr("window.button.proceed"), command=self.confirm_delete)
         proceed.pack(side="right", padx=8)
@@ -636,7 +681,7 @@ class ReviewWindow:
         self.root.bind("<Tab>", lambda _event: self._move_game(1))
         self.root.bind("<Shift-Tab>", lambda _event: self._move_game(-1))
         # With the settings open, Esc only returns to the list.
-        self.root.bind("<Escape>", lambda _event: self.close_settings() if self.settings_panel else self.close())
+        self.root.bind("<Escape>", lambda _event: self._on_escape())
         # The list needs its own binding, because its default binding would otherwise scroll first.
         self.root.bind("<Control-MouseWheel>", self._on_zoom)
         self.tree.bind("<Control-MouseWheel>", self._on_zoom)
@@ -661,7 +706,7 @@ class ReviewWindow:
         entry.bind("<Control-MouseWheel>", self._on_zoom)
 
     def focus_search(self) -> str | None:
-        if self.settings_panel is not None:
+        if self._list_locked():
             return None
         self.search_entry.focus_set()
         self.search_entry.selection_range(0, "end")
@@ -719,7 +764,7 @@ class ReviewWindow:
         self._restore_selection(selection)
         self._update_status()
         # Also when an analysis ends during typing: In the list, the next letter could be a D or P.
-        if self.root.focus_get() is not self.search_entry and self.settings_panel is None:
+        if self.root.focus_get() is not self.search_entry and not self._list_locked():
             self.tree.focus_set()
 
     def _scope_flags(self) -> tuple[bool, bool, str]:
@@ -824,7 +869,7 @@ class ReviewWindow:
 
     def _move_game(self, step: int) -> str | None:
         """Jumps to the neighboring game and selects its first file, so that D and P work at once."""
-        if self.settings_panel is not None:
+        if self._list_locked():
             return None  # Tab moves between the fields of the settings as usual.
         game = self.tree.focus()
         while game and self.tree.parent(game):
@@ -878,7 +923,7 @@ class ReviewWindow:
 
     def _move_selected(self, move_name: str) -> None:
         # With the settings open, the list is hidden: D and P must not change what cannot be seen.
-        if self.review is None or self.settings_panel is not None:
+        if self.review is None or self._list_locked():
             return
         move = getattr(self.review, move_name)
         rows = [row for row in self.tree.selection() if row in self._files]
@@ -900,7 +945,7 @@ class ReviewWindow:
         self._move_selected("promote")
 
     def confirm_delete(self) -> None:
-        if self.review is None or self.settings_panel is not None:
+        if self.review is None or self._list_locked():
             return
         if not any(result.marked for result in self.review.results):
             self._confirm_save_files_only()
@@ -928,7 +973,9 @@ class ReviewWindow:
 
     def toggle_settings(self) -> str:
         """Settings... and Ctrl+E open the settings in place of the list, and a second time close them."""
-        if self.settings_panel is not None:
+        if self._questions:
+            pass  # A question is open: it must be answered first.
+        elif self.settings_panel is not None:
             self.close_settings()
         else:
             self.open_settings()
@@ -947,7 +994,7 @@ class ReviewWindow:
         self._hide_nothing_to_do()
         self.list_frame.pack_forget()
         panel.frame.pack(fill="both", expand=True)
-        self._lock_list(True)
+        self._refresh_locks()
         # A low window grows until every field of the settings fits; closing restores the old minimum.
         self.root.update_idletasks()
         width, height = self.root.minsize()
@@ -960,15 +1007,11 @@ class ReviewWindow:
         self.settings_panel.frame.destroy()
         self.settings_panel = None
         self.list_frame.pack(fill="both", expand=True)
-        self._lock_list(False)
+        self._refresh_locks()
         self._fit_bottom_row()  # Back to the usual minimum size.
         if self.review is not None and self._analysis is None:
             self._show_all_groups()  # Also brings back "Nothing to do." if it applies.
         self.tree.focus_set()
-
-    def _lock_list(self, locked: bool) -> None:
-        for widget in self._list_controls:
-            widget.state(["disabled"] if locked else ["!disabled"])
 
     def save_settings(self, panel: SettingsPanel) -> None:
         """Writes the settings; a new priority or new tags take effect at once through a new analysis."""
@@ -1036,8 +1079,84 @@ class ReviewWindow:
             self.progress_bar.place_forget()
 
     def close(self) -> None:
+        if self._questions:
+            self._answer(self._questions[-1][3])  # The X of the window answers an open question like Esc.
+            return
         if self._may_discard_changes(tr("window.discard_close")):
             self.root.destroy()
+
+    def ask(self, kind: str, title: str, message: str, buttons, default) -> object:
+        """Shows a question or message in place of the list and waits for the answer.
+
+        buttons: (text key, value) pairs. Enter chooses default, Esc the last button. Meanwhile the list
+        and its commands are locked, so that nothing changes behind the question.
+        """
+        colors = {"warning": _RED, "error": _RED, "question": _GREEN, "info": _GREEN}
+        frame = ttk.Frame(self.middle, padding=32)
+        frame.columnconfigure(1, weight=1)
+        dot = tk.Canvas(frame, width=22, height=22, background=_BLACK, highlightthickness=0)
+        dot.create_oval(2, 2, 20, 20, fill=colors.get(kind, _GREEN), outline="")
+        dot.grid(row=0, column=0, sticky="nw", padx=(0, 12), pady=(4, 0))
+        ttk.Label(frame, text=title, font=self.bold_font).grid(row=0, column=1, sticky="w")
+        body = ttk.Label(frame, text=message, justify="left")
+        body.grid(row=1, column=1, sticky="ew", pady=(12, 24))
+        frame.bind("<Configure>", lambda event: body.configure(wraplength=max(event.width - 120, 200)))
+        row = ttk.Frame(frame)
+        row.grid(row=2, column=1, sticky="w")
+        answer = tk.IntVar(self.root, -1)
+        values = [value for _key, value in buttons]
+        widgets = []
+        for index, (key, _value) in enumerate(buttons):
+            button = ttk.Button(row, text=tr(key), command=lambda index=index: answer.set(index))
+            button.pack(side="left", padx=(0, 8))
+            button.bind("<Return>", lambda _event, index=index: answer.set(index))
+            widgets.append(button)
+        default_index = values.index(default) if default in values else 0
+        self._questions.append((frame, answer, values, len(values) - 1))
+        frame.place(in_=self.middle, relx=0, rely=0, relwidth=1, relheight=1)
+        frame.lift()
+        self._refresh_locks()
+        widgets[default_index].focus_set()
+        try:
+            self.root.wait_variable(answer)
+            chosen = answer.get()
+        except tk.TclError:  # The window was destroyed meanwhile.
+            return values[-1]
+        self._questions.pop()
+        frame.destroy()
+        self._refresh_locks()
+        if not self._questions:
+            self._focus_after_question()
+        return values[chosen] if 0 <= chosen < len(values) else values[-1]
+
+    def _answer(self, index: int) -> None:
+        if self._questions:
+            self._questions[-1][1].set(index)
+
+    def _focus_after_question(self) -> None:
+        if self.settings_panel is not None:
+            self.settings_panel.frame.focus_set()
+        else:
+            self.tree.focus_set()
+
+    def _on_escape(self) -> None:
+        if self._questions:
+            self._answer(self._questions[-1][3])
+        elif self.settings_panel is not None:
+            self.close_settings()
+        else:
+            self.close()
+
+    def _list_locked(self) -> bool:
+        """The list is hidden behind the settings or a question: nothing may change it."""
+        return self.settings_panel is not None or bool(self._questions)
+
+    def _refresh_locks(self) -> None:
+        locked = self._list_locked()
+        for widget in self._list_controls:
+            widget.state(["disabled"] if locked else ["!disabled"])
+        for widget in (self.settings_button, self.close_button):
+            widget.state(["disabled"] if self._questions else ["!disabled"])
 
     def run(self) -> int:
         if self.directory is None:

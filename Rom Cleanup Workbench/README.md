@@ -12,7 +12,7 @@ The program speaks English, German, Italian, Spanish, French and Japanese (see [
 python rom_cleanup_workbench.py "D:\Games"
 ```
 
-The program opens the analysis window and shows everything there; it prints nothing in the terminal and asks nothing there. Without a directory, the window asks for the folder. Files are only deleted after the confirmation in the window. **Deleted files do not go to the Recycle Bin.**
+The program opens the analysis window and shows everything there; it prints nothing in the terminal and asks nothing there. Questions and messages also appear inside the window, in the language of the program, never as Windows popups; Enter chooses the preselected button and Esc answers No. Without a directory, the window asks for the folder. Files are only deleted after the confirmation in the window. **Deleted files do not go to the Recycle Bin.**
 
 | Option | Effect |
 | --- | --- |

@@ -1508,6 +1508,112 @@ class ReviewWindowTests(RedundanzTestCase):
         self.assertEqual(window.config_file.path.read_text(encoding="utf-8"), "{not json")
         self.assertTrue(window.list_frame.winfo_manager())  # The list stays in place.
 
+    def no_system_popups(self):
+        """Fails the test if a Windows popup would open instead of a question in the window."""
+        import rom_cleanup_workbench_window as window_module
+
+        stack = contextlib.ExitStack()
+        for name in ("askyesno", "showinfo", "showwarning", "showerror"):
+            stack.enter_context(mock.patch.object(
+                window_module._system_messagebox, name, side_effect=AssertionError("Windows popup opened"),
+            ))
+        self.addCleanup(stack.close)
+
+    def answer_soon(self, window, button, seen=None):
+        """Presses a button of the question that is about to open, like a person would."""
+        def press():
+            frame = window._questions[-1][0] if window._questions else None
+            # A question already answered is still listed until its wait ends: wait for the next one.
+            if frame is None or getattr(frame, "answered_by_test", False):
+                window.root.after(20, press)
+                return
+            frame.answered_by_test = True
+            buttons = [w for w in self._descendants(frame) if w.winfo_class() == "TButton"]
+            if seen is not None:
+                seen.append({
+                    "buttons": [b.cget("text") for b in buttons],
+                    "texts": [w.cget("text") for w in self._descendants(frame) if w.winfo_class() == "TLabel"],
+                    "locked": [w.instate(["disabled"]) for w in window._list_controls],
+                    "placed": frame.winfo_manager() == "place" and frame.master is window.middle,
+                })
+            buttons[button].invoke()
+        window.root.after(20, press)
+
+    def test_question_appears_in_the_window_with_buttons_in_its_language(self):
+        self.no_system_popups()
+        self.write("Title (USA).bin")
+        self.write("Title (Japan).bin")
+        window = self.open_window()
+        seen = []
+        self.answer_soon(window, 1, seen)
+        import rom_cleanup_workbench_window as window_module
+
+        self.assertFalse(window_module.messagebox.askyesno("Title?", "Really?", parent=window.root))
+        self.assertEqual(seen[0]["buttons"], ["Yes", "No"])
+        self.assertIn("Really?", seen[0]["texts"])
+        self.assertTrue(seen[0]["placed"])
+        self.assertTrue(all(seen[0]["locked"]))
+        self.assertFalse(window._questions)
+        self.assertFalse(any(widget.instate(["disabled"]) for widget in window._list_controls))
+        self.answer_soon(window, 0)
+        self.assertTrue(window_module.messagebox.askyesno("Title?", "Really?", parent=window.root))
+
+    def test_question_buttons_follow_the_language(self):
+        self.no_system_popups()
+        import rom_cleanup_workbench_window as window_module
+
+        for language, expected in (("de", ["Ja", "Nein"]), ("it", ["Sì", "No"]), ("ja", ["はい", "いいえ"])):
+            translations.set_language(language)
+            window = self.open_window()
+            seen = []
+            self.answer_soon(window, 1, seen)
+            window_module.messagebox.askyesno("?", "?", parent=window.root)
+            self.assertEqual(seen[0]["buttons"], expected, language)
+            window.root.destroy()
+
+    def test_escape_and_the_window_close_answer_no(self):
+        self.no_system_popups()
+        window = self.open_window()
+        import rom_cleanup_workbench_window as window_module
+
+        window.root.after(50, window._on_escape)
+        self.assertFalse(window_module.messagebox.askyesno("?", "?", parent=window.root, default="yes"))
+        window.root.after(50, window.close)
+        self.assertFalse(window_module.messagebox.askyesno("?", "?", parent=window.root, default="yes"))
+        self.assertTrue(window.root.winfo_exists())
+
+    def test_keys_of_the_list_do_nothing_while_a_question_is_open(self):
+        self.no_system_popups()
+        self.write("Title (USA).bin")
+        self.write("Title (Japan).bin")
+        window = self.open_window()
+        window.tree.selection_set(self.row_of(window, "Title (USA).bin"))
+        import rom_cleanup_workbench_window as window_module
+
+        def try_keys():
+            window.demote_selected()
+            window.confirm_delete()  # Must not open a second question.
+            self.keys_tried = len(window._questions)
+            window._answer(0)
+        window.root.after(50, try_keys)
+        window_module.messagebox.showinfo("Info", "Hello", parent=window.root)
+        self.assertEqual(self.keys_tried, 1)
+        self.assertEqual(window.review.moved_count(), 0)
+
+    def test_deleting_asks_in_the_window(self):
+        self.no_system_popups()
+        self.write("Title (USA).bin")
+        self.write("Title (Japan).bin")
+        window = self.open_window()
+        window.analyze = mock.Mock(side_effect=AssertionError("analyzed again"))
+        seen = []
+        self.answer_soon(window, 0, seen)  # Yes, delete.
+        self.answer_soon(window, 0)  # OK to the result; scheduled now, it waits for the second question.
+        window.confirm_delete()
+        self.assertIn("Permanently delete 1 file(s)", " ".join(seen[0]["texts"]))
+        self.assertEqual([path.name for path in self.dir.iterdir()], ["Title (USA).bin"])
+        self.assertFalse(window._questions)
+
     def test_settings_take_the_place_of_the_list_in_the_main_window(self):
         window = self.window_with_settings()
         window.toggle_settings()
