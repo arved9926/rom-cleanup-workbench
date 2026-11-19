@@ -1,0 +1,954 @@
+"""Rom Cleanup Workbench: finds duplicate ROM files in a directory and deletes them on request.
+
+File names: <game name> (region or extra info) (...).<file type>
+For each game name the file with the highest region priority is kept, all
+others are marked for deletion. Details are in README.md.
+"""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import os
+import re
+import sys
+import zipfile
+import zlib
+from dataclasses import dataclass, field, replace
+from pathlib import Path, PurePosixPath
+
+from translations import DEFAULT_LANGUAGE, LANGUAGES, NO_REGION_WORDS, set_language, tr
+
+NO_REGION = "none"
+REVIEW_ALL = "all"
+REVIEW_PROBLEMS = "problems"
+# The radio button values in the window; without --review the saved choice applies there.
+_REVIEW_SCOPES = {REVIEW_ALL: "marked", REVIEW_PROBLEMS: "problems"}
+DEFAULT_CONFIG_PATH = Path(__file__).with_name("redundanz_config.json")
+DEFAULT_CONFIG = {
+    "region_priority": ["USA", "Europe", "Japan", NO_REGION],
+    "region_aliases": {
+        "USA": ["US"],
+        "Europe": ["Europa", "EU"],
+        "Japan": ["JP", "JPN"],
+    },
+    "delete_tags": ["Proto"],
+    "low_priority_tags": ["Beta"],
+    "part_tags": ["Disc", "Disk", "CD", "Side", "Seite", "Part", "Teil", "Track"],
+    "language": DEFAULT_LANGUAGE,
+}
+
+_TAG_RE = re.compile(r"\(([^()]*)\)|\[([^\[\]]*)\]")
+_EXT_RE = re.compile(r"\.[A-Za-z0-9]+$")
+_SEPARATOR_RE = re.compile(r"[-_]")
+_AND_RE = re.compile(r"\b(?:und|and)\b")
+_THE_RE = re.compile(r"^the\s+|(?:,\s*|\s+)the,?$")
+# In the game name only the form v1.1 counts, so that "Title V2" stays a title of its own.
+_NAME_VERSION_RE = re.compile(r"[\s_-]+(v\d+(?:\.\d+)+)$", re.IGNORECASE)
+_VERSION_TAG_RE = re.compile(
+    r"(?:v|ver\.?|version|rev\.?|revision)\s*(\d+(?:\.\d+)*)|rev(?:ision)?\s+([a-z])",
+    re.IGNORECASE,
+)
+_NUMBER_RE = re.compile(r"\d+(?:\.\d+)*")
+_CHUNK_SIZE = 1024 * 1024
+_NO_ROM_PREFIX = "gamelist"  # Metadata of frontends such as gamelist.xml: No ROM, so never marked.
+_SAVE_FILE_RATIO = 4  # A marked file below 1/4 of the largest file of the game is kept.
+_HIDDEN_ATTRIBUTE = 0x2  # FILE_ATTRIBUTE_HIDDEN, the same value as stat.FILE_ATTRIBUTE_HIDDEN.
+_ZIP_DEFECT_ERRORS = (zipfile.BadZipFile, EOFError, zlib.error)
+# These errors say nothing about the archive: The file may be locked or use a
+# method Python does not know, such as Deflate64 in large Windows ZIPs.
+_ZIP_READ_ERRORS = (RuntimeError, NotImplementedError, OSError)
+
+
+class Note(str):
+    """A note as shown, in the current language; kind is the same in every language.
+
+    The rules ask for the kind, never for the text, so that every language decides the same way.
+    """
+
+    kind: str
+
+    def __new__(cls, kind: str, **values) -> "Note":
+        note = super().__new__(cls, tr("note." + kind, **values))
+        note.kind = kind
+        return note
+
+
+def _has_note(notes, *kinds: str) -> bool:
+    return any(getattr(note, "kind", None) in kinds for note in notes)
+
+
+def normalize(text: str) -> str:
+    """Unifies text for comparisons (MaME = MAME = mame)."""
+    return " ".join(text.split()).casefold()
+
+
+def game_key(game: str) -> str:
+    """Comparison key: "&" = "und" = "and", "The X" = "X The" = "X, The" = "X" and
+    "Pac-Man" = "Pac Man" = "Pac_Man" = "PacMan".
+
+    "und" becomes "&" so that "H & M" does not turn into "Hund M" once the spaces are removed.
+    """
+    text = normalize(_SEPARATOR_RE.sub(" ", game.replace("&", " & ")))
+    key = _AND_RE.sub("&", text)
+    key = _THE_RE.sub("", key) or key
+    # Names made only of separators stay titles of their own instead of collapsing into an empty name.
+    return key.replace(" ", "") or normalize(game)
+
+
+def parse_filename(filename: str) -> tuple[str, list[str]]:
+    """Splits a file name into the game name and the bracket contents."""
+    ext_match = _EXT_RE.search(filename)
+    ext = ext_match.group() if ext_match else ""
+    stem = filename[: -len(ext)] if ext else filename
+
+    first_tag = _TAG_RE.search(stem)
+    game = (stem[: first_tag.start()] if first_tag else stem).strip()
+    # "Katz und Maus.abc (Japan).abc": The file type also appears before the bracket.
+    if ext and game.casefold().endswith(ext.casefold()):
+        game = game[: -len(ext)].strip()
+
+    tags = []
+    name_version = _NAME_VERSION_RE.search(game)
+    if name_version:
+        tags.append(name_version.group(1))
+        game = game[: name_version.start()].strip()
+
+    for match in _TAG_RE.finditer(stem):
+        content = match.group(1) if match.group(1) is not None else match.group(2)
+        tags.extend(part.strip() for part in content.split(",") if part.strip())
+    return game or stem.strip(), tags
+
+
+def _matches_tag(tag: str, names: list[str]) -> bool:
+    """Checks for the same word at the start: "Proto 2" matches "Proto", "Protocol" does not."""
+    tag = normalize(tag)
+    for name in names:
+        name = normalize(name)
+        if tag.startswith(name) and not tag[len(name):len(name) + 1].isalpha():
+            return True
+    return False
+
+
+def version_number(tags: list[str]) -> tuple[int, ...]:
+    """Returns the highest version number: v1.10 > v1.9 and v1.0 = v1; without a version ()."""
+    best: tuple[int, ...] = ()
+    for tag in tags:
+        match = _VERSION_TAG_RE.fullmatch(normalize(tag))
+        if not match:
+            continue
+        if match.group(1):
+            parts = [int(part) for part in match.group(1).split(".")]
+        else:
+            parts = [ord(match.group(2)) - ord("a") + 1]
+        while parts and parts[-1] == 0:
+            parts.pop()
+        best = max(best, tuple(parts))
+    return best
+
+
+def _newest_first(tags: list[str]) -> tuple[int, ...]:
+    """Sort key: higher versions first, v1.1 also before v1."""
+    return tuple(-part for part in version_number(tags)) + (1,)
+
+
+@dataclass
+class Config:
+    region_priority: list[str]
+    region_aliases: dict[str, list[str]]
+    delete_tags: list[str]
+    part_tags: list[str]
+    low_priority_tags: list[str] = field(default_factory=list)
+    language: str = DEFAULT_LANGUAGE
+    _canonical: dict[str, str] = field(init=False, repr=False)
+
+    def __post_init__(self):
+        self._canonical = {
+            normalize(alias): normalize(region)
+            for region, aliases in self.region_aliases.items()
+            for alias in aliases
+        }
+        # "keine", "aucune" and so on mean the same as "none" in region_priority.
+        for word in NO_REGION_WORDS:
+            self._canonical.setdefault(normalize(word), NO_REGION)
+        self._ranks = {}
+        for index, region in enumerate(self.region_priority):
+            self._ranks.setdefault(self.canonical(region), index)
+
+    @classmethod
+    def load(cls, path: Path | None) -> "Config":
+        """Loads the configuration; missing entries come from the defaults."""
+        values = dict(DEFAULT_CONFIG)
+        if path is not None:
+            # utf-8-sig: Some Windows editors save with a BOM.
+            with open(path, encoding="utf-8-sig") as handle:
+                loaded = json.load(handle)
+            if not isinstance(loaded, dict):
+                raise ValueError(tr("config.not_object"))
+            # A typo must not silently fall back to the defaults.
+            unknown = sorted(set(loaded) - set(DEFAULT_CONFIG))
+            if unknown:
+                raise ValueError(tr("config.unknown_entries", names=", ".join(unknown)))
+            for key, value in loaded.items():
+                if not isinstance(value, type(DEFAULT_CONFIG[key])):
+                    raise ValueError(tr("config.wrong_type", key=key))
+            values.update(loaded)
+        if values["language"] not in LANGUAGES:
+            raise ValueError(
+                tr("config.unknown_language", language=values["language"], languages=", ".join(LANGUAGES))
+            )
+        return cls(**{key: values[key] for key in DEFAULT_CONFIG})
+
+    def canonical(self, tag: str) -> str:
+        normalized = normalize(tag)
+        return self._canonical.get(normalized, normalized)
+
+    def is_region(self, tag: str) -> bool:
+        return tag != normalize(NO_REGION) and tag in self._ranks
+
+    def rank(self, tags: list[str]) -> int:
+        """Smaller is better; without a known region the entry "none" applies.
+
+        Files with extra info from low_priority_tags come after all others
+        and are still sorted by region among themselves.
+        """
+        ranks = [self._ranks[tag] for tag in tags if self.is_region(tag)]
+        if ranks:
+            rank = min(ranks)
+        else:
+            rank = self._ranks.get(normalize(NO_REGION), len(self.region_priority))
+        if any(_matches_tag(tag, self.low_priority_tags) for tag in tags):
+            rank += len(self.region_priority) + 1
+        return rank
+
+    def low_priority_number(self, tags: list[str]) -> tuple[int, ...]:
+        """Returns the highest number after a low priority tag: Beta 2 > Beta 1 > Beta; else ()."""
+        best: tuple[int, ...] = ()
+        for tag in tags:
+            text = normalize(tag)
+            for name in self.low_priority_tags:
+                if not _matches_tag(text, [name]):
+                    continue
+                match = _NUMBER_RE.fullmatch(text[len(normalize(name)):].strip())
+                if match:
+                    parts = [int(part) for part in match.group().split(".")]
+                    while parts and parts[-1] == 0:
+                        parts.pop()
+                    best = max(best, tuple(parts))
+        return best
+
+    def delete_reason(self, tags: list[str]) -> str | None:
+        for name in self.delete_tags:
+            if any(_matches_tag(tag, [name]) for tag in tags):
+                return name
+        return None
+
+    def version_key(self, tags: list[str]) -> frozenset[str]:
+        """Files with the same key belong together (Disc 1 + 2, .cue + .bin)."""
+        return frozenset(tag for tag in tags if not _matches_tag(tag, self.part_tags))
+
+
+@dataclass
+class ZipMember:
+    name: str
+    size: int
+    sha256: str
+
+
+@dataclass
+class Entry:
+    path: Path
+    game: str
+    tags: list[str]
+    members: list[ZipMember] | None = None
+    zip_error: Note | None = None
+    zip_defective: bool = False
+    notes: list[str] = field(default_factory=list)
+    moved: bool = False  # Moved by hand during the review, against the program's decision.
+    _sha256: str | None = None
+    _size: int | None = None
+
+    def content_size(self) -> int | None:
+        """Size of the content: For a ZIP the unpacked size, so that packing counts for nothing.
+
+        None for a ZIP that could not be read: Its archive size says nothing about the content.
+        """
+        if self.is_zip:
+            return sum(member.size for member in self.members) if self.members is not None else None
+        return self.size()
+
+    def size(self) -> int | None:
+        """File size in bytes, read once; None if the file cannot be read."""
+        if self._size is None:
+            try:
+                self._size = self.path.stat().st_size
+            except OSError:
+                return None
+        return self._size
+
+    @property
+    def is_zip(self) -> bool:
+        return self.path.suffix.casefold() == ".zip"
+
+    def sha256(self) -> str | None:
+        if self._sha256 is None:
+            digest = hashlib.sha256()
+            try:
+                with open(self.path, "rb") as handle:
+                    while chunk := handle.read(_CHUNK_SIZE):
+                        digest.update(chunk)
+            except OSError:
+                return None
+            self._sha256 = digest.hexdigest()
+        return self._sha256
+
+    def contains(self, member: ZipMember) -> bool:
+        """Checks whether the content of the ZIP member appears in this entry."""
+        if self.is_zip:
+            return any(other.sha256 == member.sha256 for other in self.members or [])
+        try:
+            if self.path.stat().st_size != member.size:
+                return False
+        except OSError:
+            return False
+        return self.sha256() == member.sha256
+
+
+@dataclass
+class GroupResult:
+    title: str
+    keep: list[Entry]
+    marked: list[Entry]
+    problems: list[str] = field(default_factory=list)
+
+
+def read_zip(entry: Entry) -> None:
+    """Reads the ZIP contents and remembers their size and checksum.
+
+    The contents are hashed directly while reading. This gives the same result
+    as temporary extraction, but needs no disk space and rules out harmful
+    paths in the archive.
+    """
+    members = []
+    try:
+        with zipfile.ZipFile(entry.path) as archive:
+            infos = archive.infolist()
+            if any(info.flag_bits & 0x1 for info in infos):
+                entry.zip_error = Note("zip_encrypted")
+                entry.zip_defective = True
+                return
+            for info in infos:
+                if info.is_dir():
+                    continue
+                digest = hashlib.sha256()
+                size = 0
+                with archive.open(info) as handle:
+                    while chunk := handle.read(_CHUNK_SIZE):
+                        digest.update(chunk)
+                        size += len(chunk)
+                members.append(ZipMember(info.filename, size, digest.hexdigest()))
+    except _ZIP_DEFECT_ERRORS as error:
+        entry.zip_error = Note("zip_defective", error=str(error) or type(error).__name__)
+        entry.zip_defective = True
+        return
+    except _ZIP_READ_ERRORS as error:
+        entry.zip_error = Note("zip_unreadable", error=str(error) or type(error).__name__)
+        return
+    entry.members = members
+
+
+def _adopt_tags_from_zip(entry: Entry, config: Config) -> None:
+    """Takes over the region and version of the ZIP contents if the ZIP name does not state them."""
+    regions = []
+    versions = []
+    for member in entry.members or []:
+        game, tags = parse_filename(PurePosixPath(member.name).name)
+        if game_key(game) != game_key(entry.game):
+            continue
+        for tag in map(config.canonical, tags):
+            if config.is_region(tag) and tag not in regions:
+                regions.append(tag)
+            elif version_number([tag]):
+                versions.append(tag)
+    if regions and not any(config.is_region(tag) for tag in entry.tags):
+        entry.tags.extend(regions)
+        entry.notes.append(Note("region_from_zip", regions=", ".join(regions)))
+    if versions and not version_number(entry.tags):
+        newest = max(versions, key=lambda tag: version_number([tag]))
+        entry.tags.append(newest)
+        entry.notes.append(Note("version_from_zip", version=newest))
+
+
+def _covering_entries(entry: Entry, others: list[Entry]) -> list[Entry]:
+    """Returns the entries that cover the whole ZIP content, otherwise an empty list."""
+    if not entry.members:
+        return []
+    covering = []
+    for member in entry.members:
+        source = next((other for other in others if other.contains(member)), None)
+        if source is None:
+            return []
+        if source not in covering:
+            covering.append(source)
+    return covering
+
+
+def _names(entries: list[Entry]) -> str:
+    return ", ".join(entry.path.name for entry in entries)
+
+
+def _sort_key(entry: Entry, config: Config):
+    return (
+        config.rank(entry.tags),
+        _newest_first(entry.tags),
+        # Like a version: The higher number wins, a Beta without a number loses to Beta 1.
+        tuple(-part for part in config.low_priority_number(entry.tags)) + (1,),
+        len(config.version_key(entry.tags)),
+        entry.is_zip,
+        entry.path.name.casefold(),
+    )
+
+
+def find_problems(keep: list[Entry], marked: list[Entry]) -> list[str]:
+    """Names the reasons why a person should look at this decision."""
+    entries = keep + marked
+    notes = [note for entry in entries for note in entry.notes]
+    problems = []
+    if not keep:
+        problems.append(tr("problem.nothing_kept"))
+    if _has_note(notes, "warning"):
+        problems.append(tr("problem.zip_not_kept"))
+    if any(entry.zip_defective for entry in entries):
+        problems.append(tr("problem.zip_defective"))
+    if any(entry.zip_error and not entry.zip_defective for entry in entries):
+        problems.append(tr("problem.zip_unreadable"))
+    if _has_note(notes, "save_suspected"):
+        problems.append(tr("problem.save_file"))
+    if _has_note(notes, "tie"):
+        problems.append(tr("problem.tie"))
+    if _has_note(notes, "differs"):
+        problems.append(tr("problem.zip_differs"))
+    # If names only match through the comparison, they may be two games ("Title 1-2", "Title 12").
+    if len({normalize(entry.game) for entry in entries}) > 1:
+        problems.append(tr("problem.spellings"))
+    # Same name, different file type: This may be the same game for another system.
+    kept_types = set()
+    for entry in keep:
+        if entry.is_zip:
+            kept_types.update(PurePosixPath(member.name).suffix.casefold() for member in entry.members or [])
+        else:
+            kept_types.add(entry.path.suffix.casefold())
+    if keep and any(not entry.is_zip and entry.path.suffix.casefold() not in kept_types for entry in marked):
+        problems.append(tr("problem.file_type"))
+    return problems
+
+
+def _suspected_save_files(entries: list[Entry], config: Config) -> list[Entry]:
+    """Finds files far smaller than another file of the game: maybe a status or save file.
+
+    They are set aside before the selection, so that they neither get deleted nor push out
+    the real ROM, for example a plain 1941.state the ZIP 1941.zip. A small plain file next to
+    a large plain file of its own version, such as a .cue next to its .bin, is part of that
+    version and is not suspected; a ZIP has no such companions outside. Files with delete_tags
+    or a defective ZIP are not suspected: these rules always apply.
+    """
+    suspected = []
+    for entry in entries:
+        size = entry.content_size()
+        if size is None or config.delete_reason(entry.tags) or entry.zip_defective:
+            continue
+        others = [other for other in entries if other is not entry and other.content_size() is not None]
+        if not others:
+            continue
+        largest = max(others, key=lambda other: other.content_size())
+        if size * _SAVE_FILE_RATIO >= largest.content_size():
+            continue
+        own_version = config.version_key(entry.tags)
+        if any(
+            not other.is_zip
+            and config.version_key(other.tags) == own_version
+            and size * _SAVE_FILE_RATIO < other.content_size()
+            for other in others
+        ):
+            continue
+        entry.notes.append(Note("save_suspected", ratio=_SAVE_FILE_RATIO, name=largest.path.name))
+        suspected.append(entry)
+    return suspected
+
+
+def save_file_key(path: Path) -> str:
+    """Key under which a confirmed save file is remembered; the same file always gets the same key."""
+    return os.path.normcase(os.path.abspath(path))
+
+
+def _suspected_entries(results: list[GroupResult]) -> list[Entry]:
+    return [
+        entry
+        for result in results
+        for entry in result.keep
+        if _has_note(entry.notes, "save_suspected")
+    ]
+
+
+def has_suspected_save_file(result: GroupResult) -> bool:
+    """Such games stay visible in every view, even without a marked file."""
+    return any(_has_note(entry.notes, "save_suspected") for entry in result.keep + result.marked)
+
+
+def analyze_group(entries: list[Entry], config: Config) -> GroupResult:
+    """Decides for all files of a game: keep or delete."""
+    # Single ZIPs are read too, otherwise a defect would go unnoticed.
+    for entry in entries:
+        if entry.is_zip:
+            read_zip(entry)
+            _adopt_tags_from_zip(entry, config)
+
+    suspected = _suspected_save_files(entries, config)
+    entries = [entry for entry in entries if not any(entry is other for other in suspected)]
+
+    marked: list[Entry] = []
+    candidates: list[Entry] = []
+    unreadable: list[Entry] = []
+    for entry in entries:
+        reason = config.delete_reason(entry.tags)
+        if reason:
+            entry.notes.append(Note("extra_info", reason=reason))
+            marked.append(entry)
+        elif entry.zip_defective:
+            entry.notes.append(entry.zip_error)
+            marked.append(entry)
+        elif entry.zip_error:
+            # An unreadable ZIP must neither push out a good file nor silently disappear.
+            entry.notes.append(entry.zip_error)
+            unreadable.append(entry)
+        else:
+            candidates.append(entry)
+
+    def sort_key(entry: Entry):
+        return _sort_key(entry, config)
+
+    keep: list[Entry] = []
+    if candidates:
+        best = min(candidates, key=sort_key)
+        best_version = config.version_key(best.tags)
+        for entry in sorted(candidates, key=sort_key):
+            if config.version_key(entry.tags) == best_version:
+                keep.append(entry)
+            else:
+                if config.rank(entry.tags) == config.rank(best.tags):
+                    if version_number(entry.tags) < version_number(best.tags):
+                        entry.notes.append(Note("older_version"))
+                    elif (
+                        version_number(entry.tags) == version_number(best.tags)
+                        and config.low_priority_number(entry.tags) < config.low_priority_number(best.tags)
+                    ):
+                        entry.notes.append(Note("older_beta"))
+                    else:
+                        entry.notes.append(Note("tie"))
+                marked.append(entry)
+
+    # Next to a plain file a ZIP file never remains, not even with different content.
+    plain_files = [entry for entry in keep if not entry.is_zip]
+    if plain_files:
+        for entry in [e for e in keep if e.is_zip] + unreadable:
+            entry.notes.append(Note("plain_preferred"))
+            marked.append(entry)
+        keep = plain_files
+        unreadable = []
+
+    # Several ZIP files of the same version are only duplicates if their content is the same.
+    for entry in [e for e in keep if e.is_zip]:
+        others = [other for other in keep if other is not entry]
+        covering = _covering_entries(entry, others)
+        if covering:
+            entry.notes.append(Note("identical", names=_names(covering)))
+            keep.remove(entry)
+            marked.append(entry)
+        elif any(sorted(other.tags) == sorted(entry.tags) for other in others):
+            entry.notes.append(Note("differs"))
+
+    for entry in marked:
+        if not entry.is_zip or entry.zip_error or not entry.members:
+            continue
+        if _has_note(entry.notes, "identical"):
+            continue
+        covering = _covering_entries(entry, keep)
+        if covering:
+            entry.notes.append(Note("identical", names=_names(covering)))
+        else:
+            entry.notes.append(Note("warning"))
+
+    keep.extend(unreadable)
+    keep.extend(suspected)
+    marked.sort(key=sort_key)
+    title = (keep or marked)[0].game
+    return GroupResult(title, keep, marked, find_problems(keep, marked))
+
+
+def _is_hidden(path: Path) -> bool:
+    """Hidden are names starting with a dot and, on Windows, files with the attribute "hidden"."""
+    if path.name.startswith("."):
+        return True
+    try:
+        attributes = getattr(path.stat(), "st_file_attributes", 0)
+    except OSError:
+        return False
+    return bool(attributes & _HIDDEN_ATTRIBUTE)
+
+
+def _is_rom_candidate(path: Path) -> bool:
+    """Only these files are analyzed; all others are never shown and never deleted."""
+    return path.is_file() and not path.name.casefold().startswith(_NO_ROM_PREFIX) and not _is_hidden(path)
+
+
+def scan_directory(directory: Path, config: Config, progress=None) -> list[GroupResult]:
+    """Analyzes the folder; progress(done, total) reports the state in files."""
+    groups: dict[str, list[Entry]] = {}
+    files = sorted((p for p in directory.iterdir() if _is_rom_candidate(p)), key=lambda p: p.name.casefold())
+    for path in files:
+        game, tags = parse_filename(path.name)
+        entry = Entry(path, game, [config.canonical(tag) for tag in tags])
+        entry.size()  # Here in the background thread, so that showing the list needs no file access.
+        groups.setdefault(game_key(game), []).append(entry)
+    results = []
+    done = 0
+    if progress:
+        progress(done, len(files))
+    for entries in groups.values():
+        results.append(analyze_group(entries, config))
+        done += len(entries)
+        if progress:
+            progress(done, len(files))
+    return sorted(results, key=lambda result: result.title.casefold())
+
+
+def _format_entry(entry: Entry) -> str:
+    return entry.path.name + (f"  [{'; '.join(entry.notes)}]" if entry.notes else "")
+
+
+def render_report(results: list[GroupResult], show_all: bool = False) -> str:
+    """Creates the tree display."""
+    blocks = []
+    for result in results:
+        if not result.marked and not show_all:
+            continue
+        lines = [tr("report.game", title=result.title)]
+        lines.extend(f"+ {_format_entry(entry)}" for entry in result.keep)
+        if result.marked:
+            lines.append("  + " + tr("report.marked"))
+            lines.extend(f"    - {_format_entry(entry)}" for entry in result.marked)
+        blocks.append("\n".join(lines))
+    return "\n\n".join(blocks)
+
+
+def marked_paths(results: list[GroupResult]) -> list[Path]:
+    return [entry.path for result in results for entry in result.marked]
+
+
+def _total_size(paths: list[Path]) -> int:
+    total = 0
+    for path in paths:
+        try:
+            total += path.stat().st_size
+        except OSError:
+            pass
+    return total
+
+
+def matches_search(result: GroupResult, pattern: str) -> bool:
+    """True if a file name of the game contains the pattern; an empty pattern matches everything.
+
+    Only * and ? are wildcards: ROM names often contain square brackets such as [!], so
+    they stay ordinary characters here, unlike in fnmatch. Case does not count.
+    """
+    pattern = pattern.strip()
+    if not pattern:
+        return True
+    parts = (".*" if char == "*" else "." if char == "?" else re.escape(char) for char in pattern)
+    regex = re.compile("".join(parts), re.IGNORECASE | re.DOTALL)
+    return any(regex.search(entry.path.name) for entry in result.keep + result.marked)
+
+
+@dataclass
+class Review:
+    """State of the review; the window only displays it and contains no rules itself."""
+
+    results: list[GroupResult]
+    config: Config
+    source: str = ""
+
+    def priority_text(self) -> str:
+        return tr(
+            "review.priority",
+            regions=" > ".join(self.config.region_priority),
+            source=self.source or tr("review.defaults"),
+        )
+
+    def delete(self, progress=None) -> tuple[int, list[str]]:
+        deleted, errors = delete_files(marked_paths(self.results), progress)
+        self._forget_deleted_files()
+        return deleted, errors
+
+    def _forget_deleted_files(self) -> None:
+        """Brings the state up to date without reading the folder again.
+
+        Files that could not be deleted stay marked. A kept file no longer counts as changed
+        by hand: The deletion has carried out that decision.
+        """
+        remaining = []
+        for result in self.results:
+            result.marked = [entry for entry in result.marked if entry.path.exists()]
+            for entry in result.keep:
+                entry.moved = False
+            if result.keep or result.marked:
+                result.title = (result.keep or result.marked)[0].game
+                result.problems = find_problems(result.keep, result.marked)
+                remaining.append(result)
+        self.results = remaining
+
+    def save_file_keys(self) -> dict[str, int]:
+        """The suspected status or save files that are not confirmed yet, with their size."""
+        return {
+            save_file_key(entry.path): entry.size()
+            for entry in _suspected_entries(self.results)
+            if entry.size() is not None
+        }
+
+    def confirm_save_files(self, confirmed: dict[str, int]) -> None:
+        """Treats remembered files as legitimate, as long as their size has not changed.
+
+        They stay kept, but no longer make their game visible or problematic.
+        """
+        for result in self.results:
+            changed = False
+            for entry in result.keep:
+                if confirmed.get(save_file_key(entry.path)) != entry.size() or entry.size() is None:
+                    continue
+                notes = [note for note in entry.notes if not _has_note([note], "save_suspected")]
+                if len(notes) != len(entry.notes):
+                    entry.notes = notes + [Note("save_confirmed")]
+                    changed = True
+            if changed:
+                result.problems = find_problems(result.keep, result.marked)
+
+    def promote(self, result: GroupResult, entry: Entry) -> bool:
+        """Keeps the file and sorts it in where the rules place it."""
+        if entry not in result.marked:
+            return False
+        result.marked.remove(entry)
+        key = _sort_key(entry, self.config)
+        position = next(
+            (index for index, other in enumerate(result.keep) if key < _sort_key(other, self.config)),
+            len(result.keep),
+        )
+        result.keep.insert(position, entry)
+        entry.moved = not entry.moved
+        return True
+
+    def demote(self, result: GroupResult, entry: Entry) -> bool:
+        """Marks the file for deletion and puts it at the end of the game."""
+        if entry not in result.keep:
+            return False
+        result.keep.remove(entry)
+        result.marked.append(entry)
+        entry.moved = not entry.moved
+        return True
+
+    def is_visible(self, result: GroupResult, only_problems: bool, show_all: bool = False, pattern: str = "") -> bool:
+        """Shows games with marked files, with show_all also the others.
+
+        Games changed by hand stay visible unless the search excludes them.
+        """
+        if not matches_search(result, pattern):
+            return False
+        if self._moved_count([result]) > 0:
+            return True
+        relevant = bool(result.marked) or show_all or has_suspected_save_file(result)
+        return relevant and (not only_problems or bool(result.problems))
+
+    def nothing_to_do(self) -> bool:
+        return (
+            not marked_paths(self.results)
+            and not self.moved_count()
+            and not any(has_suspected_save_file(result) for result in self.results)
+        )
+
+    @staticmethod
+    def _moved_count(results: list[GroupResult]) -> int:
+        return sum(entry.moved for result in results for entry in result.keep + result.marked)
+
+    def moved_count(self) -> int:
+        return self._moved_count(self.results)
+
+    def status(self, only_problems: bool, show_all: bool = False, pattern: str = "") -> str:
+        visible = sum(self.is_visible(result, only_problems, show_all, pattern) for result in self.results)
+        marked = len(marked_paths(self.results))
+        problems = sum(
+            bool(result.problems and (result.marked or show_all or has_suspected_save_file(result)))
+            for result in self.results
+        )
+        return tr(
+            "review.status", visible=visible, total=len(self.results), marked=marked,
+            problems=problems, moved=self.moved_count(),
+        )
+
+    def confirm_message(self, only_problems: bool, show_all: bool = False, pattern: str = "") -> str:
+        """Before deleting, names everything the window may not be showing right now."""
+        paths = marked_paths(self.results)
+        lines = [
+            tr("confirm.question", count=len(paths), size=f"{_total_size(paths) / 1024 / 1024:.1f}"),
+            tr("confirm.no_recycle_bin"),
+        ]
+        hidden = [result for result in self.results if not self.is_visible(result, only_problems, show_all, pattern)]
+        hidden_count = len(marked_paths(hidden))
+        if hidden_count:
+            key = "confirm.hidden_filtered" if pattern.strip() else "confirm.hidden_unproblematic"
+            lines.append(tr(key, count=hidden_count))
+        if self.moved_count():
+            lines.append(tr("confirm.moved", count=self.moved_count()))
+        suspected = len(self.save_file_keys())
+        if suspected:
+            lines.append(tr("confirm.save_files", count=suspected))
+        emptied = [result.title for result in self.results if result.marked and not result.keep]
+        if emptied:
+            shown = ", ".join(emptied[:5])
+            if len(emptied) > 5:
+                shown = tr("confirm.emptied_more", games=shown, count=len(emptied) - 5)
+            lines.append(tr("confirm.emptied", count=len(emptied), games=shown))
+        return "\n\n".join(lines)
+
+
+def delete_files(paths: list[Path], progress=None) -> tuple[int, list[str]]:
+    """Deletes the files; progress(done, total) reports the state after each file, failed ones included."""
+    deleted = 0
+    errors = []
+    if progress:
+        progress(0, len(paths))
+    for done, path in enumerate(paths, 1):
+        try:
+            path.unlink()
+            deleted += 1
+        except OSError as error:
+            errors.append(f"{path.name}: {error}")
+        if progress:
+            progress(done, len(paths))
+    return deleted, errors
+
+
+def build_parser() -> argparse.ArgumentParser:
+    # The options stay in English: The language is only known once --config has been read.
+    parser = argparse.ArgumentParser(
+        prog="rom_cleanup_workbench.py",
+        description="Rom Cleanup Workbench: finds duplicate ROM files in a directory.",
+    )
+    parser.add_argument("directory", type=Path, nargs="?", help="directory to check (otherwise chosen in the window)")
+    parser.add_argument("--config", type=Path, help="JSON configuration (default: redundanz_config.json)")
+    parser.add_argument(
+        "--priority", nargs="+", metavar="REGION",
+        help=f'regions, best first, e.g. USA Europe Japan {NO_REGION} ("{NO_REGION}" = no region)',
+    )
+    parser.add_argument(
+        "--delete-tag", nargs="*", metavar="INFO",
+        help="extra info that always leads to deletion, e.g. Proto Beta",
+    )
+    parser.add_argument("--all", action="store_true", help="with --report-only: also show games without marked files")
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--report-only", action="store_true", help="without window: only print the report in the terminal")
+    mode.add_argument("--yes", action="store_true", help="without window: delete marked files without asking")
+    mode.add_argument(
+        "--review", choices=[REVIEW_ALL, REVIEW_PROBLEMS],
+        help="open the window with all marked or only the problematic games",
+    )
+    return parser
+
+
+def _run_in_terminal(args: argparse.Namespace, parser: argparse.ArgumentParser, analyze) -> int:
+    """Runs only with --report-only or --yes, for example for scripts."""
+    if args.directory is None:
+        parser.error(tr("terminal.need_directory"))
+    try:
+        review = analyze(args.directory)
+    except (OSError, ValueError, TypeError) as error:
+        parser.error(str(error))
+
+    print(review.priority_text())
+    print()
+    report = render_report(review.results, args.all)
+    if report:
+        print(report)
+        print()
+
+    paths = marked_paths(review.results)
+    if not paths:
+        print(tr("terminal.no_duplicates"))
+        return 0
+    print(tr("terminal.summary", games=len(review.results), files=len(paths)))
+    if args.report_only:
+        print(tr("terminal.nothing_deleted"))
+        return 0
+
+    deleted, errors = review.delete()
+    print(tr("terminal.deleted", count=deleted))
+    for error in errors:
+        print(tr("terminal.error", error=error), file=sys.stderr)
+    return 1 if errors else 0
+
+
+def _config_path(args: argparse.Namespace) -> Path | None:
+    if args.config is not None:
+        return args.config
+    return DEFAULT_CONFIG_PATH if DEFAULT_CONFIG_PATH.exists() else None
+
+
+def _apply_language(args: argparse.Namespace) -> None:
+    """Sets the language once at the start; a broken configuration is reported later by the analysis."""
+    try:
+        set_language(Config.load(_config_path(args)).language)
+    except (OSError, ValueError, TypeError):
+        set_language(DEFAULT_LANGUAGE)
+
+
+def main(argv: list[str] | None = None) -> int:
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(errors="replace")
+
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    _apply_language(args)
+
+    def analyze(directory: Path, progress=None) -> Review:
+        """Reads the configuration again for every analysis and examines the folder.
+
+        A changed language only takes effect at the next start, so that window and notes match.
+        """
+        if not directory.is_dir():
+            raise ValueError(tr("error.directory_not_found", directory=directory))
+        config_path = _config_path(args)
+        try:
+            config = Config.load(config_path)
+        except (OSError, ValueError, TypeError) as error:
+            raise ValueError(tr("config.unreadable", error=error)) from error
+        if args.priority:
+            config = replace(config, region_priority=args.priority)
+        if args.delete_tag is not None:
+            config = replace(config, delete_tags=args.delete_tag)
+        source = "--priority" if args.priority else str(config_path or "")
+        return Review(scan_directory(directory, config, progress), config, source)
+
+    if args.report_only or args.yes:
+        return _run_in_terminal(args, parser, analyze)
+
+    # Loaded only here: Without the window the program also runs without tkinter.
+    try:
+        from rom_cleanup_workbench_window import run_window
+
+        return run_window(analyze, args.directory, _REVIEW_SCOPES.get(args.review))
+    except (ImportError, RuntimeError) as error:
+        print(tr("terminal.no_window", error=error), file=sys.stderr)
+        print(tr("terminal.nothing_deleted"))
+        return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

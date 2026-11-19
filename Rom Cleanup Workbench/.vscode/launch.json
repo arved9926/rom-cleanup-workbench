@@ -1,0 +1,28 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Rom Cleanup Workbench: report only",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/rom_cleanup_workbench.py",
+      "args": ["${input:directory}", "--report-only"],
+      "console": "integratedTerminal"
+    },
+    {
+      "name": "Rom Cleanup Workbench: analysis window",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/rom_cleanup_workbench.py",
+      "args": ["${input:directory}"],
+      "console": "integratedTerminal"
+    }
+  ],
+  "inputs": [
+    {
+      "id": "directory",
+      "type": "promptString",
+      "description": "Directory to check"
+    }
+  ]
+}

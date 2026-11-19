@@ -1,7 +1,8 @@
-# Only the two program folders belong in the repository; other files in this folder stay local.
+# Only the program folders belong in the repository; other files in this folder stay local.
 /*
 !/.gitignore
 !/README.md
+!/Rom Cleanup Workbench/
 !/Rom Cleanup Workbench (deutsch)/
 !/Rom Cleanup Workbench (englisch)/
 
@@ -9,5 +10,6 @@
 __pycache__/
 
 # Per-user state: the chosen view and the confirmed save files with their paths on this computer.
+rom_cleanup_workbench_settings.json
 duplicate_settings.json
 redundanz_einstellungen.json
