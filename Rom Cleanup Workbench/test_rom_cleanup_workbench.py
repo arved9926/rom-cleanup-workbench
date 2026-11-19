@@ -3275,3 +3275,94 @@ class TerminalVersionTests(unittest.IsolatedAsyncioTestCase):
         async with app.run_test() as pilot:
             await pilot.press("d", "p", "down", "tab")
             self.assertEqual(self.text(app, "#status"), translations.tr("window.choose_folder_status"))
+
+    # Step 6: views ------------------------------------------------------------------------------
+
+    VIEW_GAMES = {"Other (USA).bin": b"a", "Clear (USA).bin": b"b", "Clear (Japan).bin": b"c",
+                  "Zelda (USA).nes": b"d", "Zelda (Japan).sfc": b"e"}
+
+    def titles(self, app):
+        return [str(app.query_one("#games").get_row(key)[0]) for key in app._keys()
+                if key[0] == "g" and key[1:].isdigit()]
+
+    async def test_keys_1_2_3_show_each_view(self):
+        app = self.app_for(self.VIEW_GAMES)
+        async with app.run_test() as pilot:
+            await self.analyzed(app, pilot)
+            self.assertEqual(self.titles(app), ["Clear", "Zelda"])
+            await pilot.press("1")
+            self.assertEqual(app.scope, "problems")
+            self.assertEqual(self.titles(app), ["Zelda"])
+            await pilot.press("3")
+            self.assertEqual(self.titles(app), ["Clear", "Other", "Zelda"])
+            self.assertIn("Showing: 3 of 3", self.text(app, "#status"))
+            await pilot.press("2")
+            self.assertEqual(self.titles(app), ["Clear", "Zelda"])
+            self.assertTrue(app.query_one("#view-marked").value)
+            self.assertFalse(app.query_one("#view-all").value)
+
+    async def test_views_are_three_clickable_radio_items(self):
+        from textual.widgets import RadioButton
+
+        app = self.app_for(self.VIEW_GAMES)
+        async with app.run_test() as pilot:
+            await self.analyzed(app, pilot)
+            labels = [str(button.label) for button in app.query(RadioButton)]
+            self.assertEqual(labels, ["Problematic deletion marks", "All deletion marks", "All ROM files"])
+            await pilot.click("#view-all")
+            await pilot.pause()
+            self.assertEqual(app.scope, "all")
+            self.assertEqual(self.titles(app), ["Clear", "Other", "Zelda"])
+            self.assertIs(app.focused, app.query_one("#games"))  # d and the arrows still act on the list
+            await pilot.click("#view-problems")
+            await pilot.pause()
+            self.assertEqual(self.titles(app), ["Zelda"])
+
+    async def test_view_is_saved_and_used_at_the_next_start(self):
+        import workbench_state
+
+        app = self.app_for(self.VIEW_GAMES)
+        async with app.run_test() as pilot:
+            await self.analyzed(app, pilot)
+            await pilot.press("3")
+        self.assertEqual(workbench_state.load_scope(app.settings_path), "all")
+        again = self.tui.WorkbenchApp(app.analyze, app.directory, settings_path=app.settings_path)
+        async with again.run_test() as pilot:
+            await self.analyzed(again, pilot)
+            self.assertEqual(again.scope, "all")
+            self.assertTrue(again.query_one("#view-all").value)
+
+    async def test_view_that_cannot_be_saved_is_reported(self):
+        app = self.app_for(self.VIEW_GAMES)
+        app.settings_path = app.directory  # a folder: writing fails
+        async with app.run_test() as pilot:
+            await self.analyzed(app, pilot)
+            await pilot.press("1")
+            self.assertTrue(self.text(app, "#status").startswith("Choice not saved: "))
+            self.assertEqual(self.titles(app), ["Zelda"])
+
+    async def test_selection_stays_when_the_view_changes(self):
+        app = self.app_for(self.VIEW_GAMES)
+        async with app.run_test() as pilot:
+            await self.analyzed(app, pilot)
+            await pilot.press("tab")  # Zelda
+            zelda = app.selected_keys()
+            await pilot.press("3")
+            self.assertEqual(app.selected_keys(), zelda)
+            self.assertEqual(app.cursor_key(), zelda[0])
+            await pilot.press("shift+tab")
+            self.assertEqual(str(app.query_one("#games").get_row(app.cursor_key())[0]).strip(), "+ Other (USA).bin")
+            await pilot.press("1")  # Other is not shown there: the first file is selected
+            self.assertEqual(app.selected_keys(), [zelda[0]])
+
+    async def test_all_files_view_replaces_nothing_to_do_and_demoted_games_stay(self):
+        app = self.app_for({"Other (USA).bin": b"a"})
+        async with app.run_test() as pilot:
+            await self.analyzed(app, pilot)
+            self.assertTrue(app.query_one("#nothing").display)
+            await pilot.press("3")
+            self.assertFalse(app.query_one("#nothing").display)
+            await pilot.press("d")
+            await pilot.press("2")
+            self.assertEqual(self.titles(app), ["Other"])
+            self.assertEqual(app.review.moved_count(), 1)

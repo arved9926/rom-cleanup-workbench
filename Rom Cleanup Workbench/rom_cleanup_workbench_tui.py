@@ -17,10 +17,12 @@ from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal
 from textual.geometry import Region
-from textual.widgets import DataTable, ProgressBar, Static
+from textual.widgets import DataTable, ProgressBar, RadioButton, RadioSet, Static
 
 from translations import tr
-from workbench_state import SETTINGS_PATH, format_kb, load_confirmed_saves, load_scope, scope_flags
+from workbench_state import (
+    SCOPES, SETTINGS_PATH, format_kb, load_confirmed_saves, load_scope, save_scope, scope_flags,
+)
 
 APP_NAME = "Rom Cleanup Workbench"
 
@@ -131,6 +133,11 @@ class WorkbenchApp(App):
     #games > .datatable--selected { background: #0a4a8a; color: #ffffff; }
     #nothing { height: 1fr; content-align: center middle; text-style: bold; display: none; }
     #progress { height: 1; padding: 0 1; display: none; }
+    #views { layout: horizontal; height: auto; width: 100%; border: none; background: #000000; padding: 0 1; }
+    #views:focus-within { border: none; }
+    #views > RadioButton { background: #000000; color: #ffffff; border: none; margin-right: 2; }
+    #views > RadioButton > .toggle--button { color: #333333; background: #333333; }
+    #views > RadioButton.-on > .toggle--button { color: #e5383b; background: #333333; }
     #status { height: auto; background: #1a7f37; color: #ffffff; padding: 0 1; }
     """
     BINDINGS = [
@@ -140,6 +147,9 @@ class WorkbenchApp(App):
         Binding("tab", "move_game(1)", show=False, priority=True),
         Binding("shift+tab", "move_game(-1)", show=False, priority=True),
         Binding("d,D", "demote", show=False),
+        Binding("1", "choose_view(0)", show=False),
+        Binding("2", "choose_view(1)", show=False),
+        Binding("3", "choose_view(2)", show=False),
         Binding("p,P", "promote", show=False),
     ]
 
@@ -156,7 +166,8 @@ class WorkbenchApp(App):
         self.files = {}  # row key -> (game, file)
         self._analysis = 0  # Counts analyses, so that a replaced one cannot overwrite the newer result.
         self._visible = []  # the games shown, in the order of the list
-        self._file_keys = {}  # id(entry) -> row key; stays while the view is shown
+        self._file_keys = {}  # id(entry) -> row key; stays the same for the whole analysis
+        self._game_numbers = {}  # id(result) -> the game's number in the row keys
 
     def compose(self) -> ComposeResult:
         with Horizontal(id="title-row"):
@@ -171,9 +182,16 @@ class WorkbenchApp(App):
         yield table
         yield Static(tr("window.nothing_to_do"), id="nothing")
         yield ProgressBar(id="progress", show_eta=False)
+        # Above the green row, as in the window; 1, 2 and 3 choose the same views.
+        with RadioSet(id="views"):
+            for value, label in SCOPES:
+                yield RadioButton(tr(label), value=value == self.scope, id=f"view-{value}")
         yield Static("", id="status", markup=False)
 
     def on_mount(self) -> None:
+        # Not focusable: the keys must keep acting on the list after a view was clicked.
+        self.query_one("#views", RadioSet).can_focus = False
+        self.query_one("#games", GameTable).focus()
         if self.directory is None:
             self._set_status(tr("window.choose_folder_status"))
         else:
@@ -223,6 +241,13 @@ class WorkbenchApp(App):
     def show_review(self, review) -> None:
         self.review = review
         review.confirm_save_files(load_confirmed_saves(self.settings_path))
+        # Row keys follow the game's place among all games, so that they stay the same in every view.
+        self._file_keys = {}
+        self._game_numbers = {}
+        for game_index, result in enumerate(review.results):
+            self._game_numbers[id(result)] = game_index
+            for file_index, entry in enumerate(result.keep + result.marked):
+                self._file_keys[id(entry)] = f"g{game_index}f{file_index}"
         self.query_one("#info", Static).update(review.priority_text())
         self.show_games()
 
@@ -235,14 +260,17 @@ class WorkbenchApp(App):
         table.set_selection(())
         self._show_nothing_to_do(False)
 
-    def show_games(self) -> None:
-        """Fills the list with the games of the current view, as the window does."""
+    def show_games(self, keep_selection: bool = False) -> None:
+        """Fills the list with the games of the current view, as the window does.
+
+        With keep_selection, the rows that are still shown stay selected (after changing the view).
+        """
         table = self.query_one("#games", GameTable)
+        previous = self.selected_keys() if keep_selection else []
         table.clear()
         table.set_selection(())
         self.files = {}
         self._visible = []
-        self._file_keys = {}
         review = self.review
         flags = scope_flags(self.scope)
         if review.nothing_to_do() and not flags[1]:
@@ -251,12 +279,13 @@ class WorkbenchApp(App):
             return
         self._show_nothing_to_do(False)
         self._visible = [result for result in review.results if review.is_visible(result, *flags)]
-        # Each file keeps its row key, so that the selection survives D and P.
-        for game_index, result in enumerate(self._visible):
-            for file_index, entry in enumerate(result.keep + result.marked):
-                self._file_keys[id(entry)] = f"g{game_index}f{file_index}"
         self._fill_table()
-        self._select_first_file()
+        keys = set(self._keys())
+        previous = [key for key in previous if key in keys]
+        if previous:
+            self._place_cursor(previous[-1], previous)
+        else:
+            self._select_first_file()
         self._update_status()
 
     def _fill_table(self) -> None:
@@ -264,8 +293,9 @@ class WorkbenchApp(App):
         table.clear()
         self.files = {}
         moved = set()
-        for game_index, result in enumerate(self._visible):
-            if game_index:
+        for place, result in enumerate(self._visible):
+            game_index = self._game_numbers[id(result)]
+            if place:
                 # An empty row between the games: a drawn line would widen the file column to its length.
                 table.add_row("", "", "", key=f"s{game_index}")
             table.add_row(
@@ -291,6 +321,26 @@ class WorkbenchApp(App):
                         key=key,
                     )
         table.set_moved(moved)
+
+    # Views ------------------------------------------------------------------------------------
+
+    def action_choose_view(self, number: int) -> None:
+        self.query_one(f"#view-{SCOPES[number][0]}", RadioButton).value = True  # reaches on_radio_set_changed
+
+    def on_radio_set_changed(self, event: RadioSet.Changed) -> None:
+        scope = event.pressed.id.removeprefix("view-")
+        if scope != self.scope:
+            self.set_scope(scope)
+
+    def set_scope(self, scope: str) -> None:
+        """Shows the view and remembers it for the next start, as in the window."""
+        self.scope = scope
+        if self.review is not None:
+            self.show_games(keep_selection=True)
+        try:
+            save_scope(self.settings_path, scope)
+        except OSError as error:
+            self._set_status(f"{tr('window.choice_not_saved')}: {error}")
 
     def _update_status(self) -> None:
         self._set_status(self.review.status(*scope_flags(self.scope)))
@@ -387,9 +437,10 @@ class WorkbenchApp(App):
         games = sorted({_game_of(key) for key in keys} - {None})
         if not games:
             return
-        target = games[0] if game is None else game + step
-        if target not in games:
+        place = games.index(game) + step if game is not None else 0
+        if not 0 <= place < len(games):
             return
+        target = games[place]
         rows = [key for key in keys if _game_of(key) == target]
         row = next((key for key in rows if key in self.files), rows[0])
         self._place_cursor(row, {row})
