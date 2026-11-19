@@ -1,5 +1,7 @@
 # Rom Cleanup Workbench
 
+**User guide with screenshots:** [PDF](<docs/Rom Cleanup Workbench - User Guide.pdf>) · [Word](<docs/Rom Cleanup Workbench - User Guide.docx>)
+
 Finds duplicate ROM files in a directory by game name and deletes them on request.
 Requires Python 3.10 or newer, but no additional packages.
 The program speaks English, German, Italian, Spanish, French and Japanese (see [Language](#language)).
