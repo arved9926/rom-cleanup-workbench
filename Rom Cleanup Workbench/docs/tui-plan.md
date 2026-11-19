@@ -1,6 +1,6 @@
 # Handover: Linux terminal version (`--tui`)
 
-Status: **steps 1–2 of 14 done.** The terminal version starts and shows its title row; the list follows in step 3. Textual 8.2.8 is installed for the user.
+Status: **steps 1–3 of 14 done.** The terminal version shows the analyzed list (read-only). Next: step 4 (moving the cursor). Textual 8.2.8 is installed for the user.
 
 ## Decisions (agreed with the user)
 
@@ -22,7 +22,7 @@ Status: **steps 1–2 of 14 done.** The terminal version starts and shows its ti
 
 - [x] **1. Shared settings module.** Move `load_scope`, `save_scope`, `load_confirmed_saves`, `add_confirmed_saves`, `format_kb` and the settings path from `rom_cleanup_workbench_window.py` into a new `workbench_state.py`; the window imports them from there. Done when: all existing tests pass unchanged (only import paths in tests may change).
 - [x] **2. `--tui` option and start.** `--tui` in `build_parser`; `main` starts `rom_cleanup_workbench_tui.run_tui(...)` with the same `analyze` and `ConfigFile`; without a display (`DISPLAY`/`WAYLAND_DISPLAY` missing on Linux) the terminal version starts automatically; a clear message if Textual is missing. A stub app that only shows the title. Done when: main tests cover the choice of front end.
-- [ ] **3. Read-only list.** App with title row (program and folder), help row, priority row, the game list (games, Keep/Marked sections, size, note), status row; background analysis with progress bar. Done when: a Pilot test shows the demo games and the status text.
+- [x] **3. Read-only list.** App with title row (program and folder), help row, priority row, the game list (games, Keep/Marked sections, size, note), status row; background analysis with progress bar. Done when: a Pilot test shows the demo games and the status text.
 - [ ] **4. Moving the cursor.** Arrows, Shift+arrows for several rows, Tab/Shift+Tab per game, mouse click and wheel. Done when: Pilot tests for selection and Tab pass.
 - [ ] **5. D and P.** Mark and keep with `d`/`p`, brown "By hand" rows, status updates. Done when: tests match the window's D/P tests.
 - [ ] **6. Views.** Three views with `1`/`2`/`3` and clickable radio items with the red dot; the choice is saved like in the window. Done when: tests for every view and for saving pass.
@@ -40,3 +40,4 @@ Status: **steps 1–2 of 14 done.** The terminal version starts and shows its ti
 - 2026-11-19: Concept agreed, Textual installed, this note written. Next: step 1.
 - 2026-11-19: Step 1 done. `workbench_state.py` now holds the settings file (view, confirmed save files), `format_kb`, the view names (`SCOPES`, `scope_flags`) and the folder helpers `drives`/`subfolders` for step 10. The window imports them under its old names, so its code and all 290 tests are unchanged. Next: step 2.
 - 2026-11-19: Step 2 done. `--tui` and `_use_terminal_version` (Linux without `DISPLAY`/`WAYLAND_DISPLAY`) in `rom_cleanup_workbench.py`; `main` passes `analyze`, folder, view and `ConfigFile` to `rom_cleanup_workbench_tui.run_tui`. Missing Textual prints `terminal.no_textual` and deletes nothing. `rom_cleanup_workbench_tui.py` has `WorkbenchApp` with the green title row and `q`/Esc to quit. Tests: `MainTests` (front-end choice; `DISPLAY` is set in `setUp` so the window tests stay valid on a headless Linux machine) and `TerminalVersionTests` (Pilot). Note: import Textual before patching `sys.platform` in tests. 297 tests pass. Next: step 3.
+- 2026-11-19: Step 3 done. `WorkbenchApp` shows help (`tui.help`), priority, a `DataTable` (File/Size/Note; game, Keep/Marked rows, empty row between games; row keys `g{n}`, `g{n}f{m}` in `app.files`), "Nothing to do.", a progress bar and the green status row. Analysis runs in a thread worker; `_analysis` counter ignores replaced results. Dynamic texts are Rich `Text`/`markup=False`, so `[!]` in names stays literal. Screenshot check: `NO_COLOR=1` is set in this shell, unset it to see colors. 304 tests pass. Next: step 4.

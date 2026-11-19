@@ -2967,6 +2967,12 @@ class TerminalVersionTests(unittest.IsolatedAsyncioTestCase):
             self.skipTest(f"Textual is not installed: {error}")
         self.tui = rom_cleanup_workbench_tui
 
+    async def asyncSetUp(self):
+        # unittest runs these tests in asyncio's debug mode, which reports every slow screen update.
+        import asyncio
+
+        asyncio.get_running_loop().set_debug(False)
+
     @staticmethod
     def text(app, selector):
         return str(app.query_one(selector).render())
@@ -2990,3 +2996,101 @@ class TerminalVersionTests(unittest.IsolatedAsyncioTestCase):
             await pilot.press("q")
             await pilot.pause()
             self.assertFalse(app.is_running)
+
+    def demo_folder(self, files):
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        folder = Path(temp.name) / "games"
+        folder.mkdir()
+        for name, content in files.items():
+            (folder / name).write_bytes(content)
+        return folder
+
+    def app_for(self, files, scope="marked", analyze=None):
+        folder = self.demo_folder(files)
+        config = rf.Config.load(None)
+        analyze = analyze or (lambda directory, progress=None: rf.Review(
+            rf.scan_directory(directory, config, progress), config))
+        return self.tui.WorkbenchApp(analyze, folder, scope, settings_path=folder.with_name("settings.json"))
+
+    async def analyzed(self, app, pilot):
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+
+    @staticmethod
+    def rows(app):
+        from textual.widgets import DataTable
+
+        table = app.query_one("#games", DataTable)
+        return [[str(cell) for cell in table.get_row(key)] for key in table.rows]
+
+    async def test_list_shows_games_sections_sizes_and_notes(self):
+        app = self.app_for({
+            "Title (USA).bin": b"x" * 3000, "Title (Japan).bin": b"x" * 3000, "Other (USA) (Proto).bin": b"x" * 10,
+        })
+        async with app.run_test() as pilot:
+            await self.analyzed(app, pilot)
+            rows = self.rows(app)
+            texts = [row[0].strip() for row in rows]
+            self.assertIn("Title", texts)
+            self.assertIn("Keep:", texts)
+            self.assertIn("Marked for deletion", texts)
+            self.assertIn("+ Title (USA).bin", texts)
+            self.assertIn("- Title (Japan).bin", texts)
+            japan = next(row for row in rows if row[0].strip() == "- Title (Japan).bin")
+            self.assertEqual(japan[1], "3 KB")
+            proto = next(row for row in rows if row[0].strip() == "- Other (USA) (Proto).bin")
+            self.assertEqual(proto[2], "Extra info: Proto")
+            self.assertIn("Showing: 2 of 2 games", self.text(app, "#status"))
+            self.assertIn("Priority: USA > Europe", self.text(app, "#info"))
+            self.assertEqual(len(app.files), 3)
+
+    async def test_brackets_in_file_names_are_shown_literally(self):
+        app = self.app_for({"Title [!] (USA).bin": b"a", "Title [b1] (Japan).bin": b"b"})
+        async with app.run_test() as pilot:
+            await self.analyzed(app, pilot)
+            self.assertIn("+ Title [!] (USA).bin", [row[0].strip() for row in self.rows(app)])
+
+    async def test_nothing_to_do_is_shown_in_the_middle(self):
+        app = self.app_for({"Alone (USA).bin": b"a"})
+        async with app.run_test() as pilot:
+            await self.analyzed(app, pilot)
+            self.assertTrue(app.query_one("#nothing").display)
+            self.assertFalse(app.query_one("#games").display)
+            self.assertEqual(self.text(app, "#status"), "Analysis finished: Nothing to do")
+
+    async def test_all_files_view_shows_games_without_marks(self):
+        app = self.app_for({"Alone (USA).bin": b"a"}, scope="all")
+        async with app.run_test() as pilot:
+            await self.analyzed(app, pilot)
+            self.assertFalse(app.query_one("#nothing").display)
+            self.assertIn("+ Alone (USA).bin", [row[0].strip() for row in self.rows(app)])
+
+    async def test_analysis_error_reaches_the_status_row(self):
+        def broken(_directory, _progress=None):
+            raise ValueError("Configuration unreadable: broken")
+        app = self.app_for({}, analyze=broken)
+        async with app.run_test() as pilot:
+            await self.analyzed(app, pilot)
+            self.assertEqual(self.text(app, "#status"), "Analysis not possible: Configuration unreadable: broken")
+            self.assertFalse(app.query_one("#progress").display)
+
+    async def test_progress_and_replaced_analyses(self):
+        app = self.app_for({"Title (USA).bin": b"a", "Title (Japan).bin": b"b"})
+        async with app.run_test() as pilot:
+            await self.analyzed(app, pilot)
+            app._show_progress(app._analysis, 1, 2)
+            self.assertEqual(self.text(app, "#status"), "Analyzing: 1 of 2 files")
+            before = app.review
+            app._finish_analysis(app._analysis - 1, rf.Review([], rf.Config.load(None)), None)  # an older one
+            self.assertIs(app.review, before)
+
+    async def test_confirmed_save_files_are_not_suspected_again(self):
+        import workbench_state
+
+        app = self.app_for({"Title (USA).sfc": b"x" * 1000, "Title.srm": b"x" * 100})
+        save = app.directory / "Title.srm"
+        workbench_state.add_confirmed_saves(app.settings_path, {rf.save_file_key(save): 100})
+        async with app.run_test() as pilot:
+            await self.analyzed(app, pilot)
+            self.assertTrue(app.query_one("#nothing").display)
