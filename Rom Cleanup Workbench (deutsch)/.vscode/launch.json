@@ -1,0 +1,28 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Rom Cleanup Workbench (deutsch): nur anzeigen",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/redundanz_finder.py",
+      "args": ["${input:directory}", "--report-only"],
+      "console": "integratedTerminal"
+    },
+    {
+      "name": "Rom Cleanup Workbench (deutsch): Analysefenster",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/redundanz_finder.py",
+      "args": ["${input:directory}"],
+      "console": "integratedTerminal"
+    }
+  ],
+  "inputs": [
+    {
+      "id": "directory",
+      "type": "promptString",
+      "description": "Zu prüfendes Verzeichnis"
+    }
+  ]
+}
