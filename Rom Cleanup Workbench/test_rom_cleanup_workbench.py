@@ -3196,3 +3196,82 @@ class TerminalVersionTests(unittest.IsolatedAsyncioTestCase):
             await pilot.pause()
             await pilot.wait_for_scheduled_animations()
             self.assertGreater(table.scroll_y, 0)
+            await pilot.press("tab", "shift+down", "pagedown")
+            self.assertEqual(app.selected_keys(), [app.cursor_key()])
+            await pilot.press("shift+up", "ctrl+home")
+            self.assertEqual(app.selected_keys(), ["g0"])
+
+    # Step 5: D and P ----------------------------------------------------------------------------
+
+    def row_texts(self, app):
+        return [row[0].strip() for row in self.rows(app)]
+
+    def note_of(self, app, name):
+        return next(row[2] for row in self.rows(app) if row[0].strip()[2:] == name)
+
+    async def test_d_and_p_move_the_rows_and_keep_the_selection(self):
+        app = self.app_for({"Title (USA).bin": b"a", "Title (Japan).bin": b"b"})
+        async with app.run_test() as pilot:
+            await self.analyzed(app, pilot)
+            keep_row = app.cursor_key()
+            self.assertEqual(self.row_texts(app)[2], "+ Title (USA).bin")
+            await pilot.press("d")
+            self.assertEqual(app.selected_keys(), [keep_row])
+            self.assertEqual(app.cursor_key(), keep_row)
+            self.assertIn("- Title (USA).bin", self.row_texts(app))
+            self.assertIn("By hand: delete", self.note_of(app, "Title (USA).bin"))
+            self.assertEqual(app.review.moved_count(), 1)
+            self.assertIn(keep_row, app.query_one("#games").moved)
+            await pilot.press("P")
+            self.assertEqual(app.review.moved_count(), 0)
+            self.assertEqual(self.row_texts(app)[2], "+ Title (USA).bin")
+            self.assertNotIn("By hand", self.note_of(app, "Title (USA).bin"))
+            self.assertEqual(app.query_one("#games").moved, set())
+
+    async def test_p_sorts_the_file_in_among_kept_files(self):
+        app = self.app_for({"Title (USA).bin": b"a", "Title (Japan).bin": b"b"})
+        async with app.run_test() as pilot:
+            await self.analyzed(app, pilot)
+            await pilot.press("down", "down")
+            self.assertEqual(app.selected_keys(), ["g0f1"])
+            await pilot.press("p")
+            self.assertEqual(self.row_texts(app)[1:4], ["Keep:", "+ Title (USA).bin", "+ Title (Japan).bin"])
+            self.assertIn("By hand: keep", self.note_of(app, "Title (Japan).bin"))
+            self.assertEqual(app.selected_keys(), ["g0f1"])
+
+    async def test_heading_disappears_when_nothing_is_kept(self):
+        app = self.app_for({"Title (USA).bin": b"a", "Title (Japan).bin": b"b"})
+        async with app.run_test() as pilot:
+            await self.analyzed(app, pilot)
+            await pilot.press("d")
+            self.assertEqual(self.row_texts(app), ["Title", "Marked for deletion",
+                                                   "- Title (Japan).bin", "- Title (USA).bin"])
+            self.assertEqual(app.cursor_key(), "g0f0")
+
+    async def test_several_rows_move_together_and_game_rows_do_nothing(self):
+        app = self.app_for({"Title (USA) (Disc 1).bin": b"a", "Title (USA) (Disc 2).bin": b"b",
+                            "Title (Japan).bin": b"c"})
+        async with app.run_test() as pilot:
+            await self.analyzed(app, pilot)
+            await pilot.press("up", "d", "up", "d")  # the heading and the game row
+            self.assertEqual(app.selected_keys(), ["g0"])
+            self.assertEqual(app.review.moved_count(), 0)
+            await pilot.press("down", "down", "shift+down", "d")
+            self.assertEqual(app.review.moved_count(), 2)
+            self.assertEqual(sum(text.startswith("- ") for text in self.row_texts(app)), 3)
+            self.assertEqual(len(app.selected_keys()), 2)
+
+    async def test_status_row_follows_the_changes_by_hand(self):
+        app = self.app_for({"Title (USA).bin": b"a", "Title (Japan).bin": b"b"})
+        async with app.run_test() as pilot:
+            await self.analyzed(app, pilot)
+            before = self.text(app, "#status")
+            await pilot.press("d")
+            self.assertEqual(self.text(app, "#status"), app.review.status(False, False, ""))
+            self.assertNotEqual(self.text(app, "#status"), before)
+
+    async def test_d_and_p_do_nothing_before_the_analysis(self):
+        app = self.tui.WorkbenchApp(None, None)
+        async with app.run_test() as pilot:
+            await pilot.press("d", "p", "down", "tab")
+            self.assertEqual(self.text(app, "#status"), translations.tr("window.choose_folder_status"))
