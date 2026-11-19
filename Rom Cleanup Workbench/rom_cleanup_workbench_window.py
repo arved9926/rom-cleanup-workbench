@@ -8,9 +8,7 @@ from __future__ import annotations
 
 import ctypes
 import gc
-import json
 import os
-import string
 import queue
 import threading
 import time
@@ -21,6 +19,14 @@ from tkinter import messagebox as _system_messagebox
 from tkinter import ttk
 
 from translations import LANGUAGE_NAMES, current_language, tr
+# The settings file, the views, sizes and folders are shared with the terminal version.
+from workbench_state import (  # noqa: F401  (SETTINGS_PATH and the scope names belong to this module's interface)
+    DEFAULT_SCOPE, SCOPE_ALL_FILES, SCOPE_MARKED, SCOPE_PROBLEMS, SETTINGS_PATH, add_confirmed_saves,
+    format_kb, load_confirmed_saves, load_scope, save_scope,
+)
+from workbench_state import SCOPES as _SCOPES
+from workbench_state import drives as _drives
+from workbench_state import subfolders as _subfolders
 
 _BLACK = "#000000"
 _WHITE = "#ffffff"
@@ -34,20 +40,6 @@ _RED = "#e5383b"
 _HIGHLIGHT_STYLE = "Highlight.TLabel"
 _HIGHLIGHT_FRAME_STYLE = "Highlight.TFrame"
 _APP_NAME = "Rom Cleanup Workbench"
-# A file of its own, so that the window does not rewrite the hand-maintained redundanz_config.json.
-SETTINGS_PATH = Path(__file__).with_name("rom_cleanup_workbench_settings.json")
-_SCOPE_KEY = "scope"
-_CONFIRMED_KEY = "confirmed_save_files"
-SCOPE_PROBLEMS = "problems"
-SCOPE_MARKED = "marked"
-SCOPE_ALL_FILES = "all"
-DEFAULT_SCOPE = SCOPE_PROBLEMS
-# The value is saved and stays the same in every language; the label is a text key.
-_SCOPES = (
-    (SCOPE_PROBLEMS, "window.scope.problems"),
-    (SCOPE_MARKED, "window.scope.marked"),
-    (SCOPE_ALL_FILES, "window.scope.all"),
-)
 _LINE_COLOR = "#888888"
 # The list has no real dividing lines, so each line is a row of its own.
 _LINE_TEXT = "─" * 400
@@ -64,86 +56,6 @@ _FILTER_MIN_CHARS = 16
 _DELETE_REDRAW_S = 0.05
 _CELL_GAP = "  "  # Treeview cells have no padding: Keeps the right-aligned size away from the note.
 _SEARCH_DELAY_MS = 200  # Rebuilding a long list on every keystroke would make typing sluggish.
-
-
-def format_kb(size: int | None) -> str:
-    """Like Windows Explorer: Kilobytes rounded up, with the language's thousands separator."""
-    if size is None:
-        return "?"
-    number = f"{-(-size // 1024):,}".replace(",", tr("number.thousands"))
-    return f"{number} {tr('unit.kb')}"
-
-
-def _load_settings(path: Path) -> dict:
-    """A missing or broken file means: The defaults apply."""
-    try:
-        with open(path, encoding="utf-8-sig") as handle:
-            settings = json.load(handle)
-    except (OSError, ValueError):
-        return {}
-    return settings if isinstance(settings, dict) else {}
-
-
-def _save_settings(path: Path, **values) -> None:
-    """Changes only the given entries, so that the view and the confirmed files do not overwrite each other."""
-    settings = _load_settings(path)
-    settings.update(values)
-    with open(path, "w", encoding="utf-8") as handle:
-        json.dump(settings, handle, indent=2)
-        handle.write("\n")
-
-
-def load_scope(path: Path) -> str:
-    scope = _load_settings(path).get(_SCOPE_KEY)
-    return scope if scope in (value for value, _label in _SCOPES) else DEFAULT_SCOPE
-
-
-def save_scope(path: Path, scope: str) -> None:
-    _save_settings(path, **{_SCOPE_KEY: scope})
-
-
-def load_confirmed_saves(path: Path) -> dict[str, int]:
-    """Status or save files confirmed when deleting: file key to size in bytes."""
-    confirmed = _load_settings(path).get(_CONFIRMED_KEY)
-    if not isinstance(confirmed, dict):
-        return {}
-    return {key: size for key, size in confirmed.items() if isinstance(size, int) and not isinstance(size, bool)}
-
-
-def add_confirmed_saves(path: Path, files: dict[str, int]) -> None:
-    _save_settings(path, **{_CONFIRMED_KEY: {**load_confirmed_saves(path), **files}})
-
-
-def _drives() -> list[Path]:
-    """The drives of the computer, for example C:\\ and D:\\; on other systems only /."""
-    if os.name != "nt":
-        return [Path("/")]
-    if hasattr(os, "listdrives"):  # Python 3.12 and newer
-        try:
-            return [Path(drive) for drive in os.listdrives()]
-        except OSError:
-            pass
-    return [Path(f"{letter}:\\") for letter in string.ascii_uppercase if Path(f"{letter}:\\").exists()]
-
-
-def _subfolders(folder: Path) -> list[Path]:
-    """The visible subfolders, sorted like Windows Explorer; an unreadable folder has none."""
-    try:
-        entries = list(os.scandir(folder))
-    except OSError:
-        return []
-    folders = []
-    for entry in entries:
-        try:
-            if not entry.is_dir() or entry.name.startswith("."):
-                continue
-            attributes = getattr(entry.stat(), "st_file_attributes", 0)
-        except OSError:
-            continue
-        if attributes & 0x6:  # FILE_ATTRIBUTE_HIDDEN or FILE_ATTRIBUTE_SYSTEM
-            continue
-        folders.append(Path(entry.path))
-    return sorted(folders, key=lambda path: path.name.casefold())
 
 
 class FolderPanel:
