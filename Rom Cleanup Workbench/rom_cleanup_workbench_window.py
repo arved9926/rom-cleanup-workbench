@@ -9,12 +9,13 @@ from __future__ import annotations
 import ctypes
 import gc
 import json
+import os
+import string
 import queue
 import threading
 import time
 import tkinter as tk
 from pathlib import Path
-from tkinter import filedialog
 from tkinter import font as tkfont
 from tkinter import messagebox as _system_messagebox
 from tkinter import ttk
@@ -111,6 +112,153 @@ def load_confirmed_saves(path: Path) -> dict[str, int]:
 
 def add_confirmed_saves(path: Path, files: dict[str, int]) -> None:
     _save_settings(path, **{_CONFIRMED_KEY: {**load_confirmed_saves(path), **files}})
+
+
+def _drives() -> list[Path]:
+    """The drives of the computer, for example C:\\ and D:\\; on other systems only /."""
+    if os.name != "nt":
+        return [Path("/")]
+    if hasattr(os, "listdrives"):  # Python 3.12 and newer
+        try:
+            return [Path(drive) for drive in os.listdrives()]
+        except OSError:
+            pass
+    return [Path(f"{letter}:\\") for letter in string.ascii_uppercase if Path(f"{letter}:\\").exists()]
+
+
+def _subfolders(folder: Path) -> list[Path]:
+    """The visible subfolders, sorted like Windows Explorer; an unreadable folder has none."""
+    try:
+        entries = list(os.scandir(folder))
+    except OSError:
+        return []
+    folders = []
+    for entry in entries:
+        try:
+            if not entry.is_dir() or entry.name.startswith("."):
+                continue
+            attributes = getattr(entry.stat(), "st_file_attributes", 0)
+        except OSError:
+            continue
+        if attributes & 0x6:  # FILE_ATTRIBUTE_HIDDEN or FILE_ATTRIBUTE_SYSTEM
+            continue
+        folders.append(Path(entry.path))
+    return sorted(folders, key=lambda path: path.name.casefold())
+
+
+class FolderPanel:
+    """Chooses a folder in place of the file list, instead of the Windows folder dialog.
+
+    The Windows dialog labels its buttons in the language of Windows; this one speaks the program's language.
+    """
+
+    _PLACEHOLDER = "…"
+
+    def __init__(self, window: "ReviewWindow", start: Path | None):
+        self.window = window
+        frame = self.frame = ttk.Frame(window.middle, padding=(16, 8, 16, 8))
+        frame.columnconfigure(1, weight=1)
+        frame.rowconfigure(2, weight=1)
+        heading = ttk.Frame(frame)
+        heading.grid(row=0, column=0, columnspan=3, sticky="ew", pady=(0, 8))
+        ttk.Button(heading, text=tr("settings.cancel"), command=self.close).pack(side="right")
+        ttk.Button(heading, text=tr("folder.select"), command=self.choose).pack(side="right", padx=8)
+        ttk.Label(heading, text=tr("window.choose_folder"), font=window.bold_font).pack(side="left")
+
+        ttk.Label(frame, text=tr("folder.path")).grid(row=1, column=0, sticky="w", padx=(0, 8), pady=(0, 8))
+        self.path = tk.StringVar(frame)
+        self.entry = ttk.Entry(frame, textvariable=self.path)
+        self.entry.grid(row=1, column=1, columnspan=2, sticky="ew", pady=(0, 8))
+        self.entry.bind("<Return>", lambda _event: self.choose())
+
+        self.tree = ttk.Treeview(frame, show="tree", selectmode="browse")
+        self.tree.grid(row=2, column=0, columnspan=2, sticky="nsew")
+        scrollbar = ttk.Scrollbar(frame, orient="vertical", command=self.tree.yview)
+        scrollbar.grid(row=2, column=2, sticky="ns")
+        self.tree.configure(yscrollcommand=scrollbar.set)
+        self.tree.bind("<<TreeviewOpen>>", lambda _event: self._load(self.tree.focus()))
+        self.tree.bind("<<TreeviewSelect>>", lambda _event: self._show_selection())
+        self.tree.bind("<Return>", lambda _event: self.choose())
+        hint = ttk.Label(frame, text=tr("folder.hint"))
+        hint.grid(row=3, column=0, columnspan=3, sticky="ew", pady=(8, 0))
+        hint.bind("<Configure>", lambda event: hint.configure(wraplength=max(event.width, 1)))
+
+        # Where text is typed, the window's keys must not fire: A "d" in a path is no Demote.
+        for widget in (self.entry, self.tree):
+            widget.bindtags((str(widget), widget.winfo_class(), "all"))
+            widget.bind("<Escape>", lambda _event: self.close())
+            widget.bind("<Control-MouseWheel>", window._on_zoom)
+        self.tree.bind("<Control-MouseWheel>", window._on_zoom)
+
+        self.paths: dict[str, Path] = {}
+        for drive in _drives():
+            self._insert("", drive, str(drive))
+        self.reveal(start if start is not None and start.is_dir() else Path.home())
+        self.tree.focus_set()
+
+    @staticmethod
+    def _key(path: Path) -> str:
+        return os.path.normcase(os.path.abspath(path))
+
+    def _insert(self, parent: str, path: Path, text: str) -> str:
+        key = self._key(path)
+        if self.tree.exists(key):
+            return key
+        self.paths[key] = path
+        self.tree.insert(parent, "end", key, text=text)
+        # A placeholder, so that the folder shows the open arrow; it is replaced when the folder opens.
+        self.tree.insert(key, "end", key + self._PLACEHOLDER, text=self._PLACEHOLDER)
+        return key
+
+    def _load(self, key: str) -> None:
+        """Reads the subfolders only when a folder opens, so that large drives cost nothing."""
+        placeholder = key + self._PLACEHOLDER
+        if not key or not self.tree.exists(placeholder):
+            return
+        self.tree.delete(placeholder)
+        for folder in _subfolders(self.paths[key]):
+            self._insert(key, folder, folder.name)
+
+    def reveal(self, path: Path) -> None:
+        """Opens the tree down to path and selects it, as far as the folders exist."""
+        path = Path(os.path.abspath(path))
+        chain = [path, *path.parents]
+        key = ""
+        for folder in reversed(chain):
+            candidate = self._key(folder)
+            if not self.tree.exists(candidate):
+                if key:
+                    self._load(key)
+                if not self.tree.exists(candidate):
+                    break
+            key = candidate
+            self.tree.item(key, open=True)
+            self._load(key)
+        if key:
+            self.tree.selection_set(key)
+            self.tree.focus(key)
+            self.tree.see(key)
+            self.path.set(str(self.paths[key]))  # At once: Tk delivers the selection event only later.
+
+    def _show_selection(self) -> None:
+        selection = self.tree.selection()
+        if selection and selection[0] in self.paths:
+            self.path.set(str(self.paths[selection[0]]))
+
+    def choose(self) -> str:
+        text = self.path.get().strip().strip('"')
+        folder = Path(text) if text else None
+        if folder is None or not folder.is_dir():
+            messagebox.showerror(
+                tr("window.choose_folder"), tr("error.directory_not_found", directory=text), parent=self.window.root,
+            )
+            return "break"
+        self.window.folder_chosen(folder)
+        return "break"
+
+    def close(self) -> str:
+        self.window.close_folder_panel()
+        return "break"
 
 
 # Every open window under the name of its Tk root, so that a question finds the window it belongs to.
@@ -293,6 +441,7 @@ class ReviewWindow:
         # The ConfigFile from rom_cleanup_workbench.py; without one, the settings are not offered.
         self.config_file = config_file
         self.settings_panel = None
+        self.folder_panel = None
         self.analyze = analyze
         self.directory = directory
         self.review = None
@@ -443,14 +592,44 @@ class ReviewWindow:
             self.start_analysis()
 
     def choose_directory(self) -> None:
+        """Folder... and Ctrl+O choose the folder in place of the list; the analysis starts once it is chosen."""
         if self._list_locked() or not self._may_discard_changes(tr("window.discard_folder")):
             return
-        chosen = filedialog.askdirectory(
-            parent=self.root, mustexist=True, title=tr("window.choose_folder"), initialdir=self.directory or None,
-        )
-        if chosen:
-            self.directory = Path(chosen)
-            self.start_analysis()
+        panel = self.folder_panel = FolderPanel(self, self.directory)
+        self._show_panel(panel.frame)
+        panel.tree.focus_set()
+
+    def folder_chosen(self, folder: Path) -> None:
+        self.close_folder_panel()
+        self.directory = folder
+        self.start_analysis()
+
+    def close_folder_panel(self) -> None:
+        if self.folder_panel is None:
+            return
+        self.folder_panel.frame.destroy()
+        self.folder_panel = None
+        self._hide_panel()
+
+    def _show_panel(self, frame) -> None:
+        """Puts the settings or the folder choice in place of the list and locks everything that acts on it."""
+        self._hide_nothing_to_do()
+        self.list_frame.pack_forget()
+        frame.pack(fill="both", expand=True)
+        self._refresh_locks()
+        # A low window grows until every field fits; closing restores the old minimum.
+        self.root.update_idletasks()
+        width, height = self.root.minsize()
+        self.root.minsize(width, max(height, min(self.root.winfo_reqheight(), self.root.winfo_screenheight())))
+
+    def _hide_panel(self) -> None:
+        """Brings the file list back, as it was."""
+        self.list_frame.pack(fill="both", expand=True)
+        self._refresh_locks()
+        self._fit_bottom_row()  # Back to the usual minimum size.
+        if self.review is not None and self._analysis is None:
+            self._show_all_groups()  # Also brings back "Nothing to do." if it applies.
+        self.tree.focus_set()
 
     def _apply_font(self) -> None:
         # All ttk elements get their font from these named Tk fonts.
@@ -973,8 +1152,8 @@ class ReviewWindow:
 
     def toggle_settings(self) -> str:
         """Settings... and Ctrl+E open the settings in place of the list, and a second time close them."""
-        if self._questions:
-            pass  # A question is open: it must be answered first.
+        if self._questions or self.folder_panel is not None:
+            pass  # A question or the folder choice is open: it must be finished first.
         elif self.settings_panel is not None:
             self.close_settings()
         else:
@@ -991,14 +1170,7 @@ class ReviewWindow:
             messagebox.showerror(tr("settings.error_title"), str(error), parent=self.root)
             return
         self.settings_panel = panel
-        self._hide_nothing_to_do()
-        self.list_frame.pack_forget()
-        panel.frame.pack(fill="both", expand=True)
-        self._refresh_locks()
-        # A low window grows until every field of the settings fits; closing restores the old minimum.
-        self.root.update_idletasks()
-        width, height = self.root.minsize()
-        self.root.minsize(width, max(height, min(self.root.winfo_reqheight(), self.root.winfo_screenheight())))
+        self._show_panel(panel.frame)
 
     def close_settings(self) -> None:
         """Brings the file list back, as it was."""
@@ -1006,12 +1178,7 @@ class ReviewWindow:
             return
         self.settings_panel.frame.destroy()
         self.settings_panel = None
-        self.list_frame.pack(fill="both", expand=True)
-        self._refresh_locks()
-        self._fit_bottom_row()  # Back to the usual minimum size.
-        if self.review is not None and self._analysis is None:
-            self._show_all_groups()  # Also brings back "Nothing to do." if it applies.
-        self.tree.focus_set()
+        self._hide_panel()
 
     def save_settings(self, panel: SettingsPanel) -> None:
         """Writes the settings; a new priority or new tags take effect at once through a new analysis."""
@@ -1134,7 +1301,9 @@ class ReviewWindow:
             self._questions[-1][1].set(index)
 
     def _focus_after_question(self) -> None:
-        if self.settings_panel is not None:
+        if self.folder_panel is not None:
+            self.folder_panel.tree.focus_set()
+        elif self.settings_panel is not None:
             self.settings_panel.frame.focus_set()
         else:
             self.tree.focus_set()
@@ -1142,21 +1311,23 @@ class ReviewWindow:
     def _on_escape(self) -> None:
         if self._questions:
             self._answer(self._questions[-1][3])
+        elif self.folder_panel is not None:
+            self.close_folder_panel()
         elif self.settings_panel is not None:
             self.close_settings()
         else:
             self.close()
 
     def _list_locked(self) -> bool:
-        """The list is hidden behind the settings or a question: nothing may change it."""
-        return self.settings_panel is not None or bool(self._questions)
+        """The list is hidden behind the settings, the folder choice or a question: nothing may change it."""
+        return self.settings_panel is not None or self.folder_panel is not None or bool(self._questions)
 
     def _refresh_locks(self) -> None:
         locked = self._list_locked()
         for widget in self._list_controls:
             widget.state(["disabled"] if locked else ["!disabled"])
-        for widget in (self.settings_button, self.close_button):
-            widget.state(["disabled"] if self._questions else ["!disabled"])
+        self.settings_button.state(["disabled"] if self._questions or self.folder_panel else ["!disabled"])
+        self.close_button.state(["disabled"] if self._questions else ["!disabled"])
 
     def run(self) -> int:
         if self.directory is None:

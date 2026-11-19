@@ -1,6 +1,7 @@
 import contextlib
 import gc
 import io
+import os
 import queue
 import tempfile
 import threading
@@ -1638,13 +1639,13 @@ class ReviewWindowTests(RedundanzTestCase):
         self.assertEqual(window.review.moved_count(), 0)
         with mock.patch("rom_cleanup_workbench_window.messagebox.askyesno") as ask, mock.patch.object(
             window, "start_analysis"
-        ) as analysis, mock.patch("rom_cleanup_workbench_window.filedialog.askdirectory") as folder:
+        ) as analysis:
             window.confirm_delete()
             window.reanalyze()
             window.choose_directory()
         ask.assert_not_called()
         analysis.assert_not_called()
-        folder.assert_not_called()
+        self.assertIsNone(window.folder_panel)
         self.assertIsNone(window._move_game(1))  # Tab moves between the fields instead.
         self.assertEqual(len(list(self.dir.iterdir())), 2)
         window.close_settings()
@@ -2513,8 +2514,7 @@ class ReviewWindowTests(RedundanzTestCase):
             window.analyze = lambda directory, _progress=None: rf.Review(
                 rf.scan_directory(directory, self.config), self.config
             )
-            with mock.patch("rom_cleanup_workbench_window.filedialog.askdirectory", return_value=other):
-                window.choose_directory()
+            self.choose_in_window(window, other)
             self.wait_for_analysis(window)
             self.assertEqual(window.tree.item("g0", "text"), "Another")
             self.assertIn(other, window.folder.get())
@@ -2547,9 +2547,7 @@ class ReviewWindowTests(RedundanzTestCase):
             window.analyze, release, replaced = self.slow_folder_analysis(other)
             window.start_analysis()
             first = window._workers[-1]
-            with mock.patch("rom_cleanup_workbench_window.filedialog.askdirectory", return_value=other) as ask:
-                window.choose_directory()
-            ask.assert_called_once()
+            self.choose_in_window(window, other)
             deadline = time.monotonic() + 10
             while window._analysis is not None and time.monotonic() < deadline:
                 window.root.update()
@@ -2588,10 +2586,83 @@ class ReviewWindowTests(RedundanzTestCase):
     def test_cancelled_folder_choice_changes_nothing(self):
         self.write("Title (USA).bin")
         window = self.open_window()
-        with mock.patch("rom_cleanup_workbench_window.filedialog.askdirectory", return_value=""):
-            window.choose_directory()
+        window.choose_directory()
+        window.folder_panel.close()  # Cancel or Esc
+        self.assertIsNone(window.folder_panel)
         self.assertEqual(window.directory, self.dir)
         self.assertIsNone(window._analysis)
+        self.assertEqual(window.list_frame.winfo_manager(), "pack")
+
+    def choose_in_window(self, window, folder):
+        """Chooses a folder in the folder choice of the window, as a person would."""
+        window.choose_directory()
+        panel = window.folder_panel
+        panel.reveal(Path(folder))
+        self.assertEqual(os.path.normcase(panel.path.get()), os.path.normcase(str(Path(folder))))
+        panel.choose()
+        self.assertIsNone(window.folder_panel)
+
+    def test_folder_choice_appears_in_the_window_and_opens_at_the_current_folder(self):
+        self.no_system_popups()
+        (self.dir / "Sub B").mkdir()
+        (self.dir / "sub a").mkdir()
+        (self.dir / ".hidden").mkdir()
+        window = self.open_window()
+        window.choose_directory()
+        panel = window.folder_panel
+        self.assertIs(panel.frame.master, window.middle)
+        self.assertEqual(window.list_frame.winfo_manager(), "")
+        self.assertFalse([child for child in window.root.winfo_children() if child.winfo_class() == "Toplevel"])
+        self.assertEqual(os.path.normcase(panel.path.get()), os.path.normcase(str(self.dir)))
+        key = panel.tree.selection()[0]
+        self.assertTrue(panel.tree.item(key, "open"))
+        self.assertEqual([panel.tree.item(child, "text") for child in panel.tree.get_children(key)], ["sub a", "Sub B"])
+        self.assertTrue(all(widget.instate(["disabled"]) for widget in window._list_controls))
+        self.assertTrue(window.settings_button.instate(["disabled"]))
+
+    def test_folder_choice_takes_a_typed_path_and_refuses_a_missing_one(self):
+        self.no_system_popups()
+        window = self.open_window()
+        with tempfile.TemporaryDirectory() as other:
+            window.choose_directory()
+            panel = window.folder_panel
+            panel.path.set(str(Path(other) / "missing"))
+            with mock.patch("rom_cleanup_workbench_window.messagebox.showerror") as error:
+                panel.choose()
+            self.assertIn("missing", error.call_args.args[1])
+            self.assertIs(window.folder_panel, panel)
+            panel.path.set(f'"{other}"')  # Pasted with quotes, as Explorer copies a path.
+            with mock.patch.object(window, "start_analysis") as analysis:
+                panel.choose()
+            analysis.assert_called_once()
+            self.assertEqual(window.directory, Path(other))
+
+    def test_folders_are_read_only_when_opened(self):
+        (self.dir / "Outer").mkdir()
+        (self.dir / "Outer" / "Inner").mkdir()
+        window = self.open_window()
+        window.choose_directory()
+        panel = window.folder_panel
+        outer = panel._key(self.dir / "Outer")
+        self.assertEqual(panel.tree.get_children(outer), (outer + panel._PLACEHOLDER,))
+        panel._load(outer)
+        self.assertEqual([panel.tree.item(child, "text") for child in panel.tree.get_children(outer)], ["Inner"])
+
+    def test_keys_of_the_list_do_nothing_while_choosing_a_folder(self):
+        self.write("Title (USA).bin")
+        self.write("Title (Japan).bin")
+        window = self.open_window()
+        window.tree.selection_set(self.row_of(window, "Title (USA).bin"))
+        window.choose_directory()
+        window.demote_selected()
+        window.toggle_settings()
+        self.assertEqual(window.review.moved_count(), 0)
+        self.assertIsNone(window.settings_panel)
+        for widget in (window.folder_panel.entry, window.folder_panel.tree):
+            self.assertNotIn(str(window.root), widget.bindtags())
+        window._on_escape()
+        self.assertIsNone(window.folder_panel)
+        self.assertTrue(window.root.winfo_exists())
 
 
 class MainTests(RedundanzTestCase):

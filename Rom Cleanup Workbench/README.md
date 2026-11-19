@@ -12,7 +12,7 @@ The program speaks English, German, Italian, Spanish, French and Japanese (see [
 python rom_cleanup_workbench.py "D:\Games"
 ```
 
-The program opens the analysis window and shows everything there; it prints nothing in the terminal and asks nothing there. Questions and messages also appear inside the window, in the language of the program, never as Windows popups; Enter chooses the preselected button and Esc answers No. Without a directory, the window asks for the folder. Files are only deleted after the confirmation in the window. **Deleted files do not go to the Recycle Bin.**
+The program opens the analysis window and shows everything there; it prints nothing in the terminal and asks nothing there. Questions, messages and the folder choice also appear inside the window, in the language of the program, never as Windows popups; Enter chooses the preselected button and Esc answers No. Without a directory, the window asks for the folder. Files are only deleted after the confirmation in the window. **Deleted files do not go to the Recycle Bin.**
 
 | Option | Effect |
 | --- | --- |
@@ -54,7 +54,7 @@ The window remembers the most recently chosen view and the confirmed status or s
 | `Ctrl+E` | same as the button `Settings...`: show or hide the settings for language, region priority and low priority tags (see [Settings](#settings)) |
 | `Ctrl+F` | go to the filter field |
 | `Ctrl+L` | same as the button `Proceed...`: delete after a confirmation and confirm the suspected status or save files (rule 9) |
-| `Ctrl+O` | choose another folder |
+| `Ctrl+O` | choose another folder, inside the window in place of the list: open folders with a double-click or the arrow, or type a path into `Path`, then `Select` or `Enter`; `Cancel` or `Esc` keep the current folder |
 | `F5` | analyze again, also reads the configuration again |
 | `Esc` | close without deleting anything |
 
