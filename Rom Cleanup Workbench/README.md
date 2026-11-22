@@ -3,7 +3,7 @@
 **User guide with screenshots:** [PDF](<docs/Rom Cleanup Workbench - User Guide.pdf>) · [Word](<docs/Rom Cleanup Workbench - User Guide.docx>)
 
 Finds duplicate ROM files in a directory by game name and deletes them on request.
-Requires Python 3.10 or newer, but no additional packages.
+Requires Python 3.10 or newer. The window needs no additional packages; the terminal version for Linux needs Textual (see [Terminal version (Linux)](#terminal-version-linux)).
 The program speaks English, German, Italian, Spanish, French and Japanese (see [Language](#language)).
 
 ## Usage
@@ -24,6 +24,8 @@ The program opens the analysis window and shows everything there; it prints noth
 | `--report-only` | without window: only print the report in the terminal |
 | `--yes` | without window: delete marked files without asking |
 | `--all` | with `--report-only`: also show games without marked files |
+| `--tui` | use the terminal version instead of the window (automatic on Linux without a graphical display) |
+| `--ascii` | terminal version with ASCII characters only (automatic on the Linux console); implies `--tui` |
 
 The command line options and their help (`--help`) are always in English.
 
@@ -96,6 +98,42 @@ A game counts as problematic if
 - a marked file has a different file type than the kept ones (`.nes` and `.sfc`).
 
 The window uses `tkinter`, which is part of the usual Python installation on Windows. If it is missing, the program reports this and deletes nothing.
+
+## Terminal version (Linux)
+
+The same program also runs in a text terminal, for example over SSH (PuTTY, MobaXterm), in `tmux` or on the Linux console. It shows the same list, applies the same rules, and shares `redundanz_config.json`, `rom_cleanup_workbench_settings.json` and `translations.py` with the window.
+
+It starts by itself on Linux when there is no graphical display (neither `DISPLAY` nor `WAYLAND_DISPLAY` is set, as over SSH). `--tui` starts it everywhere else, also on Windows; use it where a graphical display exists but you want the terminal, for example in MobaXterm or under WSL.
+
+It needs [Textual](https://textual.textualize.io/) (tested with 8.2.8), best in a virtual environment:
+
+```bash
+python3 -m venv ~/venvs/rom-cleanup-workbench
+~/venvs/rom-cleanup-workbench/bin/pip install textual==8.2.8
+~/venvs/rom-cleanup-workbench/bin/python rom_cleanup_workbench.py --tui ~/roms
+```
+
+Without Textual, the program says so and deletes nothing. The screen has the rows of the window from top to bottom: the green title row with the folder, a help row, the priority, the list, the filter field, the three views and the green status row. Questions and messages appear in a frame over the list, with buttons in the program's language; `No` is preselected.
+
+| Key | Effect |
+| --- | --- |
+| Arrow keys | select a row, with Shift several |
+| `Tab` / `Shift+Tab` | next / previous game; its first file is selected |
+| `d` / `p` | mark the selected files for deletion / keep them |
+| `1` `2` `3` | the views `Problematic deletion marks`, `All deletion marks`, `All ROM files` |
+| `/` or `Ctrl+F` | go to the filter field (`Enter`, `Tab` or the down arrow return, `Esc` clears) |
+| `x` or `Ctrl+L` | delete after a confirmation (as `Proceed...`) |
+| `o` or `Ctrl+O` | choose another folder: `Right` or `Space` opens a folder, `Left` closes it, `Enter` chooses; a path can also be typed |
+| `e` or `Ctrl+E` | settings: `Shift+Up`/`Shift+Down` move a region, `Delete` removes it, `Ctrl+S` saves, `Esc` cancels |
+| `r` or `F5` | analyze again |
+| `q` or `Esc` | close without deleting anything; after changes by hand the program asks first |
+| In a question | `Left`/`Right` choose a button, `Enter` presses it, `Esc` answers `No` |
+
+The mouse works too: a click selects a row, the wheel scrolls, and the views and buttons can be clicked. Letters typed in a field stay in the field, also when typed fast or pasted: a `d` in the filter never marks a file.
+
+**Colors and characters.** With 256 colors or more, the terminal version uses the colors of the window, but black behind every game (no stripes). Where the terminal only has 16 colors (`TERM=xterm`, `TERM=linux`), it switches to plain ANSI colors: blue selection, green title and status rows, brown rows changed by hand. On the Linux console, in terminals such as `vt100`, and when the locale names a charset other than UTF-8 (for example `en_US` or `de_DE.ISO-8859-1`), it draws only ASCII characters: views as `(*)`, frames from `+`, `-` and `|`. `--ascii` forces this. PuTTY reports itself as `xterm` (16 colors); for the window's colors, set *Connection → Data → Terminal-type string* to `xterm-256color`. File names and texts in other scripts, such as Japanese, still need a terminal and font that can show them.
+
+Differences from the window: no font zoom, `Nothing to do.` does not blink, and the games are not striped. While deleting, the terminal version deletes in the background and shows the progress bar; all keys are locked until it is finished. The window and the terminal version keep their view and the confirmed save files in the same `rom_cleanup_workbench_settings.json`.
 
 ## Configuration: `redundanz_config.json`
 

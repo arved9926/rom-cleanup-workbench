@@ -4652,6 +4652,57 @@ class TerminalVersionTests(unittest.IsolatedAsyncioTestCase):
             translations.set_language("es")
             self.assertIn("papelera.", review.confirm_message(False))
 
+    # r and F5: analyze again (the help row named r, but it was missing until step 14) -----------
+
+    async def test_r_and_f5_read_the_folder_again(self):
+        app = self.app_for(self.TWO_GAMES)
+        async with app.run_test() as pilot:
+            await self.analyzed(app, pilot)
+            self.assertEqual(self.titles(app), ["A", "B"])
+            (app.directory / "C (USA).bin").write_bytes(b"e")
+            (app.directory / "C (Japan).bin").write_bytes(b"f")
+            await pilot.press("r")
+            await self.analyzed(app, pilot)
+            self.assertEqual(self.titles(app), ["A", "B", "C"])
+            (app.directory / "C (Japan).bin").unlink()
+            await pilot.press("f5")
+            await self.analyzed(app, pilot)
+            self.assertEqual(self.titles(app), ["A", "B"])
+
+    async def test_analyzing_again_asks_after_changes_by_hand(self):
+        app = self.app_for(self.TWO_GAMES)
+        async with app.run_test() as pilot:
+            await self.analyzed(app, pilot)
+            before = app.review
+            await pilot.press("d", "r")
+            await pilot.pause()
+            self.assertTrue(app.question_open())
+            self.assertIn("Analyze again?", self.text(app.screen, "#question-text"))
+            await pilot.press("enter")  # No
+            await pilot.pause()
+            self.assertIs(app.review, before)
+            self.assertEqual(app.review.moved_count(), 1)
+            await pilot.press("r", "left", "enter")  # Yes
+            await self.analyzed(app, pilot)
+            self.assertIsNot(app.review, before)
+            self.assertEqual(app.review.moved_count(), 0)
+
+    async def test_r_is_typed_in_fields_and_does_nothing_without_a_folder(self):
+        app = self.app_for(self.TWO_GAMES)
+        async with app.run_test() as pilot:
+            await self.analyzed(app, pilot)
+            before = app.review
+            await pilot.press("slash", "r")
+            await pilot.pause()
+            self.assertEqual(app.query_one("#filter").value, "r")
+            self.assertIs(app.review, before)
+        empty = self.tui.WorkbenchApp(None, None)
+        async with empty.run_test() as pilot:
+            await self.started(empty, pilot)
+            await pilot.press("escape", "r")  # leave the folder choice; no folder: nothing to analyze
+            await pilot.pause()
+            self.assertEqual(self.text(empty, "#status"), translations.tr("window.choose_folder_status"))
+
     async def test_x_typed_in_the_filter_deletes_nothing(self):
         app = self.app_for(self.FILTER_GAMES)
         async with app.run_test() as pilot:

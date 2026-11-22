@@ -42,7 +42,7 @@ OK = (("dialog.ok", None),)
 # The actions that change or move in the list; a question locks them, as in the window.
 _LIST_ACTIONS = {
     "move_cursor", "move_game", "demote", "promote", "choose_view", "focus_filter", "leave_filter", "proceed",
-    "choose_folder", "open_settings",
+    "choose_folder", "open_settings", "reanalyze",
 }
 # As in the window: Redrawing after every deleted file would slow down large deletions.
 DELETE_REDRAW = 0.05
@@ -618,6 +618,14 @@ class WorkbenchApp(App):
     /* Textual tints the focused widget a little; the list nearly always has the focus, and its
        black would turn dark gray. The focus shows through the cursor, the fields and buttons. */
     *, *:focus, *:focus-within { background-tint: #000000 0%; }
+    /* Scroll bars in the window's grays instead of Textual's blue (long notes need the horizontal one). */
+    * { scrollbar-background: #000000; scrollbar-background-hover: #000000; scrollbar-background-active: #000000;
+        scrollbar-color: #444444; scrollbar-color-hover: #666666; scrollbar-color-active: #888888;
+        scrollbar-corner-color: #000000; }
+    /* Textual marks the view under its keyboard cursor in blue; the views never get the focus here. */
+    #views > RadioButton.-selected, #languages > RadioButton.-selected,
+    #views > RadioButton.-selected > .toggle--label,
+    #languages > RadioButton.-selected > .toggle--label { background: #000000; }
     #title-row { height: 1; background: #1a7f37; color: #ffffff; }
     #title { width: auto; text-style: bold; padding: 0 1; }
     #folder { width: 1fr; text-align: right; padding: 0 1; }
@@ -769,6 +777,7 @@ class WorkbenchApp(App):
         Binding("x,X,ctrl+l", "proceed", show=False),
         Binding("o,O,ctrl+o", "choose_folder", show=False),
         Binding("e,E,ctrl+e", "open_settings", show=False),
+        Binding("r,R,f5", "reanalyze", show=False),
     ]
 
     def __init__(self, analyze, directory: Path | None, scope: str | None = None, config_file=None,
@@ -1167,6 +1176,18 @@ class WorkbenchApp(App):
         except OSError as error:
             return str(error)
         return None
+
+    # Analyze again ----------------------------------------------------------------------------
+
+    def action_reanalyze(self) -> None:
+        """r and F5 read the folder and the configuration again, as F5 does in the window."""
+        if self.directory is None or self.deleting:
+            return
+        if self.review is not None and self.review.moved_count():
+            self.ask("question", tr("window.discard_title"), tr("window.discard_reanalyze"),
+                     then=lambda yes: self.start_analysis() if yes else None)
+        else:
+            self.start_analysis()
 
     # Folder choice ----------------------------------------------------------------------------
 
