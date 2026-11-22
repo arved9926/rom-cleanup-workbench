@@ -4756,6 +4756,10 @@ class TerminalVersionTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(background_of("Rom Cleanup Workbench"), 2)
             self.assertEqual(background_of("Showing:"), 2)
             self.assertEqual(background_of(moved), 3)
+            # ANSI 3 is yellow in PuTTY: the text on it must be black, also the note and the size.
+            row = next(index for index, line in enumerate(lines) if moved in line)
+            colors = {self.as_16_colors(segment.style.color) for segment in strips[row] if segment.text.strip()}
+            self.assertEqual(colors, {0})
             self.assertEqual(background_of(cursor), 4)
             self.assertIn(background_of("Filter"), (0, None))  # the label; the field itself is light gray
 

@@ -842,7 +842,8 @@ class WorkbenchApp(App):
        text on it, such as the folder, is hard to read. */
     .-colors16 #title-row, .-colors16 #status { background: #00aa00; color: #000000; }
     .-colors16 #games > .datatable--header { background: #000000; color: #ffffff; text-style: bold underline; }
-    .-colors16 #games > .datatable--moved { background: #aa5500; color: #ffffff; }
+    /* ANSI 3 is brown on the Linux console but yellow in PuTTY and many others: black text on it. */
+    .-colors16 #games > .datatable--moved { background: #aa5500; color: #000000; }
     .-colors16 #games > .datatable--cursor, .-colors16 #games > .datatable--selected,
     .-colors16 #folder-tree > .tree--cursor,
     .-colors16 #regions > .option-list--option-highlighted { background: #0000aa; color: #ffffff; }
