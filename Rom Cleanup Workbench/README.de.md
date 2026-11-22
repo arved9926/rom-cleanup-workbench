@@ -8,7 +8,7 @@ Findet doppelte ROM-Dateien in einem Verzeichnis anhand des Spielnamens und lös
 Braucht Python 3.10 oder neuer. Das Fenster braucht keine zusätzlichen Pakete; die Terminal-Version für Linux braucht Textual (siehe [Terminal-Version (Linux)](#terminal-version-linux)).
 Das Programm spricht Englisch, Deutsch, Italienisch, Spanisch, Französisch und Japanisch (siehe [Sprache](#sprache)).
 
-**Wichtig:** Wende dieses Programm nicht auf deine Originale an. Lege eine Kopie an und nutze das Programm, um die Bereinigung vorzunehmen.
+**Wichtig:** Wende dieses Programm nicht auf deine originalen ROM-Dateien an. Lege eine Kopie deines ROM-Repositorys an und nutze das Programm, um die Bereinigung ausschließlich an der Kopie vorzunehmen.
 
 ## Installation
 
@@ -120,6 +120,8 @@ Die Optionen der Befehlszeile und ihre Hilfe (`--help`) sind immer auf Englisch.
 Die Tests laufen über die Testansicht oder mit `python -m unittest`.
 
 ## Analysefenster
+
+Da die ZIP-Dateien entpackt werden müssen, um Größe, SHA-256-Prüfsumme und Namen ihres Inhalts zu erhalten, kann es nach der Auswahl eines Verzeichnisses einen Moment dauern, bis die Ergebnisse angezeigt werden.
 
 Die grüne Zeile oben zeigt links `Rom Cleanup Workbench` und rechts den Ordner; darunter nennt das Fenster die geltende Priorität mit ihrer Herkunft. Die grüne vorletzte Zeile zeigt den Status, während der Analyse zum Beispiel `Analysiere: 120 von 2007 Dateien`. Solange erscheint auch ein Fortschrittsbalken in der Mitte. Das Fenster zeigt auch Fehler, etwa in der Konfiguration, und solange die Analyse scheitert, lässt sich nichts löschen. Beim Löschen erscheint der Fortschrittsbalken in der Mitte, und die grüne Zeile zeigt zum Beispiel `Lösche: 120 von 500 Dateien`; das Fenster nimmt keine Eingaben an, bis das Löschen fertig ist. Danach meldet es das Ergebnis und entfernt die gelöschten Dateien aus der Liste, ohne den Ordner neu zu analysieren; Dateien, die sich nicht löschen ließen, bleiben markiert. `F5` analysiert den Ordner neu, wenn du das willst.
 
