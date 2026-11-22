@@ -8,7 +8,7 @@ Findet doppelte ROM-Dateien in einem Verzeichnis anhand des Spielnamens und lös
 Braucht Python 3.10 oder neuer. Das Fenster braucht keine zusätzlichen Pakete; die Terminal-Version für Linux braucht Textual (siehe [Terminal-Version (Linux)](#terminal-version-linux)).
 Das Programm spricht Englisch, Deutsch, Italienisch, Spanisch, Französisch und Japanisch (siehe [Sprache](#sprache)).
 
-**Wichtig:** Wenden Sie dieses Programm nicht auf Ihre Originale an. Legen Sie eine Kopie an und nutzen Sie das Programm, um die Bereinigung vorzunehmen.
+**Wichtig:** Wende dieses Programm nicht auf deine Originale an. Lege eine Kopie an und nutze das Programm, um die Bereinigung vorzunehmen.
 
 ## Installation
 
