@@ -3623,3 +3623,233 @@ class TerminalVersionTests(unittest.IsolatedAsyncioTestCase):
             await pilot.pause()
             self.assertFalse(app.is_running)
         self.assertEqual(len(list(app.directory.iterdir())), 4)  # nothing was deleted
+
+    # Step 9: proceed ----------------------------------------------------------------------------
+
+    def names(self, app):
+        return sorted(path.name for path in app.directory.iterdir())
+
+    def no_new_analysis(self, app):
+        """After the first analysis: deleting must not read the folder again."""
+        def fail(_directory, _progress=None):
+            raise AssertionError("analyzed again")
+        app.analyze = fail
+
+    async def proceed(self, app, pilot, key="x", answer="yes"):
+        """Presses x (or Ctrl+L), answers the question and waits for the deletion and its message."""
+        await pilot.press(key)
+        await pilot.pause()
+        self.assertTrue(app.question_open())
+        await pilot.press(*(["left", "enter"] if answer == "yes" else ["enter"]))
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+
+    async def test_proceed_asks_with_the_confirm_message_and_no_deletes_nothing(self):
+        app = self.app_for({"Title (USA).bin": b"a", "Title (Japan).bin": b"b"})
+        async with app.run_test() as pilot:
+            await self.analyzed(app, pilot)
+            await pilot.press("x")
+            await pilot.pause()
+            self.assertIn("kind-warning", app.screen.classes)
+            self.assertEqual(self.text(app.screen, "#question-text"), app.review.confirm_message(False, False, ""))
+            self.assertIn("Permanently delete 1 file(s)", self.text(app.screen, "#question-text"))
+            self.assertEqual(str(app.focused.label), "No")
+            await pilot.press("enter")
+            await pilot.pause()
+            self.assertFalse(app.question_open())
+            self.assertEqual(self.names(app), ["Title (Japan).bin", "Title (USA).bin"])
+
+    async def test_yes_deletes_reports_and_the_files_leave_the_list(self):
+        app = self.app_for({"Title (USA).bin": b"a", "Title (Japan).bin": b"b",
+                            "Gone (USA) (Proto).bin": b"c", "Stays (USA).bin": b"d"}, scope="all")
+        async with app.run_test() as pilot:
+            await self.analyzed(app, pilot)
+            self.no_new_analysis(app)
+            await self.proceed(app, pilot, key="ctrl+l")
+            self.assertEqual(self.names(app), ["Stays (USA).bin", "Title (USA).bin"])
+            self.assertTrue(app.question_open())
+            self.assertEqual(self.text(app.screen, "#question-title"), "Deleted")
+            self.assertEqual(self.text(app.screen, "#question-text"), "2 file(s) deleted.")
+            await pilot.press("enter")
+            await pilot.pause()
+            self.assertEqual([entry.path.name for _result, entry in app.files.values()],
+                             ["Stays (USA).bin", "Title (USA).bin"])
+            self.assertEqual(self.titles(app), ["Stays", "Title"])  # Gone had no file left
+            self.assertIn("To delete: 0 file(s)", self.text(app, "#status"))
+            self.assertFalse(app.query_one("#progress").display)
+            self.assertFalse(app.had_errors)
+            self.assertIs(app.focused, app.query_one("#games"))
+
+    async def test_changes_by_hand_are_carried_out_and_quitting_then_asks_nothing(self):
+        app = self.app_for({"Title (USA).bin": b"a", "Title (Japan).bin": b"b"})
+        async with app.run_test() as pilot:
+            await self.analyzed(app, pilot)
+            await pilot.press("down", "down", "p", "up", "d")  # keep Japan, then delete USA
+            self.assertEqual(app.review.moved_count(), 2)
+            await self.proceed(app, pilot)
+            await pilot.press("enter")
+            self.assertEqual(self.names(app), ["Title (Japan).bin"])
+            self.assertEqual(app.review.moved_count(), 0)
+            await pilot.press("q")
+            await pilot.pause()
+            self.assertFalse(app.is_running)
+
+    async def test_progress_is_shown_while_deleting_and_the_list_is_locked(self):
+        files = {}
+        for game in ("Alpha", "Beta", "Gamma"):
+            files[f"{game} (USA).bin"] = b"a"
+            files[f"{game} (Japan).bin"] = b"b"
+        app = self.app_for(files)
+        seen = []
+        async with app.run_test() as pilot:
+            await self.analyzed(app, pilot)
+            real_delete = app.review.delete
+
+            def slow_delete(progress=None):
+                def report(done, total):
+                    progress(done, total)
+                    seen.append((done, total))
+                    time.sleep(0.1)  # time for the keys below
+                return real_delete(report)
+            app.review.delete = slow_delete
+            await pilot.press("x", "left", "enter")
+            await pilot.pause(0.05)
+            self.assertTrue(app.deleting)
+            self.assertTrue(app.query_one("#progress").display)
+            self.assertTrue(self.text(app, "#status").startswith("Deleting: "))
+            self.assertTrue(app.query_one("#filter").disabled)
+            self.assertTrue(app.query_one("#views").disabled)
+            await pilot.press("d", "3", "slash", "x", "q")
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            self.assertTrue(app.is_running)
+            self.assertFalse(app.deleting)
+            self.assertFalse(app.query_one("#progress").display)
+            self.assertFalse(app.query_one("#filter").disabled)
+            self.assertEqual(app.scope, "marked")
+            self.assertEqual(app.review.moved_count(), 0)
+            self.assertEqual(seen, [(0, 3), (1, 3), (2, 3), (3, 3)])
+            self.assertEqual(self.text(app.screen, "#question-text"), "3 file(s) deleted.")
+            self.assertEqual(len(list(app.directory.iterdir())), 3)
+
+    async def test_failed_delete_is_reported_and_sets_the_exit_code(self):
+        app = self.app_for({"Title (USA).bin": b"a", "Title (Japan).bin": b"b"})
+        async with app.run_test() as pilot:
+            await self.analyzed(app, pilot)
+            with mock.patch("pathlib.Path.unlink", side_effect=PermissionError("locked")):
+                await self.proceed(app, pilot)
+            self.assertIn("kind-warning", app.screen.classes)
+            self.assertIn("locked", self.text(app.screen, "#question-text"))
+            self.assertTrue(app.had_errors)
+            await pilot.press("enter")
+            await pilot.pause()
+            self.assertEqual(len(app.review.results[0].marked), 1)
+            self.assertIn("To delete: 1 file(s)", self.text(app, "#status"))
+        self.assertEqual(len(list(app.directory.iterdir())), 2)
+
+    async def test_unexpected_error_while_deleting_unlocks_the_list(self):
+        app = self.app_for({"Title (USA).bin": b"a", "Title (Japan).bin": b"b"})
+        async with app.run_test() as pilot:
+            await self.analyzed(app, pilot)
+            app.review.delete = mock.Mock(side_effect=RuntimeError("boom"))
+            await self.proceed(app, pilot)
+            self.assertIn("boom", self.text(app.screen, "#question-text"))
+            self.assertFalse(app.deleting)
+            self.assertFalse(app.query_one("#progress").display)
+            self.assertTrue(app.had_errors)
+
+    def test_run_tui_ends_with_exit_code_1_after_a_failed_delete(self):
+        with mock.patch.object(self.tui.WorkbenchApp, "run",
+                               lambda app: setattr(app, "had_errors", True)):
+            self.assertEqual(self.tui.run_tui(None, None), 1)
+        with mock.patch.object(self.tui.WorkbenchApp, "run", lambda app: None):
+            self.assertEqual(self.tui.run_tui(None, None), 0)
+
+    async def test_save_files_are_confirmed_after_deleting_and_stay_confirmed(self):
+        import workbench_state
+
+        app = self.app_for({"Title (USA).sfc": b"x" * 1000, "Title (Japan).sfc": b"x" * 1000,
+                            "Title.srm": b"x" * 100, "Other (USA).sfc": b"x" * 1000, "Other.state": b"x" * 10},
+                           scope="problems")
+        async with app.run_test() as pilot:
+            await self.analyzed(app, pilot)
+            await self.proceed(app, pilot)
+            await pilot.press("enter")
+            await pilot.pause()
+            self.assertEqual(self.names(app), ["Other (USA).sfc", "Other.state", "Title (USA).sfc", "Title.srm"])
+            self.assertTrue(app.query_one("#nothing").display)
+            self.assertEqual(workbench_state.load_confirmed_saves(app.settings_path), {
+                rf.save_file_key(app.directory / "Title.srm"): 100,
+                rf.save_file_key(app.directory / "Other.state"): 10,
+            })
+        again = self.tui.WorkbenchApp(app.analyze, app.directory, "problems", settings_path=app.settings_path)
+        async with again.run_test() as pilot:
+            await self.analyzed(again, pilot)
+            self.assertTrue(again.query_one("#nothing").display)
+
+    async def test_failed_remembering_is_reported_and_deletes_as_usual(self):
+        app = self.app_for({"Title (USA).sfc": b"x" * 1000, "Title (Japan).sfc": b"x" * 1000,
+                            "Title.srm": b"x" * 100})
+        async with app.run_test() as pilot:
+            await self.analyzed(app, pilot)
+            with mock.patch("rom_cleanup_workbench_tui.add_confirmed_saves", side_effect=PermissionError("locked")):
+                await self.proceed(app, pilot)
+            self.assertEqual(self.text(app.screen, "#question-title"), translations.tr("window.saves_not_remembered"))
+            self.assertIn("locked", self.text(app.screen, "#question-text"))
+            await pilot.press("enter")  # then the result
+            await pilot.pause()
+            self.assertEqual(self.text(app.screen, "#question-text"), "1 file(s) deleted.")
+            self.assertFalse((app.directory / "Title (Japan).sfc").exists())
+
+    async def test_without_marked_files_proceed_offers_to_confirm_save_files(self):
+        app = self.app_for({"Title (USA).sfc": b"x" * 1000, "Title.srm": b"x" * 100}, scope="problems")
+        async with app.run_test() as pilot:
+            await self.analyzed(app, pilot)
+            await pilot.press("x")
+            await pilot.pause()
+            self.assertIn("Confirm 1 suspected status or save file(s)", self.text(app.screen, "#question-text"))
+            await pilot.press("enter")  # No
+            await pilot.pause()
+            self.assertEqual(self.titles(app), ["Title"])
+            await pilot.press("x", "left", "enter")
+            await pilot.pause()
+            self.assertTrue(app.query_one("#nothing").display)
+            self.assertEqual(len(list(app.directory.iterdir())), 2)
+
+    async def test_nothing_to_delete_is_a_message_and_deletes_nothing(self):
+        app = self.app_for({"Alpha (USA).bin": b"a"})
+        async with app.run_test() as pilot:
+            await self.analyzed(app, pilot)
+            await pilot.press("x")
+            await pilot.pause()
+            self.assertEqual(self.text(app.screen, "#question-title"), "Nothing to delete")
+            self.assertEqual(self.buttons(app), ["OK"])
+            await pilot.press("enter")
+            await pilot.pause()
+        self.assertEqual(len(list(app.directory.iterdir())), 1)
+
+    async def test_filter_stays_after_deleting_and_the_message_names_hidden_files(self):
+        app = self.app_for(self.FILTER_GAMES, scope="all")
+        async with app.run_test() as pilot:
+            await self.analyzed(app, pilot)
+            await self.filter_for(app, pilot, *"two")
+            await pilot.press("x")
+            await pilot.pause()
+            self.assertIn("Not shown: 1 file(s)", self.text(app.screen, "#question-text"))
+            await pilot.press("left", "enter")
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            await pilot.press("enter")
+            await pilot.pause()
+            self.assertEqual(app.query_one("#filter").value, "two")
+            self.assertEqual(self.titles(app), ["Two"])
+            self.assertEqual(self.names(app), ["One (USA).bin", "Two (USA).bin"])
+
+    async def test_x_typed_in_the_filter_deletes_nothing(self):
+        app = self.app_for(self.FILTER_GAMES)
+        async with app.run_test() as pilot:
+            await self.analyzed(app, pilot)
+            await pilot.press("slash", "x", "ctrl+l")
+            await pilot.pause()
+            self.assertEqual(app.query_one("#filter").value, "x")
+        self.assertEqual(len(list(app.directory.iterdir())), 4)

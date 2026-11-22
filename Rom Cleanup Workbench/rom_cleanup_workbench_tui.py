@@ -5,12 +5,13 @@ Like the window, this module does not import the program, because it would other
 second time when started as a script.
 
 Done so far (see docs/tui-plan.md): start, title row, the read-only list with background analysis,
-moving the cursor and selecting several rows, D and P, the three views, the filter, and questions
-and messages inside the terminal.
+moving the cursor and selecting several rows, D and P, the three views, the filter, questions
+and messages inside the terminal, and deleting (Proceed).
 """
 
 from __future__ import annotations
 
+import time
 from pathlib import Path
 
 from rich.text import Text
@@ -23,7 +24,8 @@ from textual.widgets import Button, DataTable, Input, ProgressBar, RadioButton, 
 
 from translations import tr
 from workbench_state import (
-    SCOPES, SETTINGS_PATH, format_kb, load_confirmed_saves, load_scope, save_scope, scope_flags,
+    SCOPES, SETTINGS_PATH, add_confirmed_saves, format_kb, load_confirmed_saves, load_scope, save_scope,
+    scope_flags,
 )
 
 APP_NAME = "Rom Cleanup Workbench"
@@ -32,7 +34,11 @@ FILTER_DELAY = 0.2
 YES_NO = (("dialog.yes", True), ("dialog.no", False))
 OK = (("dialog.ok", None),)
 # The actions that change or move in the list; a question locks them, as in the window.
-_LIST_ACTIONS = {"move_cursor", "move_game", "demote", "promote", "choose_view", "focus_filter", "leave_filter"}
+_LIST_ACTIONS = {
+    "move_cursor", "move_game", "demote", "promote", "choose_view", "focus_filter", "leave_filter", "proceed",
+}
+# As in the window: Redrawing after every deleted file would slow down large deletions.
+DELETE_REDRAW = 0.05
 
 
 def _game_of(key: str) -> int | None:
@@ -241,6 +247,7 @@ class WorkbenchApp(App):
         Binding("3", "choose_view(2)", show=False),
         Binding("p,P", "promote", show=False),
         Binding("slash,ctrl+f", "focus_filter", show=False),
+        Binding("x,X,ctrl+l", "proceed", show=False),
     ]
 
     def __init__(self, analyze, directory: Path | None, scope: str | None = None, config_file=None,
@@ -260,6 +267,8 @@ class WorkbenchApp(App):
         self._game_numbers = {}  # id(result) -> the game's number in the row keys
         self.pattern = ""  # the filter the list shows; the field may hold newer text during the delay
         self._filter_timer = None
+        self.deleting = False  # While files are deleted in the background, nothing may change the list.
+        self.had_errors = False  # A file could not be deleted: the program ends with exit code 1.
 
     def compose(self) -> ComposeResult:
         with Horizontal(id="title-row"):
@@ -471,8 +480,11 @@ class WorkbenchApp(App):
         if self._filter_timer is not None:
             self._filter_timer.stop()
             self._filter_timer = None
-        pattern = self.query_one("#filter", FilterInput).value
-        if pattern == self.pattern:
+        fields = self.query("#filter")
+        if not fields:  # The timer ran out while the program was ending.
+            return
+        pattern = fields.first(FilterInput).value
+        if pattern == self.pattern or self.deleting:  # After deleting, the list is redrawn anyway.
             return
         self.pattern = pattern
         # Rows hidden by the filter leave the selection; D and P should work on what is shown.
@@ -510,6 +522,103 @@ class WorkbenchApp(App):
         table.scroll_to(y=scroll, animate=False, immediate=True)
         table.move_cursor(row=table.get_row_index(cursor), scroll=False)
         self._update_status()
+
+    # Proceed ----------------------------------------------------------------------------------
+
+    def action_proceed(self) -> None:
+        """x and Ctrl+L delete the marked files after a question, as Proceed does in the window."""
+        if self.review is None or self.deleting:
+            return
+        if not any(result.marked for result in self.review.results):
+            self._confirm_save_files_only()
+            return
+        message = self.review.confirm_message(*scope_flags(self.scope, self.pattern))
+        self.ask("warning", tr("window.delete_title"), message, then=self._delete_if_yes)
+
+    def _delete_if_yes(self, yes) -> None:
+        if not yes or self.review is None or self.deleting:
+            return
+        # Taken before deleting: Afterwards they are remembered as legitimate.
+        save_files = self.review.save_file_keys()
+        review = self.review
+        self._lock_for_deleting(True)
+        last_redraw = 0.0
+
+        def report(done: int, total: int) -> None:
+            nonlocal last_redraw
+            now = time.monotonic()
+            if done not in (0, total) and now - last_redraw < DELETE_REDRAW:
+                return
+            last_redraw = now
+            self.call_from_thread(self._show_delete_progress, done, total)
+
+        def work() -> None:
+            try:
+                deleted, errors = review.delete(report)
+            except Exception as error:  # The list must not stay locked, whatever happens.
+                deleted, errors = 0, [str(error) or type(error).__name__]
+            self.call_from_thread(self._finish_delete, review, save_files, deleted, errors)
+
+        self.run_worker(work, thread=True, group="delete", exit_on_error=False)
+
+    def _lock_for_deleting(self, locked: bool) -> None:
+        self.deleting = locked
+        self.query_one("#filter", FilterInput).disabled = locked
+        self.query_one("#views", RadioSet).disabled = locked
+        progress = self.query_one("#progress", ProgressBar)
+        progress.update(total=None, progress=0)
+        progress.display = locked
+        if locked:
+            self._set_status(tr("window.deleting_progress", done=0, total=0))
+        else:
+            self.query_one("#games", GameTable).focus()
+
+    def _show_delete_progress(self, done: int, total: int) -> None:
+        self.query_one("#progress", ProgressBar).update(total=max(total, 1), progress=done)
+        self._set_status(tr("window.deleting_progress", done=done, total=total))
+
+    def _finish_delete(self, review, save_files: dict[str, int], deleted: int, errors: list[str]) -> None:
+        self._lock_for_deleting(False)
+        # Before redrawing: show_review reads the confirmed files back from the settings file.
+        not_remembered = self._remember_save_files(save_files)
+        # The Review object has dropped the deleted files; the folder is not analyzed again.
+        self.show_review(review)
+        self._apply_filter()  # A filter typed just before deleting.
+        if errors:
+            self.had_errors = True
+            self.show_message("warning", tr("window.partly_deleted_title"),
+                              tr("window.partly_deleted", count=deleted, errors="\n".join(errors)))
+        else:
+            self.show_message("info", tr("window.deleted_title"), tr("terminal.deleted", count=deleted))
+        if not_remembered:  # On top, so that it is read first.
+            self.show_message("error", tr("window.saves_not_remembered"), not_remembered)
+
+    def _confirm_save_files_only(self) -> None:
+        """Without marked files, x and Ctrl+L can still confirm the suspected status or save files."""
+        save_files = self.review.save_file_keys()
+        if not save_files:
+            self.show_message("info", tr("window.nothing_to_delete_title"), tr("window.nothing_to_delete"))
+            return
+
+        def confirm(yes) -> None:
+            if yes and self.review is not None:
+                not_remembered = self._remember_save_files(save_files)
+                self.show_review(self.review)
+                if not_remembered:
+                    self.show_message("error", tr("window.saves_not_remembered"), not_remembered)
+
+        self.ask("question", tr("window.confirm_saves_title"), tr("window.confirm_saves", count=len(save_files)),
+                 then=confirm)
+
+    def _remember_save_files(self, save_files: dict[str, int]) -> str | None:
+        """Writes the confirmed files into the settings file; returns the error, if there is one."""
+        if not save_files:
+            return None
+        try:
+            add_confirmed_saves(self.settings_path, save_files)
+        except OSError as error:
+            return str(error)
+        return None
 
     # Cursor and selection ---------------------------------------------------------------------
 
@@ -618,7 +727,9 @@ class WorkbenchApp(App):
         return isinstance(self.screen, QuestionScreen)
 
     def check_action(self, action: str, parameters) -> bool | None:
-        if action in _LIST_ACTIONS and self.question_open():
+        if action in _LIST_ACTIONS and (self.question_open() or self.deleting):
+            return False
+        if action == "quit" and self.deleting:  # Half a deletion must not be left behind unreported.
             return False
         return True
 
@@ -645,4 +756,6 @@ def run_tui(analyze, directory: Path | None, scope: str | None = None, config_fi
     """Shows the terminal version and returns the program's exit code."""
     app = WorkbenchApp(analyze, directory, scope, config_file)
     app.run()
+    if app.had_errors:  # as in the window: a file could not be deleted
+        return 1
     return app.return_code or 0
