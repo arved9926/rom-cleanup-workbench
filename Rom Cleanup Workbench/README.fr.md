@@ -1,5 +1,7 @@
 # Rom Cleanup Workbench
 
+[English](README.md) · [Deutsch](README.de.md) · [Italiano](README.it.md) · [Español](README.es.md) · **Français** · [日本語](README.ja.md)
+
 **Guide de l'utilisateur avec captures d'écran :** [PDF](<docs/Rom Cleanup Workbench - Guide utilisateur.pdf>) · [Word](<docs/Rom Cleanup Workbench - Guide utilisateur.docx>)
 
 Trouve les fichiers ROM en double dans un dossier d'après le nom du jeu et les supprime sur demande.

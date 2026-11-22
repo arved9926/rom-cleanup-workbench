@@ -7,7 +7,7 @@ cd "Rom Cleanup Workbench"
 python rom_cleanup_workbench.py "D:\Games"
 ```
 
-The documentation is in [Rom Cleanup Workbench/README.md](<Rom Cleanup Workbench/README.md>).
+The documentation is in [Rom Cleanup Workbench/README.md](<Rom Cleanup Workbench/README.md>). It is also available in [Deutsch](<Rom Cleanup Workbench/README.de.md>), [Italiano](<Rom Cleanup Workbench/README.it.md>), [Español](<Rom Cleanup Workbench/README.es.md>), [Français](<Rom Cleanup Workbench/README.fr.md>) and [日本語](<Rom Cleanup Workbench/README.ja.md>), each with a user guide (Word and PDF) in that language.
 
 **Deleted files do not go to the Recycle Bin.**
 

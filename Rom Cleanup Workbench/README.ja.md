@@ -1,5 +1,7 @@
 # Rom Cleanup Workbench
 
+[English](README.md) · [Deutsch](README.de.md) · [Italiano](README.it.md) · [Español](README.es.md) · [Français](README.fr.md) · **日本語**
+
 **画面写真付きユーザーガイド:** [PDF](<docs/Rom Cleanup Workbench - ユーザーガイド.pdf>) · [Word](<docs/Rom Cleanup Workbench - ユーザーガイド.docx>)
 
 フォルダー内の重複した ROM ファイルをゲーム名で見つけ、指示に応じて削除します。

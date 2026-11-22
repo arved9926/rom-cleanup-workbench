@@ -1,5 +1,7 @@
 # Rom Cleanup Workbench
 
+**English** · [Deutsch](README.de.md) · [Italiano](README.it.md) · [Español](README.es.md) · [Français](README.fr.md) · [日本語](README.ja.md)
+
 **User guide with screenshots:** [PDF](<docs/Rom Cleanup Workbench - User Guide.pdf>) · [Word](<docs/Rom Cleanup Workbench - User Guide.docx>)
 
 Finds duplicate ROM files in a directory by game name and deletes them on request.
