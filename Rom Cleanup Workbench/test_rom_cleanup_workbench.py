@@ -3039,7 +3039,8 @@ class TerminalVersionTests(unittest.IsolatedAsyncioTestCase):
         from textual.widgets import DataTable
 
         table = app.query_one("#games", DataTable)
-        return [[str(cell) for cell in table.get_row(key)] for key in table.rows]
+        # The cells carry their own spaces (the table has no padding of its own).
+        return [[str(cell).strip() for cell in table.get_row(key)] for key in table.rows]
 
     async def test_list_shows_games_sections_sizes_and_notes(self):
         app = self.app_for({
@@ -4702,6 +4703,51 @@ class TerminalVersionTests(unittest.IsolatedAsyncioTestCase):
             await pilot.press("escape", "r")  # leave the folder choice; no folder: nothing to analyze
             await pilot.pause()
             self.assertEqual(self.text(empty, "#status"), translations.tr("window.choose_folder_status"))
+
+    # A game's title row and the blinking "Nothing to do." --------------------------------------
+
+    async def test_title_row_is_bold_and_dashed_to_the_right_edge(self):
+        app = self.app_for({"Pac-Man (USA).nes": b"a", "PacMan (Japan).nes": b"b",
+                            "Tetris (USA).gb": b"c", "Tetris (Japan).gb": b"d"})
+        async with app.run_test(size=(90, 24)) as pilot:
+            await self.analyzed(app, pilot)
+            await pilot.pause()
+            lines = self.screen_lines(app)
+            strips = self.strips(app)
+            pac = next(index for index, line in enumerate(lines) if line.startswith(" Pac-Man "))
+            tetris = next(index for index, line in enumerate(lines) if line.startswith(" Tetris "))
+            self.assertRegex(lines[pac], r"^ Pac-Man -+ Different spellings of the name -+$")
+            self.assertRegex(lines[tetris], r"^ Tetris -+$")  # no note: dashes all the way
+            self.assertEqual(len(lines[tetris]), 90)  # up to the right edge
+            for row in (pac, tetris):
+                self.assertTrue(all(segment.style.bold for segment in strips[row] if segment.text.strip()))
+            # The file rows keep their columns: the sizes end in the same place, before the notes.
+            sizes = {line.index("KB") for line in lines if "KB" in line}
+            self.assertEqual(len(sizes), 1)
+            self.assertEqual(self.titles(app), ["Pac-Man", "Tetris"])
+
+    async def test_dashed_line_follows_the_width_of_the_terminal(self):
+        app = self.app_for({"Tetris (USA).gb": b"c", "Tetris (Japan).gb": b"d"})
+        async with app.run_test(size=(70, 20)) as pilot:
+            await self.analyzed(app, pilot)
+            await pilot.pause()
+            line = next(line for line in self.screen_lines(app) if line.startswith(" Tetris "))
+            self.assertRegex(line, r"^ Tetris -+$")
+            self.assertEqual(len(line), 70)
+            await pilot.resize_terminal(100, 20)
+            await pilot.pause()
+            await pilot.pause()
+            line = next(line for line in self.screen_lines(app) if line.startswith(" Tetris "))
+            self.assertRegex(line, r"^ Tetris -+$")
+            self.assertEqual(len(line), 100)
+
+    async def test_nothing_to_do_blinks_with_the_terminal_attribute(self):
+        app = self.app_for({"Alone (USA).bin": b"a"})
+        async with app.run_test() as pilot:
+            await self.analyzed(app, pilot)
+            row = next(strip for strip in self.strips(app) if "Nothing to do." in strip.text)
+            styles = [segment.style for segment in row if "Nothing" in segment.text]
+            self.assertTrue(styles and all(style.blink and style.bold for style in styles))
 
     async def test_x_typed_in_the_filter_deletes_nothing(self):
         app = self.app_for(self.FILTER_GAMES)

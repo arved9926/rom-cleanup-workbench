@@ -15,6 +15,8 @@ import os
 import time
 from pathlib import Path
 
+from rich.cells import cell_len
+from rich.measure import Measurement
 from rich.text import Text
 from textual import events
 from textual.app import App, ComposeResult
@@ -27,6 +29,7 @@ from textual.scrollbar import ScrollBar, ScrollBarRender
 from textual.widgets import (
     Button, DataTable, Input, OptionList, ProgressBar, RadioButton, RadioSet, Static, Tree,
 )
+from textual.widgets.data_table import ColumnKey
 
 from translations import LANGUAGE_NAMES, current_language, tr
 from workbench_state import (
@@ -119,11 +122,45 @@ def _game_of(key: str) -> int | None:
     return int(digits) if digits else None
 
 
+class DashLine:
+    """A cell of a game's title row: its text, then "-" up to the right end of the column.
+
+    The table measures it by its text alone, so the line never widens a column; it is drawn in
+    the width the column has. str() gives the text, as for the other cells.
+    """
+
+    def __init__(self, text: str = ""):
+        self.text = text
+
+    def __str__(self) -> str:
+        return self.text.strip()
+
+    def __rich_measure__(self, console, options) -> Measurement:
+        width = cell_len(self.text)
+        return Measurement(width, width)
+
+    def __rich_console__(self, console, options):
+        width = options.max_width
+        line = Text(self.text, style="bold", no_wrap=True, overflow="crop")
+        line.append("-" * max(0, width - cell_len(self.text)), style="bold")
+        line.truncate(width)
+        yield line
+
+
+def _cell(text: str, **options) -> Text:
+    """A cell with one space on each side: the table has no padding of its own (see GameTable)."""
+    return Text(f" {text} ", **options)
+
+
 class GameTable(DataTable):
     """The game list: one cursor row plus a selection of several rows, as in the window's list.
 
     The table's own Up/Down would stop on the empty rows between the games and know no Shift,
     so the app moves the cursor itself.
+
+    It has no cell padding: the table would fill it with spaces, which would break the dashed
+    line of a game's title row. The cells carry their own spaces instead (_cell), and the last
+    column reaches the right edge (fit_note_column).
     """
 
     COMPONENT_CLASSES = DataTable.COMPONENT_CLASSES | {
@@ -137,9 +174,29 @@ class GameTable(DataTable):
     ]
 
     def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+        super().__init__(*args, cell_padding=0, **kwargs)
         self.selected: set[str] = set()
         self.moved: set[str] = set()
+
+    def fit_note_column(self) -> None:
+        """Widens the last column to the right edge, so that the dashed lines reach it.
+
+        Long notes still widen it further; then the table scrolls sideways, as before.
+        """
+        note = self.columns.get(ColumnKey("note"))
+        if note is None or not self.size.width:
+            return
+        others = sum(column.get_render_width(self) for key, column in self.columns.items() if key != "note")
+        width = max(note.content_width, self.scrollable_content_region.width - others)
+        if note.auto_width or note.width != width:
+            note.auto_width = False
+            note.width = width
+            self._require_update_dimensions = True
+            self._clear_caches()
+            self.refresh()
+
+    def on_resize(self, event) -> None:
+        self.call_after_refresh(self.fit_note_column)
 
     def set_selection(self, keys) -> None:
         self.selected = set(keys)
@@ -811,11 +868,13 @@ class WorkbenchApp(App):
         yield Static(tr("tui.help"), id="help", markup=False)
         yield Static("", id="info", markup=False)
         table = GameTable(id="games", cursor_type="row", zebra_stripes=False)
-        table.add_column(tr("window.column.file"), key="file")
-        table.add_column(Text(tr("window.column.size"), justify="right"), key="size")
-        table.add_column(tr("window.column.note"), key="note")
+        table.add_column(_cell(tr("window.column.file")), key="file")
+        table.add_column(_cell(tr("window.column.size"), justify="right"), key="size")
+        table.add_column(_cell(tr("window.column.note")), key="note")
         yield table
-        yield Static(tr("window.nothing_to_do"), id="nothing")
+        # Blinks with the terminal's own blinking (SGR 5), as it blinks in the window. In the text
+        # itself: Textual 8.2.8 drops "blink" from a widget's text-style on the way to the screen.
+        yield Static(Text(tr("window.nothing_to_do"), style="bold blink"), id="nothing")
         yield ProgressBar(id="progress", show_eta=False)
         with Horizontal(id="filter-row"):
             yield Static(tr("window.filter"), id="filter-label", markup=False)
@@ -954,8 +1013,10 @@ class WorkbenchApp(App):
             if place:
                 # An empty row between the games: a drawn line would widen the file column to its length.
                 table.add_row("", "", "", key=f"s{game_index}")
+            # The title row: bold, and dashes up to the right edge, so that a new game stands out.
+            problems = "; ".join(result.problems)
             table.add_row(
-                Text(result.title, style="bold"), "", Text("; ".join(result.problems), style="bold"),
+                DashLine(f" {result.title} "), DashLine(), DashLine(f" {problems} " if problems else ""),
                 key=f"g{game_index}",
             )
             entries = [("k", "window.section.keep", "+", "bold", "window.by_hand_keep", result.keep),
@@ -963,7 +1024,7 @@ class WorkbenchApp(App):
             for suffix, label, sign, style, moved_note, group in entries:
                 if not group:
                     continue
-                table.add_row(Text("  " + tr(label)), "", "", key=f"g{game_index}{suffix}")
+                table.add_row(_cell("  " + tr(label)), "", "", key=f"g{game_index}{suffix}")
                 for entry in group:
                     key = self._file_keys[id(entry)]
                     self.files[key] = (result, entry)
@@ -971,12 +1032,13 @@ class WorkbenchApp(App):
                         moved.add(key)
                     notes = ([tr(moved_note)] if entry.moved else []) + list(entry.notes)
                     table.add_row(
-                        Text(f"    {sign} {entry.path.name}", style=style),
-                        Text(format_kb(entry.size()), justify="right", style=style),
-                        Text("; ".join(notes), style="italic"),
+                        _cell(f"    {sign} {entry.path.name}", style=style),
+                        _cell(format_kb(entry.size()), justify="right", style=style),
+                        _cell("; ".join(notes), style="italic") if notes else "",
                         key=key,
                     )
         table.set_moved(moved)
+        table.call_after_refresh(table.fit_note_column)
 
     # Views ------------------------------------------------------------------------------------
 
