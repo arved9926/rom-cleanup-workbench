@@ -1,6 +1,6 @@
 # Handover: Linux terminal version (`--tui`)
 
-Status: **steps 1–12 and 14 of 14 done; step 13 (the user's own Linux check) is open.** The terminal version shows the analyzed list; the cursor and a selection of several rows can be moved, `d`/`p` mark and keep files, the three views can be chosen with `1`/`2`/`3` or by clicking, `/` or `Ctrl+F` filters the file names, questions and messages appear over the list, `x`/`Ctrl+L` deletes the marked files after a question, `o`/`Ctrl+O` chooses another folder, `e`/`Ctrl+E` edits the settings, and it adapts to 16-color terminals, the Linux console and terminals without UTF-8. Next: step 13 (Linux check by the user). Developed with Python 3.12.3 and Textual 8.2.8; since step 7 also with Python 3.14.10.
+Status: **all 14 steps done** (step 13, the user's own Linux check, confirmed by the user on 2026-11-22). The terminal version shows the analyzed list; the cursor and a selection of several rows can be moved, `d`/`p` mark and keep files, the three views can be chosen with `1`/`2`/`3` or by clicking, `/` or `Ctrl+F` filters the file names, questions and messages appear over the list, `x`/`Ctrl+L` deletes the marked files after a question, `o`/`Ctrl+O` chooses another folder, `e`/`Ctrl+E` edits the settings, and it adapts to 16-color terminals, the Linux console and terminals without UTF-8. The terminal version is finished. Developed with Python 3.12.3 and Textual 8.2.8; since step 7 also with Python 3.14.10.
 
 **Moved to a new Windows computer (2026-11-22).** Set up there: `git clone https://github.com/arved9926/rom-cleanup-workbench.git`, `pip install textual==8.2.8`, then `python -m unittest` in `Rom Cleanup Workbench` (392 tests must pass). Not in the repository, by design: `rom_cleanup_workbench_settings.json` (per-computer, created again on first start) and the `.pptx` presentation (copy by hand if needed).
 
@@ -36,7 +36,7 @@ Status: **steps 1–12 and 14 of 14 done; step 13 (the user's own Linux check) i
 - [x] **10. Folder choice.** `Ctrl+O`/`o`: directory tree starting at `/` and the home folder, path field, Select/Cancel. Done when: tests choose a temporary folder.
 - [x] **11. Settings.** `Ctrl+E`/`e`: region priority (up, down, remove, add), language, low priority tags; writes through `ConfigFile`. Done when: tests match the window's settings tests.
 - [x] **12. Colors and fallbacks.** Same colors as the window, bold and italic; readable with 16 colors and on the Linux console; ASCII fallback for terminals without UTF-8; Japanese width. Done when: snapshot or text checks of the screen pass.
-- [ ] **13. Linux check.** The user runs it on Linux (GNOME Terminal or similar, SSH, tmux); fix what turns up.
+- [x] **13. Linux check.** The user runs it on Linux (GNOME Terminal or similar, SSH, tmux); fix what turns up.
 - [x] **14. Documentation.** English only: README section and a chapter in the user guide (Word/PDF). The PowerPoint is never uploaded.
 
 ## Log
