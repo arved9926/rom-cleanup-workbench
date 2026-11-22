@@ -4357,6 +4357,43 @@ class TerminalVersionTests(unittest.IsolatedAsyncioTestCase):
         listing = screen.query_one("#regions")
         return [str(listing.get_option_at_index(index).prompt) for index in range(listing.option_count)]
 
+    async def test_settings_show_and_change_the_delete_keywords(self):
+        app = self.app_with_settings(
+            '{"language": "en", "region_priority": ["USA", "Japan", "none", "Beta"], "delete_tags": ["Hack"]}')
+        async with app.run_test(size=(110, 32)) as pilot:
+            await self.analyzed(app, pilot)
+            before = app.review
+            screen = await self.open_settings(app, pilot)
+            self.assertEqual(self.text(screen, "#tags-label"),
+                             "Delete keywords (separated by commas; marked for deletion):")
+            self.assertEqual(self.text(screen, "#regions-label"),
+                             "Priority (best first; extra info such as Beta after none):")  # may wrap on screen
+            self.assertEqual(screen.tag_list(), ["Hack"])
+            screen.query_one("#tags").value = "Hack, Hacks"
+            await pilot.press("ctrl+s")
+            await self.analyzed(app, pilot)
+            self.assertFalse(app.settings_open())
+            self.assertIsNot(app.review, before)  # a new delete keyword analyzes again
+            self.assertEqual(rf.Config.load(app.config_file.path).delete_tags, ["Hack", "Hacks"])
+
+    async def test_settings_of_an_old_file_show_its_low_priority_tags_and_saving_drops_them(self):
+        app = self.app_with_settings('{"language": "en", "region_priority": ["Germany", "USA", "none", "Japan"], '
+                                     '"delete_tags": [], "low_priority_tags": ["Beta", "Proto"]}')
+        async with app.run_test(size=(110, 32)) as pilot:
+            await self.analyzed(app, pilot)
+            screen = await self.open_settings(app, pilot)
+            self.assertEqual(screen.region_list(), ["Germany", "USA", "none", "Japan", "Beta", "Proto"])
+            self.assertEqual(self.region_texts(screen), ["Germany", "USA", "none", "Japan", "Beta", "Proto"])
+            self.assertEqual(screen.tag_list(), [])  # the file's own empty list stays
+            screen.query_one("#tags").value = "Hack, Hacks"
+            await pilot.press("ctrl+s")
+            await self.analyzed(app, pilot)
+            text = app.config_file.path.read_text(encoding="utf-8")
+            self.assertNotIn("low_priority_tags", text)
+            loaded = rf.Config.load(app.config_file.path)
+            self.assertEqual(loaded.region_priority, ["Germany", "USA", "none", "Japan", "Beta", "Proto"])
+            self.assertEqual(loaded.delete_tags, ["Hack", "Hacks"])
+
     async def test_without_a_configuration_file_e_does_nothing(self):
         app = self.app_for(self.TWO_GAMES)
         async with app.run_test() as pilot:

@@ -563,7 +563,7 @@ class SettingsScreen(Screen):
             yield Button(tr("settings.cancel"), id="settings-cancel", compact=True)
         with Horizontal(id="settings-columns"):
             with Vertical(id="settings-left"):
-                yield Static(tr("settings.regions"), markup=False)
+                yield Static(tr("settings.regions"), id="regions-label", markup=False)
                 with Horizontal(id="regions-row"):
                     yield RegionList(id="regions")
                     with Vertical(id="region-buttons"):
