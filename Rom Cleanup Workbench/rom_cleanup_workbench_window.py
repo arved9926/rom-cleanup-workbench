@@ -508,6 +508,11 @@ class ReviewWindow:
         if not self._list_locked() and self._may_discard_changes(tr("window.discard_reanalyze")):
             self.start_analysis()
 
+    def show_credits(self) -> None:
+        """F1: who had the idea and who programmed it, as a message in the window."""
+        if not self._questions:  # not on top of an open question
+            messagebox.showinfo(tr("credits.title"), tr("credits.text"), parent=self.root)
+
     def choose_directory(self) -> None:
         """Folder... and Ctrl+O choose the folder in place of the list; the analysis starts once it is chosen."""
         if self._list_locked() or not self._may_discard_changes(tr("window.discard_folder")):
@@ -769,6 +774,7 @@ class ReviewWindow:
         self.root.bind("<Control-o>", lambda _event: self.choose_directory())
         self.root.bind("<Control-O>", lambda _event: self.choose_directory())
         self.root.bind("<F5>", lambda _event: self.reanalyze())
+        self.root.bind("<F1>", lambda _event: self.show_credits())
         self.root.bind("<Control-e>", lambda _event: self.toggle_settings())
         self.root.bind("<Control-E>", lambda _event: self.toggle_settings())
         self.root.bind("<Control-f>", lambda _event: self.focus_search())

@@ -68,7 +68,7 @@ _EN = {
     "terminal.need_directory": "--report-only and --yes need a directory",
     "terminal.no_window": "The window cannot be opened: {error}",
     "terminal.no_textual": "The terminal version needs Textual (pip install textual): {error}",
-    "tui.help": "d delete  p keep  Tab next game  1-3 view  / filter  x proceed  e settings  o folder  r analyze again  q quit",
+    "tui.help": "d delete  p keep  Tab next game  1-3 view  / filter  x proceed  e settings  o folder  r analyze again  q quit  c credits",
     "window.scope.problems": "Problematic deletion marks",
     "window.scope.marked": "All deletion marks",
     "window.scope.all": "All ROM files",
@@ -77,7 +77,7 @@ _EN = {
     "window.help": (
         "D: Demote, delete file  |  P: Promote, keep file  |  Tab / Shift+Tab: next / previous game\n"
         "Arrow keys: select row (Shift: several)  |  Ctrl+mouse wheel: font size  |  "
-        "Ctrl+F: Filter (* and ?)  |  Ctrl+E: Settings  |  Ctrl+L: Proceed  |  Ctrl+O: Folder  |  F5: Analyze again  |  Esc: Close"
+        "Ctrl+F: Filter (* and ?)  |  Ctrl+E: Settings  |  Ctrl+L: Proceed  |  Ctrl+O: Folder  |  F5: Analyze again  |  Esc: Close  |  F1: Credits"
     ),
     "window.folder": "Folder: {directory}",
     "window.no_folder": "Folder: none chosen yet (Ctrl+O)",
@@ -126,6 +126,8 @@ _EN = {
     "dialog.yes": "Yes",
     "dialog.no": "No",
     "dialog.ok": "OK",
+    "credits.title": "Credits",
+    "credits.text": "Idea: Arved Retrogamer\nProgramming: Claude Code",
     "settings.title": "Settings",
     "settings.file": "File: {path}",
     "settings.language": "Language:",
@@ -210,7 +212,7 @@ _DE = {
     "terminal.need_directory": "--report-only und --yes brauchen ein Verzeichnis",
     "terminal.no_window": "Das Fenster lässt sich nicht öffnen: {error}",
     "terminal.no_textual": "Die Terminal-Version braucht Textual (pip install textual): {error}",
-    "tui.help": "d löschen  p behalten  Tab nächstes Spiel  1-3 Ansicht  / Filter  x ausführen  e Einstellungen  o Ordner  r neu analysieren  q beenden",
+    "tui.help": "d löschen  p behalten  Tab nächstes Spiel  1-3 Ansicht  / Filter  x ausführen  e Einstellungen  o Ordner  r neu analysieren  q beenden  c Credits",
     "window.scope.problems": "Problematische Löschmarkierungen",
     "window.scope.marked": "Alle Löschmarkierungen",
     "window.scope.all": "Alle Romdateien",
@@ -219,7 +221,7 @@ _DE = {
     "window.help": (
         "D: Demote, Datei löschen  |  P: Promote, Datei behalten  |  Tab / Umschalt+Tab: nächstes / voriges Spiel\n"
         "Pfeiltasten: Zeile wählen (Umschalt: mehrere)  |  Strg+Scrollrad: Schriftgröße  |  "
-        "Strg+F: Filter (* und ?)  |  Strg+E: Einstellungen  |  Strg+L: Ausführen  |  Strg+O: Ordner  |  F5: Neu analysieren  |  Esc: Schließen"
+        "Strg+F: Filter (* und ?)  |  Strg+E: Einstellungen  |  Strg+L: Ausführen  |  Strg+O: Ordner  |  F5: Neu analysieren  |  Esc: Schließen  |  F1: Credits"
     ),
     "window.folder": "Ordner: {directory}",
     "window.no_folder": "Ordner: noch keiner gewählt (Strg+O)",
@@ -268,6 +270,8 @@ _DE = {
     "dialog.yes": "Ja",
     "dialog.no": "Nein",
     "dialog.ok": "OK",
+    "credits.title": "Credits",
+    "credits.text": "Idee: Arved Retrogamer\nProgrammierung: Claude Code",
     "settings.title": "Einstellungen",
     "settings.file": "Datei: {path}",
     "settings.language": "Sprache:",
@@ -350,7 +354,7 @@ _IT = {
     "terminal.need_directory": "--report-only e --yes richiedono una cartella",
     "terminal.no_window": "Impossibile aprire la finestra: {error}",
     "terminal.no_textual": "La versione per terminale richiede Textual (pip install textual): {error}",
-    "tui.help": "d elimina  p mantieni  Tab gioco successivo  1-3 vista  / filtro  x esegui  e impostazioni  o cartella  r analizza di nuovo  q esci",
+    "tui.help": "d elimina  p mantieni  Tab gioco successivo  1-3 vista  / filtro  x esegui  e impostazioni  o cartella  r analizza di nuovo  q esci  c riconoscimenti",
     "window.scope.problems": "Marcature problematiche",
     "window.scope.marked": "Tutte le marcature",
     "window.scope.all": "Tutti i file ROM",
@@ -359,7 +363,7 @@ _IT = {
     "window.help": (
         "D: Demote, elimina file  |  P: Promote, mantieni file  |  Tab / Maiusc+Tab: gioco successivo / precedente\n"
         "Frecce: seleziona riga (Maiusc: più righe)  |  Ctrl+rotellina: dimensione del testo  |  "
-        "Ctrl+F: Filtro (* e ?)  |  Ctrl+E: Impostazioni  |  Ctrl+L: Esegui  |  Ctrl+O: Cartella  |  F5: Analizza di nuovo  |  Esc: Chiudi"
+        "Ctrl+F: Filtro (* e ?)  |  Ctrl+E: Impostazioni  |  Ctrl+L: Esegui  |  Ctrl+O: Cartella  |  F5: Analizza di nuovo  |  Esc: Chiudi  |  F1: Riconoscimenti"
     ),
     "window.folder": "Cartella: {directory}",
     "window.no_folder": "Cartella: nessuna scelta (Ctrl+O)",
@@ -408,6 +412,8 @@ _IT = {
     "dialog.yes": "Sì",
     "dialog.no": "No",
     "dialog.ok": "OK",
+    "credits.title": "Riconoscimenti",
+    "credits.text": "Idea: Arved Retrogamer\nProgrammazione: Claude Code",
     "settings.title": "Impostazioni",
     "settings.file": "File: {path}",
     "settings.language": "Lingua:",
@@ -490,7 +496,7 @@ _ES = {
     "terminal.need_directory": "--report-only y --yes necesitan una carpeta",
     "terminal.no_window": "No se puede abrir la ventana: {error}",
     "terminal.no_textual": "La versión para terminal necesita Textual (pip install textual): {error}",
-    "tui.help": "d eliminar  p conservar  Tab juego siguiente  1-3 vista  / filtro  x ejecutar  e ajustes  o carpeta  r analizar de nuevo  q salir",
+    "tui.help": "d eliminar  p conservar  Tab juego siguiente  1-3 vista  / filtro  x ejecutar  e ajustes  o carpeta  r analizar de nuevo  q salir  c créditos",
     "window.scope.problems": "Marcas problemáticas",
     "window.scope.marked": "Todas las marcas",
     "window.scope.all": "Todos los archivos ROM",
@@ -499,7 +505,7 @@ _ES = {
     "window.help": (
         "D: Demote, eliminar archivo  |  P: Promote, conservar archivo  |  Tab / Mayús+Tab: juego siguiente / anterior\n"
         "Flechas: elegir fila (Mayús: varias)  |  Ctrl+rueda: tamaño de letra  |  "
-        "Ctrl+F: Filtro (* y ?)  |  Ctrl+E: Ajustes  |  Ctrl+L: Ejecutar  |  Ctrl+O: Carpeta  |  F5: Analizar de nuevo  |  Esc: Cerrar"
+        "Ctrl+F: Filtro (* y ?)  |  Ctrl+E: Ajustes  |  Ctrl+L: Ejecutar  |  Ctrl+O: Carpeta  |  F5: Analizar de nuevo  |  Esc: Cerrar  |  F1: Créditos"
     ),
     "window.folder": "Carpeta: {directory}",
     "window.no_folder": "Carpeta: ninguna elegida (Ctrl+O)",
@@ -548,6 +554,8 @@ _ES = {
     "dialog.yes": "Sí",
     "dialog.no": "No",
     "dialog.ok": "Aceptar",
+    "credits.title": "Créditos",
+    "credits.text": "Idea: Arved Retrogamer\nProgramación: Claude Code",
     "settings.title": "Ajustes",
     "settings.file": "Archivo: {path}",
     "settings.language": "Idioma:",
@@ -628,7 +636,7 @@ _FR = {
     "terminal.need_directory": "--report-only et --yes nécessitent un dossier",
     "terminal.no_window": "Impossible d'ouvrir la fenêtre : {error}",
     "terminal.no_textual": "La version terminal nécessite Textual (pip install textual) : {error}",
-    "tui.help": "d supprimer  p garder  Tab jeu suivant  1-3 vue  / filtre  x exécuter  e paramètres  o dossier  r analyser à nouveau  q quitter",
+    "tui.help": "d supprimer  p garder  Tab jeu suivant  1-3 vue  / filtre  x exécuter  e paramètres  o dossier  r analyser à nouveau  q quitter  c crédits",
     "window.scope.problems": "Marquages problématiques",
     "window.scope.marked": "Tous les marquages",
     "window.scope.all": "Tous les fichiers ROM",
@@ -637,7 +645,7 @@ _FR = {
     "window.help": (
         "D : Demote, supprimer le fichier  |  P : Promote, garder le fichier  |  Tab / Maj+Tab : jeu suivant / précédent\n"
         "Flèches : choisir la ligne (Maj : plusieurs)  |  Ctrl+molette : taille du texte  |  "
-        "Ctrl+F : Filtre (* et ?)  |  Ctrl+E : Paramètres  |  Ctrl+L : Exécuter  |  Ctrl+O : Dossier  |  F5 : Analyser à nouveau  |  Échap : Fermer"
+        "Ctrl+F : Filtre (* et ?)  |  Ctrl+E : Paramètres  |  Ctrl+L : Exécuter  |  Ctrl+O : Dossier  |  F5 : Analyser à nouveau  |  Échap : Fermer  |  F1 : Crédits"
     ),
     "window.folder": "Dossier : {directory}",
     "window.no_folder": "Dossier : aucun choisi (Ctrl+O)",
@@ -686,6 +694,8 @@ _FR = {
     "dialog.yes": "Oui",
     "dialog.no": "Non",
     "dialog.ok": "OK",
+    "credits.title": "Crédits",
+    "credits.text": "Idée : Arved Retrogamer\nProgrammation : Claude Code",
     "settings.title": "Paramètres",
     "settings.file": "Fichier : {path}",
     "settings.language": "Langue :",
@@ -768,7 +778,7 @@ _JA = {
     "terminal.need_directory": "--report-only と --yes にはフォルダーの指定が必要です",
     "terminal.no_window": "ウィンドウを開けません: {error}",
     "terminal.no_textual": "ターミナル版には Textual が必要です (pip install textual): {error}",
-    "tui.help": "d 削除  p 保持  Tab 次のゲーム  1-3 表示  / フィルター  x 実行  e 設定  o フォルダー  r 再分析  q 終了",
+    "tui.help": "d 削除  p 保持  Tab 次のゲーム  1-3 表示  / フィルター  x 実行  e 設定  o フォルダー  r 再分析  q 終了  c クレジット",
     "window.scope.problems": "要確認の削除対象",
     "window.scope.marked": "すべての削除対象",
     "window.scope.all": "すべての ROM ファイル",
@@ -777,7 +787,7 @@ _JA = {
     "window.help": (
         "D: Demote、ファイルを削除  |  P: Promote、ファイルを保持  |  Tab / Shift+Tab: 次 / 前のゲーム\n"
         "矢印キー: 行を選択 (Shift: 複数)  |  Ctrl+ホイール: 文字サイズ  |  "
-        "Ctrl+F: フィルター (* と ?)  |  Ctrl+E: 設定  |  Ctrl+L: 実行  |  Ctrl+O: フォルダー  |  F5: 再分析  |  Esc: 閉じる"
+        "Ctrl+F: フィルター (* と ?)  |  Ctrl+E: 設定  |  Ctrl+L: 実行  |  Ctrl+O: フォルダー  |  F5: 再分析  |  Esc: 閉じる  |  F1: クレジット"
     ),
     "window.folder": "フォルダー: {directory}",
     "window.no_folder": "フォルダー: 未選択 (Ctrl+O)",
@@ -826,6 +836,8 @@ _JA = {
     "dialog.yes": "はい",
     "dialog.no": "いいえ",
     "dialog.ok": "OK",
+    "credits.title": "クレジット",
+    "credits.text": "アイデア: Arved Retrogamer\nプログラミング: Claude Code",
     "settings.title": "設定",
     "settings.file": "ファイル: {path}",
     "settings.language": "言語:",

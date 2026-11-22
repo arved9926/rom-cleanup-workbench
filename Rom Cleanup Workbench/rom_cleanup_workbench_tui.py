@@ -46,7 +46,7 @@ OK = (("dialog.ok", None),)
 # The actions that change or move in the list; a question locks them, as in the window.
 _LIST_ACTIONS = {
     "move_cursor", "move_game", "demote", "promote", "choose_view", "focus_filter", "leave_filter", "proceed",
-    "choose_folder", "open_settings", "reanalyze",
+    "choose_folder", "open_settings", "reanalyze", "credits",
 }
 # As in the window: Redrawing after every deleted file would slow down large deletions.
 DELETE_REDRAW = 0.05
@@ -896,6 +896,8 @@ class WorkbenchApp(App):
         Binding("o,O,ctrl+o", "choose_folder", show=False),
         Binding("e,E,ctrl+e", "open_settings", show=False),
         Binding("r,R,f5", "reanalyze", show=False),
+        # c as well: some terminals keep F1 for their own help.
+        Binding("c,C,f1", "credits", show=False),
     ]
 
     def __init__(self, analyze, directory: Path | None, scope: str | None = None, config_file=None,
@@ -1324,6 +1326,12 @@ class WorkbenchApp(App):
         except OSError as error:
             return str(error)
         return None
+
+    # Credits ----------------------------------------------------------------------------------
+
+    def action_credits(self) -> None:
+        """c and F1: who had the idea and who programmed it, as a message over the list."""
+        self.show_message("info", tr("credits.title"), tr("credits.text"))
 
     # Analyze again ----------------------------------------------------------------------------
 

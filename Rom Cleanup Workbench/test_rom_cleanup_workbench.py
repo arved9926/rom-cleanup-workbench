@@ -1525,6 +1525,16 @@ class ReviewWindowTests(RedundanzTestCase):
         translations.set_language("en")
         self.assertIn("Ctrl+L: Proceed  |  Ctrl+O: Folder", translations.tr("window.help"))
 
+    def test_f1_shows_the_credits(self):
+        window = self.open_window()
+        self.assertTrue(window.root.bind("<F1>"))
+        self.assertIn("F1: Credits", translations.tr("window.help"))
+        with mock.patch("rom_cleanup_workbench_window.messagebox.showinfo") as info:
+            window.show_credits()
+        self.assertEqual(info.call_args.args[:2], ("Credits", "Idea: Arved Retrogamer\nProgramming: Claude Code"))
+        translations.set_language("de")
+        self.assertEqual(translations.tr("credits.text"), "Idee: Arved Retrogamer\nProgrammierung: Claude Code")
+
     def window_with_settings(self, content='{"language": "en", "region_priority": ["USA", "Japan"]}'):
         temp = tempfile.TemporaryDirectory()
         self.addCleanup(temp.cleanup)
@@ -5014,6 +5024,27 @@ class TerminalVersionTests(unittest.IsolatedAsyncioTestCase):
                 segment = next(segment for segment in strips[row] if text[:4] in segment.text)
                 self.assertEqual(self.as_16_colors(segment.style.bgcolor), 2, text)  # green
                 self.assertEqual(self.as_16_colors(segment.style.color), 0, text)  # black
+
+    async def test_c_and_f1_show_the_credits(self):
+        app = self.app_for(self.TWO_GAMES)
+        async with app.run_test(size=(110, 30)) as pilot:
+            await self.analyzed(app, pilot)
+            self.assertIn("c credits", self.text(app, "#help"))
+            for key in ("c", "f1"):
+                await pilot.press(key)
+                await pilot.pause()
+                self.assertTrue(app.question_open(), key)
+                self.assertEqual(self.text(app.screen, "#question-title"), "Credits")
+                self.assertEqual(self.text(app.screen, "#question-text"),
+                                 "Idea: Arved Retrogamer\nProgramming: Claude Code")
+                self.assertEqual(self.buttons(app), ["OK"])
+                await pilot.press("enter")
+                await pilot.pause()
+                self.assertFalse(app.question_open())
+            await pilot.press("slash", "c")  # in the filter field, c is a letter
+            await pilot.pause()
+            self.assertFalse(app.question_open())
+            self.assertEqual(app.query_one("#filter").value, "c")
 
     async def test_nothing_to_do_blinks_with_the_terminal_attribute(self):
         app = self.app_for({"Alone (USA).bin": b"a"})

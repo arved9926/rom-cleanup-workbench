@@ -58,6 +58,7 @@ The window remembers the most recently chosen view and the confirmed status or s
 | `Ctrl+L` | same as the button `Proceed...`: delete after a confirmation and confirm the suspected status or save files (rule 9) |
 | `Ctrl+O` | choose another folder, inside the window in place of the list: open folders with a double-click or the arrow, or type a path into `Path`, then `Select` or `Enter`; `Cancel` or `Esc` keep the current folder |
 | `F5` | analyze again, also reads the configuration again |
+| `F1` | show the credits |
 | `Esc` | close without deleting anything |
 
 Horizontal lines separate the games, and every second game has a dark gray background. The column `Size` shows the size of every file in KB, rounded up as in Windows Explorer (`1,234 KB`); `?` means the size could not be read. The size is read during the analysis. Kept files are shown in bold under `Keep:`, files to be deleted in normal weight under `Marked for deletion`. The window shows white text in Lucida Sans Typewriter 11 pt on a black background. If the font is not installed, Windows silently picks a substitute. Files moved by hand have a brown background and carry the note `By hand`; while the row is selected, it appears blue. The program's notes stay unchanged, even if they refer to a file you have moved.
@@ -126,6 +127,7 @@ Without Textual, the program says so and deletes nothing. The screen has the row
 | `o` or `Ctrl+O` | choose another folder: `Right` or `Space` opens a folder, `Left` closes it, `Enter` chooses; a path can also be typed |
 | `e` or `Ctrl+E` | settings: `Shift+Up`/`Shift+Down` move a region, `Delete` removes it, `Ctrl+S` saves, `Esc` cancels |
 | `r` or `F5` | analyze again |
+| `c` or `F1` | show the credits (`c` too, because some terminals keep `F1` for their own help) |
 | `q` or `Esc` | close without deleting anything; after changes by hand the program asks first |
 | In a question | `Left`/`Right` choose a button, `Enter` presses it, `Esc` answers `No` |
 
@@ -201,3 +203,8 @@ Every ZIP file is read completely, even if it is the only file of a game. Its co
 - **No region or version in the ZIP name:** The information is taken from the files in the ZIP, provided they have the same game name.
 - **Defective or encrypted ZIP:** The file is always marked, even if it is the only file of the game. The content of an encrypted ZIP is not checked.
 - **Locked ZIP or unknown method (for example Deflate64):** This says nothing about the condition of the file. Without a plain file of the game, it is kept and named in the report.
+
+## Credits
+
+- Idea: Arved Retrogamer
+- Programming: Claude Code
