@@ -34,7 +34,8 @@ DEFAULT_CONFIG = {
         "Europe": ["Europa", "EU"],
         "Japan": ["JP", "JPN"],
     },
-    "delete_tags": ["Proto"],
+    # Extra info that marks a file for deletion by default (rule 2); the settings can change it.
+    "delete_tags": ["Hack", "Hacks"],
     # Old: extra info that comes after all others. Its entries are now appended to
     # region_priority after "none" (Config.__post_init__); the settings drop it in step 3.
     "low_priority_tags": [],

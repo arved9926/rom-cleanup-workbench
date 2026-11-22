@@ -215,19 +215,41 @@ class AnalyzeTests(RedundanzTestCase):
         self.assertEqual(self.names(self.single().keep), ["Title (Japan, USA).bin"])
 
     def test_delete_tag_marks_even_single_file(self):
-        self.write("Title (USA) (Proto).bin")
+        self.write("Title (USA) (Hack).bin")
         result = self.single()
         self.assertEqual(result.keep, [])
-        self.assertEqual(self.names(result.marked), ["Title (USA) (Proto).bin"])
+        self.assertEqual(self.names(result.marked), ["Title (USA) (Hack).bin"])
 
     def test_delete_tag_never_wins_over_other_files(self):
-        self.write("Title (USA) (Proto 2).bin")
+        self.write("Title (USA) (Hack 2).bin")
         self.write("Title (Japan).bin")
         result = self.single()
         self.assertEqual(self.names(result.keep), ["Title (Japan).bin"])
 
+    def test_hack_and_hacks_are_deleted_by_default(self):
+        self.assertEqual(rf.DEFAULT_CONFIG["delete_tags"], ["Hack", "Hacks"])
+        self.write("Title (USA).bin")
+        for name in ("Title (USA) (Hack).bin", "Title (USA) (Hacks).bin", "Title (Japan) (Hack 2).bin",
+                     "Title (Hack by Someone).bin"):
+            self.write(name)
+        result = self.single()
+        self.assertEqual(self.names(result.keep), ["Title (USA).bin"])
+        self.assertEqual(sorted(self.names(result.marked)), [
+            "Title (Hack by Someone).bin", "Title (Japan) (Hack 2).bin", "Title (USA) (Hack).bin",
+            "Title (USA) (Hacks).bin",
+        ])
+        notes = {entry.path.name: entry.notes for entry in result.marked}
+        self.assertIn("Extra info: Hack", notes["Title (USA) (Hack).bin"])
+        self.assertIn("Extra info: Hacks", notes["Title (USA) (Hacks).bin"])
+
+    def test_proto_is_no_longer_deleted_by_default(self):
+        self.write("Title (USA) (Proto).bin")
+        self.write("Other (Hackers).bin")  # a word that only starts with Hack
+        results = self.scan()
+        self.assertEqual([result.marked for result in results], [[], []])
+
     def test_delete_tag_matches_whole_word_only(self):
-        self.write("Title (Protocol).bin")
+        self.write("Title (Hackers).bin")
         self.assertEqual(self.single().marked, [])
 
     def test_all_discs_of_best_version_are_kept(self):
@@ -466,8 +488,8 @@ class AnalyzeTests(RedundanzTestCase):
 
     def test_delete_tag_still_marks_a_small_file(self):
         self.write("Title (USA).sfc", b"x" * 1000)
-        self.write("Title (USA) (Proto).sfc", b"x" * 10)
-        self.assertEqual(self.names(self.single().marked), ["Title (USA) (Proto).sfc"])
+        self.write("Title (USA) (Hack).sfc", b"x" * 10)
+        self.assertEqual(self.names(self.single().marked), ["Title (USA) (Hack).sfc"])
 
     def test_zip_is_compared_by_its_unpacked_size(self):
         self.write("Title (USA).sfc", b"x" * 4000)
@@ -725,7 +747,7 @@ class ProblemTests(RedundanzTestCase):
         self.assertTrue(any(text in problem for problem in self.single().problems), self.single().problems)
 
     def test_nothing_left(self):
-        self.write("Title (USA) (Proto).bin")
+        self.write("Title (USA) (Hack).bin")
         self.assert_problem("No file")
 
     def test_zip_with_unique_content(self):
@@ -840,7 +862,7 @@ class ReviewTests(RedundanzTestCase):
     def test_filter_shows_problems_and_manual_changes(self):
         self.write("Clear (USA).bin")
         self.write("Clear (Japan).bin")
-        self.write("Problem (USA) (Proto).bin")
+        self.write("Problem (USA) (Hack).bin")
         review, results = self.review()
         clear, problem = results
         self.assertFalse(review.is_visible(clear, True))
@@ -910,7 +932,7 @@ class ReviewTests(RedundanzTestCase):
     def test_confirm_message_names_hidden_files_and_lost_games(self):
         self.write("Clear (USA).bin")
         self.write("Clear (Japan).bin")
-        self.write("Problem (USA) (Proto).bin")
+        self.write("Problem (USA) (Hack).bin")
         review, _ = self.review()
         message = review.confirm_message(True)
         self.assertIn("2 file(s)", message)
@@ -2087,7 +2109,7 @@ class ReviewWindowTests(RedundanzTestCase):
     def test_confirm_message_does_not_count_shown_files_as_hidden(self):
         self.write("Clear (USA).bin")
         self.write("Clear (Japan).bin")
-        self.write("Problem (USA) (Proto).bin")
+        self.write("Problem (USA) (Hack).bin")
         review = rf.Review(self.scan(), self.config)
         self.assertIn("Not shown", review.confirm_message(True, False))
         self.assertIn("Not shown", review.confirm_message(True, True))
@@ -2096,7 +2118,7 @@ class ReviewWindowTests(RedundanzTestCase):
     def test_filter_hides_clear_games(self):
         self.write("Clear (USA).bin")
         self.write("Clear (Japan).bin")
-        self.write("Problem (USA) (Proto).bin")
+        self.write("Problem (USA) (Hack).bin")
         window = self.open_window(only_problems=True)
         self.assertEqual(window.tree.get_children(), ("g1",))
         window.scope.set("marked")
@@ -2137,8 +2159,8 @@ class ReviewWindowTests(RedundanzTestCase):
 
     def test_stripes_follow_the_visible_games(self):
         self.write("Clear (USA).bin")
-        self.write("Problem A (USA) (Proto).bin")
-        self.write("Problem B (USA) (Proto).bin")
+        self.write("Problem A (USA) (Hack).bin")
+        self.write("Problem B (USA) (Hack).bin")
         window = self.open_window(only_problems=True)
         self.assertEqual(window.tree.get_children(), ("g1", "g2s", "g2"))
         self.assertIn("striped", window.tree.item("g2", "tags"))
@@ -2328,7 +2350,7 @@ class ReviewWindowTests(RedundanzTestCase):
         self.assertIn("To delete: 0 file(s)", window.status.get())
 
     def test_game_without_remaining_file_disappears_after_deleting(self):
-        self.write("Gone (USA) (Proto).bin")
+        self.write("Gone (USA) (Hack).bin")
         self.write("Stays (USA).bin")
         self.write("Stays (Japan).bin")
         window = self.open_window(scope="all")
@@ -3130,7 +3152,7 @@ class TerminalVersionTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_list_shows_games_sections_sizes_and_notes(self):
         app = self.app_for({
-            "Title (USA).bin": b"x" * 3000, "Title (Japan).bin": b"x" * 3000, "Other (USA) (Proto).bin": b"x" * 10,
+            "Title (USA).bin": b"x" * 3000, "Title (Japan).bin": b"x" * 3000, "Other (USA) (Hack).bin": b"x" * 10,
         })
         async with app.run_test() as pilot:
             await self.analyzed(app, pilot)
@@ -3143,8 +3165,8 @@ class TerminalVersionTests(unittest.IsolatedAsyncioTestCase):
             self.assertIn("- Title (Japan).bin", texts)
             japan = next(row for row in rows if row[0].strip() == "- Title (Japan).bin")
             self.assertEqual(japan[1], "3 KB")
-            proto = next(row for row in rows if row[0].strip() == "- Other (USA) (Proto).bin")
-            self.assertEqual(proto[2], "Extra info: Proto")
+            proto = next(row for row in rows if row[0].strip() == "- Other (USA) (Hack).bin")
+            self.assertEqual(proto[2], "Extra info: Hack")
             self.assertIn("Showing: 2 of 2 games", self.text(app, "#status"))
             self.assertIn("Priority: USA > Europe", self.text(app, "#info"))
             self.assertEqual(len(app.files), 3)
@@ -3769,7 +3791,7 @@ class TerminalVersionTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_yes_deletes_reports_and_the_files_leave_the_list(self):
         app = self.app_for({"Title (USA).bin": b"a", "Title (Japan).bin": b"b",
-                            "Gone (USA) (Proto).bin": b"c", "Stays (USA).bin": b"d"}, scope="all")
+                            "Gone (USA) (Hack).bin": b"c", "Stays (USA).bin": b"d"}, scope="all")
         async with app.run_test() as pilot:
             await self.analyzed(app, pilot)
             self.no_new_analysis(app)
