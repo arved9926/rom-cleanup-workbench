@@ -580,8 +580,8 @@ class SettingsScreen(Screen):
                         button = RadioButton(name, value=code == self.language, id=f"language-{code}")
                         yield _plain_radio(button) if getattr(self.app, "ascii", False) else button
                 yield Static(tr("settings.language_hint"), id="language-hint", markup=False)
-                yield Static(tr("settings.low_priority"), id="tags-label", markup=False)
-                yield Input(", ".join(self.values["low_priority_tags"]), id="tags")
+                yield Static(tr("settings.delete_keywords"), id="tags-label", markup=False)
+                yield Input(", ".join(self.values["delete_tags"]), id="tags")
         yield Static(tr("settings.tui_hint"), id="settings-hint", markup=False)
 
     def on_mount(self) -> None:
@@ -1294,7 +1294,7 @@ class WorkbenchApp(App):
         """Writes the settings, as the window does; a new priority or new tags take effect at once."""
         language, regions, tags = screen.language_code(), screen.region_list(), screen.tag_list()
         before = screen.values
-        rules_changed = regions != before["region_priority"] or tags != before["low_priority_tags"]
+        rules_changed = regions != before["region_priority"] or tags != before["delete_tags"]
 
         def write() -> None:
             try:

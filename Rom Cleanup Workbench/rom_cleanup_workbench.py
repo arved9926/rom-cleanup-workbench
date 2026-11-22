@@ -36,9 +36,6 @@ DEFAULT_CONFIG = {
     },
     # Extra info that marks a file for deletion by default (rule 2); the settings can change it.
     "delete_tags": ["Hack", "Hacks"],
-    # Old: extra info that comes after all others. Its entries are now appended to
-    # region_priority after "none" (Config.__post_init__); the settings drop it in step 3.
-    "low_priority_tags": [],
     "part_tags": ["Disc", "Disk", "CD", "Side", "Seite", "Part", "Teil", "Track"],
     "language": DEFAULT_LANGUAGE,
 }
@@ -170,6 +167,32 @@ def _newest_first(tags: list[str]) -> tuple[int, ...]:
     return tuple(-part for part in version_number(tags)) + (1,)
 
 
+def _plain_canonical(tag: str) -> str:
+    """Without the aliases of a configuration: only the words for "none" of every language."""
+    text = normalize(tag)
+    return NO_REGION if text in {normalize(word) for word in NO_REGION_WORDS} else text
+
+
+def with_old_low_priority(regions: list[str], low_priority: list[str], canonical=_plain_canonical) -> list[str]:
+    """The priority list with the low priority tags of an old file appended as keywords.
+
+    They go after "none", which is added if missing; tags already in the list stay where they are.
+    """
+    merged = list(regions)
+    if low_priority and not any(canonical(entry) == NO_REGION for entry in merged):
+        merged.append(NO_REGION)
+    known = {canonical(entry) for entry in merged}
+    for tag in low_priority:
+        if canonical(tag) not in known:
+            merged.append(tag)
+            known.add(canonical(tag))
+    return merged
+
+
+# Entries of old files that are still read; the settings drop them when they save.
+LEGACY_CONFIG_KEYS = {"low_priority_tags": list}
+
+
 @dataclass
 class Config:
     region_priority: list[str]
@@ -191,12 +214,8 @@ class Config:
             self._canonical.setdefault(normalize(word), NO_REGION)
         # Old low priority tags become keywords at the end of the list, after "none".
         if self.low_priority_tags:
-            merged = list(self.region_priority)
-            if not any(self.canonical(entry) == NO_REGION for entry in merged):
-                merged.append(NO_REGION)
-            known = {self.canonical(entry) for entry in merged}
-            merged += [tag for tag in self.low_priority_tags if self.canonical(tag) not in known]
-            self.region_priority = merged
+            self.region_priority = with_old_low_priority(self.region_priority, self.low_priority_tags,
+                                                         self.canonical)
             self.low_priority_tags = []
         self._ranks = {}
         for index, region in enumerate(self.region_priority):
@@ -216,18 +235,21 @@ class Config:
             if not isinstance(loaded, dict):
                 raise ValueError(tr("config.not_object"))
             # A typo must not silently fall back to the defaults.
-            unknown = sorted(set(loaded) - set(DEFAULT_CONFIG))
+            unknown = sorted(set(loaded) - set(DEFAULT_CONFIG) - set(LEGACY_CONFIG_KEYS))
             if unknown:
                 raise ValueError(tr("config.unknown_entries", names=", ".join(unknown)))
             for key, value in loaded.items():
-                if not isinstance(value, type(DEFAULT_CONFIG[key])):
+                expected = LEGACY_CONFIG_KEYS.get(key) or type(DEFAULT_CONFIG[key])
+                if not isinstance(value, expected):
                     raise ValueError(tr("config.wrong_type", key=key))
             values.update(loaded)
         if values["language"] not in LANGUAGES:
             raise ValueError(
                 tr("config.unknown_language", language=values["language"], languages=", ".join(LANGUAGES))
             )
-        return cls(**{key: values[key] for key in DEFAULT_CONFIG})
+        # An old file's low priority tags become keywords after "none" (see __post_init__).
+        return cls(**{key: values[key] for key in DEFAULT_CONFIG},
+                   low_priority_tags=list(values.get("low_priority_tags", [])))
 
     def canonical(self, tag: str) -> str:
         normalized = normalize(tag)
@@ -312,8 +334,8 @@ class Config:
         return frozenset(tag for tag in tags if not _matches_tag(tag, self.part_tags))
 
 
-# The entries the settings dialog of the window may change; all others stay as they are.
-EDITABLE_CONFIG_KEYS = ("language", "region_priority", "low_priority_tags")
+# The entries the settings may change; all others stay as they are.
+EDITABLE_CONFIG_KEYS = ("language", "region_priority", "delete_tags")
 
 
 def _format_json(value, indent: int = 0) -> str:
@@ -345,18 +367,30 @@ class ConfigFile:
         return raw
 
     def read(self) -> dict:
-        """The editable entries; missing ones come from the defaults."""
-        raw = self._load_raw()
-        return {key: raw.get(key, DEFAULT_CONFIG[key]) for key in EDITABLE_CONFIG_KEYS}
+        """The editable entries; missing ones come from the defaults.
 
-    def write(self, language: str, region_priority: list[str], low_priority_tags: list[str]) -> None:
-        """Checks the values and saves them; the file stays unchanged if anything is wrong."""
+        The low priority tags of an old file appear as keywords at the end of the priority
+        list, as the analysis uses them; saving then writes them there.
+        """
+        raw = self._load_raw()
+        values = {key: raw.get(key, DEFAULT_CONFIG[key]) for key in EDITABLE_CONFIG_KEYS}
+        old = raw.get("low_priority_tags")
+        if isinstance(old, list) and isinstance(values["region_priority"], list):
+            values["region_priority"] = with_old_low_priority(values["region_priority"], old)
+        return values
+
+    def write(self, language: str, region_priority: list[str], delete_tags: list[str]) -> None:
+        """Checks the values and saves them; the file stays unchanged if anything is wrong.
+
+        An old entry low_priority_tags is dropped: read() has put its tags into the priority list.
+        """
         regions = _clean_names(region_priority)
         if not regions:
             raise ValueError(tr("settings.no_regions"))
-        tags = _clean_names(low_priority_tags)
+        tags = _clean_names(delete_tags)
         raw = self._load_raw()
-        raw.update({"language": language, "region_priority": regions, "low_priority_tags": tags})
+        raw.pop("low_priority_tags", None)
+        raw.update({"language": language, "region_priority": regions, "delete_tags": tags})
         # The same checks as when loading, before anything is written.
         temporary = self.path.with_name(self.path.name + ".tmp")
         temporary.write_text(_format_json(raw) + "\n", encoding="utf-8")

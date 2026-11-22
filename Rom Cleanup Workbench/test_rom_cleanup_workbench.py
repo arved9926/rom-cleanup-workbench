@@ -1108,19 +1108,20 @@ class ConfigFileTests(RedundanzTestCase):
     def test_missing_file_shows_the_defaults(self):
         values = self.config_file().read()
         self.assertEqual(values, {
-            "language": "en", "region_priority": ["USA", "Europe", "Japan", "none", "Beta"], "low_priority_tags": [],
+            "language": "en", "region_priority": ["USA", "Europe", "Japan", "none", "Beta"],
+            "delete_tags": ["Hack", "Hacks"],
         })
 
     def test_write_keeps_other_entries_and_their_order(self):
         config = self.config_file(
             '{\n  "region_priority": ["USA"],\n  "region_aliases": {"Germany": ["DE"]},\n  "delete_tags": []\n}\n'
         )
-        config.write("de", ["Germany", "Europe", "none"], ["Beta", "Proto"])
+        config.write("de", ["Germany", "Europe", "none"], ["Hack", "Hacks"])
         text = config.path.read_text(encoding="utf-8")
         self.assertEqual(text, (
             '{\n  "region_priority": ["Germany", "Europe", "none"],\n'
             '  "region_aliases": {\n    "Germany": ["DE"]\n  },\n'
-            '  "delete_tags": [],\n  "language": "de",\n  "low_priority_tags": ["Beta", "Proto"]\n}\n'
+            '  "delete_tags": ["Hack", "Hacks"],\n  "language": "de"\n}\n'
         ))
         loaded = rf.Config.load(config.path)
         self.assertEqual(loaded.region_aliases, {"Germany": ["DE"]})
@@ -1130,13 +1131,43 @@ class ConfigFileTests(RedundanzTestCase):
         config = self.config_file()
         config.write("ja", ["Japan", "USA"], [])
         self.assertEqual(rf.Config.load(config.path).language, "ja")
-        self.assertEqual(config.read()["low_priority_tags"], [])
+        self.assertEqual(config.read()["delete_tags"], [])
 
     def test_write_drops_empty_entries_and_spaces(self):
         config = self.config_file()
-        config.write("en", [" USA ", "", "Japan"], [" Beta ", " "])
+        config.write("en", [" USA ", "", "Japan"], [" Hack ", " "])
         self.assertEqual(config.read()["region_priority"], ["USA", "Japan"])
-        self.assertEqual(config.read()["low_priority_tags"], ["Beta"])
+        self.assertEqual(config.read()["delete_tags"], ["Hack"])
+
+    def test_old_file_shows_its_low_priority_tags_in_the_list_and_saving_drops_them(self):
+        old = ('{\n  "region_priority": ["Germany", "Europe", "USA", "none", "Japan"],\n'
+               '  "delete_tags": [],\n  "low_priority_tags": ["Beta", "Proto", "Alpha"]\n}\n')
+        config = self.config_file(old)
+        values = config.read()
+        self.assertEqual(values["region_priority"],
+                         ["Germany", "Europe", "USA", "none", "Japan", "Beta", "Proto", "Alpha"])
+        self.assertEqual(values["delete_tags"], [])  # the user's own value stays
+        config.write("en", values["region_priority"], ["Hack", "Hacks"])
+        text = config.path.read_text(encoding="utf-8")
+        self.assertNotIn("low_priority_tags", text)
+        self.assertIn('"region_priority": ["Germany", "Europe", "USA", "none", "Japan", "Beta", "Proto", "Alpha"]',
+                      text)
+        loaded = rf.Config.load(config.path)
+        self.assertEqual(loaded.delete_tags, ["Hack", "Hacks"])
+        self.assertEqual(loaded.region_priority,
+                         ["Germany", "Europe", "USA", "none", "Japan", "Beta", "Proto", "Alpha"])
+
+    def test_old_file_without_none_gets_none_before_the_keywords(self):
+        config = self.config_file('{"region_priority": ["USA", "Europe"], "low_priority_tags": ["Beta"]}')
+        self.assertEqual(config.read()["region_priority"], ["USA", "Europe", "none", "Beta"])
+
+    def test_low_priority_tags_of_the_wrong_type_are_reported(self):
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        path = Path(temp.name) / "c.json"
+        path.write_text('{"low_priority_tags": "Beta"}', encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, 'Wrong type for "low_priority_tags"'):
+            rf.Config.load(path)
 
     def test_wrong_values_leave_the_file_unchanged(self):
         original = '{"region_priority": ["USA"], "language": "en"}'
@@ -1528,7 +1559,7 @@ class ReviewWindowTests(RedundanzTestCase):
         dialog = window.settings_panel
         self.assertEqual(dialog.language.get(), "English")
         self.assertEqual(dialog.region_list(), ["USA", "Japan"])
-        self.assertEqual(dialog.tag_list(), [])  # Beta is now a keyword in the default priority list
+        self.assertEqual(dialog.tag_list(), ["Hack", "Hacks"])  # the delete keywords; the file has none
         window.open_settings()  # Already open: nothing happens.
         self.assertIs(window.settings_panel, dialog)
 
@@ -1557,7 +1588,7 @@ class ReviewWindowTests(RedundanzTestCase):
         dialog = window.settings_panel
         dialog.regions.selection_set(1)
         dialog.move(-1)
-        dialog.tags.set("Beta, Proto")
+        dialog.tags.set("Hack, Hacks, Proto")
         with mock.patch.object(window, "start_analysis") as analysis, mock.patch(
             "rom_cleanup_workbench_window.messagebox.showinfo"
         ) as info:
@@ -1567,7 +1598,31 @@ class ReviewWindowTests(RedundanzTestCase):
         self.assertIsNone(window.settings_panel)
         values = window.config_file.read()
         self.assertEqual(values["region_priority"], ["Japan", "USA"])
-        self.assertEqual(values["low_priority_tags"], ["Beta", "Proto"])
+        self.assertEqual(values["delete_tags"], ["Hack", "Hacks", "Proto"])
+
+    def test_settings_show_and_change_the_delete_keywords(self):
+        window = self.window_with_settings(
+            '{"language": "en", "region_priority": ["USA", "Japan", "none", "Beta"], "delete_tags": ["Hack"]}')
+        window.open_settings()
+        dialog = window.settings_panel
+        self.assertEqual(dialog.tag_list(), ["Hack"])
+        texts = [widget.cget("text") for widget in self._descendants(dialog.frame)
+                 if widget.winfo_class() == "TLabel"]
+        self.assertIn("Delete keywords (separated by commas; marked for deletion):", texts)
+        self.assertIn("Priority (best first; extra info such as Beta after none):", texts)
+        dialog.tags.set("Hack, Hacks")
+        with mock.patch.object(window, "start_analysis") as analysis:
+            window.save_settings(dialog)
+        analysis.assert_called_once()  # a new delete keyword changes the rules: analyze again
+        self.assertEqual(rf.Config.load(window.config_file.path).delete_tags, ["Hack", "Hacks"])
+
+    def test_settings_of_an_old_file_show_its_low_priority_tags_as_keywords(self):
+        window = self.window_with_settings(
+            '{"language": "en", "region_priority": ["USA", "none", "Japan"], "low_priority_tags": ["Beta"]}')
+        window.open_settings()
+        dialog = window.settings_panel
+        self.assertEqual(dialog.region_list(), ["USA", "none", "Japan", "Beta"])
+        self.assertEqual(dialog.tag_list(), ["Hack", "Hacks"])  # the file has none: the defaults
 
     def test_new_language_is_announced_for_the_next_start(self):
         window = self.window_with_settings()
@@ -4322,7 +4377,7 @@ class TerminalVersionTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(screen.language_code(), "en")
             self.assertEqual(screen.region_list(), ["USA", "Japan"])
             self.assertEqual(self.region_texts(screen), ["USA", "Japan"])
-            self.assertEqual(screen.tag_list(), rf.DEFAULT_CONFIG["low_priority_tags"])
+            self.assertEqual(screen.tag_list(), rf.DEFAULT_CONFIG["delete_tags"])
             self.assertIs(app.focused, screen.query_one("#new-region"))  # as in the window
             await pilot.press("e")  # typed into the field; no second settings screen
             self.assertEqual(screen.query_one("#new-region").value, "e")
@@ -4385,7 +4440,7 @@ class TerminalVersionTests(unittest.IsolatedAsyncioTestCase):
             self.assertFalse(app.question_open())  # the language stayed the same: no message
             values = app.config_file.read()
             self.assertEqual(values["region_priority"], ["Japan", "USA"])
-            self.assertEqual(values["low_priority_tags"], ["Beta", "Proto"])
+            self.assertEqual(values["delete_tags"], ["Beta", "Proto"])
             self.assertIsNot(app.review, before)  # analyzed again with the new rules
             self.assertIn("Priority: Japan > USA", self.text(app, "#info"))
             self.assertIn("+ Title (Japan).bin", self.row_texts(app))

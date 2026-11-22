@@ -276,10 +276,11 @@ class SettingsPanel:
         hint = ttk.Label(right, text=tr("settings.language_hint"))
         hint.grid(row=2, column=0, sticky="ew", pady=(4, 12))
         hint.bind("<Configure>", lambda event: hint.configure(wraplength=max(event.width, 1)))
-        tags_label = ttk.Label(right, text=tr("settings.low_priority"))
+        tags_label = ttk.Label(right, text=tr("settings.delete_keywords"))
         tags_label.grid(row=3, column=0, sticky="ew", pady=(0, 4))
         tags_label.bind("<Configure>", lambda event: tags_label.configure(wraplength=max(event.width, 1)))
-        self.tags = tk.StringVar(frame, ", ".join(self.values["low_priority_tags"]))
+        # The delete keywords (delete_tags): extra info that marks a file for deletion by default.
+        self.tags = tk.StringVar(frame, ", ".join(self.values["delete_tags"]))
         tags_entry = ttk.Entry(right, textvariable=self.tags)
         tags_entry.grid(row=4, column=0, sticky="ew")
 
@@ -1096,7 +1097,7 @@ class ReviewWindow:
         """Writes the settings; a new priority or new tags take effect at once through a new analysis."""
         language, regions, tags = panel.language_code(), panel.region_list(), panel.tag_list()
         before = panel.values
-        rules_changed = regions != before["region_priority"] or tags != before["low_priority_tags"]
+        rules_changed = regions != before["region_priority"] or tags != before["delete_tags"]
         if rules_changed and not self._may_discard_changes(tr("settings.discard")):
             return
         try:
