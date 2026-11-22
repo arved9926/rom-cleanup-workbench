@@ -50,16 +50,33 @@ Das Programm spricht Englisch, Deutsch, Italienisch, Spanisch, Französisch und 
    cd "rom-cleanup-workbench/Rom Cleanup Workbench"
    python3 -m venv ~/venvs/rom-cleanup-workbench
    ~/venvs/rom-cleanup-workbench/bin/pip install textual==8.2.8
-   ~/venvs/rom-cleanup-workbench/bin/python rom_cleanup_workbench.py --tui ~/roms
    ```
-
-   Mehr dazu unter [Terminal-Version (Linux)](#terminal-version-linux).
 
 ## Aufruf
 
-```bash
+### Windows
+
+Ein Terminal (zum Beispiel PowerShell) im Ordner `Rom Cleanup Workbench` öffnen und das Programm mit dem Ordner deiner Spiele starten:
+
+```powershell
+cd "rom-cleanup-workbench\Rom Cleanup Workbench"
 python rom_cleanup_workbench.py "D:\Games"
 ```
+
+Ohne Ordner fragt das Fenster danach. In VS Code: den Ordner `Rom Cleanup Workbench` öffnen, mit F5 starten und das Verzeichnis eingeben. Wer die Terminal-Version will, hängt `--tui` an.
+
+### Linux
+
+In den Ordner `Rom Cleanup Workbench` wechseln und das Programm mit der Python-Version der virtuellen Umgebung und dem Ordner deiner Spiele starten:
+
+```bash
+cd "rom-cleanup-workbench/Rom Cleanup Workbench"
+~/venvs/rom-cleanup-workbench/bin/python rom_cleanup_workbench.py ~/roms
+```
+
+Ohne grafische Anzeige, etwa über SSH, startet von selbst die Terminal-Version. Mit grafischer Anzeige öffnet sich das Fenster (dafür braucht es `python3-tk`); mit `--tui` startet trotzdem die Terminal-Version. Mehr dazu unter [Terminal-Version (Linux)](#terminal-version-linux).
+
+### Was dann passiert
 
 Das Programm öffnet das Analysefenster und zeigt dort alles an; im Terminal gibt es nichts aus und fragt dort nichts. Fragen, Meldungen und die Ordnerwahl erscheinen ebenfalls im Fenster, in der Sprache des Programms, nie als Windows-Popups; Enter wählt die vorgewählte Schaltfläche, Esc antwortet Nein. Ohne Verzeichnis fragt das Fenster nach dem Ordner. Dateien werden erst nach der Bestätigung im Fenster gelöscht. **Gelöschte Dateien landen nicht im Papierkorb.**
 
@@ -78,7 +95,6 @@ Das Programm öffnet das Analysefenster und zeigt dort alles an; im Terminal gib
 
 Die Optionen der Befehlszeile und ihre Hilfe (`--help`) sind immer auf Englisch.
 
-In VS Code: den Ordner `Rom Cleanup Workbench` öffnen, mit F5 starten und das Verzeichnis eingeben.
 Die Tests laufen über die Testansicht oder mit `python -m unittest`.
 
 ## Analysefenster
