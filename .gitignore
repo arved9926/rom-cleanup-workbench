@@ -13,3 +13,7 @@ __pycache__/
 
 # Per-user state: the chosen view and the confirmed save files with their paths on this computer.
 rom_cleanup_workbench_settings.json
+
+# Lock files of Word and LibreOffice while a document is open
+~$*
+.~lock.*
