@@ -18,6 +18,7 @@ import io
 import os
 import sys
 import queue
+import re
 import tempfile
 import threading
 import time
@@ -1537,7 +1538,49 @@ class ReviewWindowTests(RedundanzTestCase):
             text = translations.tr("window.help").replace("\n", "  |  ")
             self.assertEqual(re.findall(r"\S\|| \|\S|\|\s?\S", text.replace("  |  ", "")), [], language)
         translations.set_language("en")
-        self.assertIn("Ctrl+L: Proceed  |  Ctrl+O: Folder", translations.tr("window.help"))
+        self.assertIn("Enter: Proceed  |  s: Settings  |  f: Folder", translations.tr("window.help"))
+
+    def test_window_has_the_keys_of_the_terminal_version(self):
+        window = self.open_window()
+        for key in ("x", "X", "k", "K", "s", "S", "f", "F", "r", "R", "c", "C", "q", "Q", "1", "2", "3"):
+            self.assertTrue(window.root.bind(f"<KeyPress-{key}>"), key)
+        for sequence in ("<Return>", "<slash>", "<F5>", "<F1>", "<Escape>", "<Tab>", "<Shift-Tab>"):
+            self.assertTrue(window.root.bind(sequence), sequence)
+        # The old keys are gone, as in the terminal version.
+        for sequence in ("<KeyPress-d>", "<KeyPress-D>", "<KeyPress-p>", "<KeyPress-P>", "<Control-l>",
+                         "<Control-o>", "<Control-f>"):
+            self.assertFalse(window.root.bind(sequence), sequence)
+
+    def test_help_row_of_the_window_names_the_new_keys_in_every_language(self):
+        for language in translations.LANGUAGES:
+            translations.set_language(language)
+            help_text, no_folder = translations.tr("window.help"), translations.tr("window.no_folder")
+            for key in ("x", "k", "1-3", "/", "s", "f", "r", "c", "q"):
+                self.assertRegex(help_text, rf"(^|  ){re.escape(key)}( ?:| )", (language, key))
+            for old in ("Ctrl+L", "Ctrl+O", "Ctrl+E", "Ctrl+F", "Strg+L", "Strg+O", "Demote", "Promote"):
+                self.assertNotIn(old, help_text, (language, old))
+            self.assertTrue(no_folder.endswith("(f)"), language)
+        translations.set_language("en")
+
+    def test_number_keys_choose_the_view(self):
+        self.write_two_games()
+        window = self.open_window()
+        with mock.patch.object(window, "_scope_changed") as changed:
+            window._choose_scope(2)
+        self.assertEqual(window.scope.get(), "all")
+        changed.assert_called_once()
+        with mock.patch.object(window, "_list_locked", return_value=True):
+            window._choose_scope(0)
+        self.assertEqual(window.scope.get(), "all")
+
+    def test_q_does_not_close_while_the_list_is_locked(self):
+        window = self.open_window()
+        with mock.patch.object(window, "close") as close, mock.patch.object(window, "_list_locked", return_value=True):
+            window._quit_key()
+        close.assert_not_called()
+        with mock.patch.object(window, "close") as close:
+            window._quit_key()
+        close.assert_called_once()
 
     def test_f1_shows_the_credits(self):
         window = self.open_window()

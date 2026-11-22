@@ -90,12 +90,12 @@ _EN = {
     "window.nothing_to_do": "Nothing to do.",
     "window.nothing_to_do_status": "Analysis finished: Nothing to do",
     "window.help": (
-        "D: Demote, delete file  |  P: Promote, keep file  |  Tab / Shift+Tab: next / previous game\n"
+        "x: delete file  |  k: keep file  |  Tab / Shift+Tab: next / previous game  |  1-3: view\n"
         "Arrow keys: select row (Shift: several)  |  Ctrl+mouse wheel: font size  |  "
-        "Ctrl+F: Filter (* and ?)  |  Ctrl+E: Settings  |  Ctrl+L: Proceed  |  Ctrl+O: Folder  |  F5: Analyze again  |  Esc: Close  |  F1: Credits"
+        "/: Filter (* and ?)  |  Enter: Proceed  |  s: Settings  |  f: Folder  |  r or F5: Analyze again  |  c or F1: Credits  |  q or Esc: Close"
     ),
     "window.folder": "Folder: {directory}",
-    "window.no_folder": "Folder: none chosen yet (Ctrl+O)",
+    "window.no_folder": "Folder: none chosen yet (f)",
     "window.analyzing": "Analyzing the folder ...",
     "window.analyzing_progress": "Analyzing: {done} of {total} files",
     "window.deleting_progress": "Deleting: {done} of {total} files",
@@ -236,12 +236,12 @@ _DE = {
     "window.nothing_to_do": "Nichts zu tun.",
     "window.nothing_to_do_status": "Analyse beendet: Nichts zu tun",
     "window.help": (
-        "D: Demote, Datei löschen  |  P: Promote, Datei behalten  |  Tab / Umschalt+Tab: nächstes / voriges Spiel\n"
+        "x: Datei löschen  |  k: Datei behalten  |  Tab / Umschalt+Tab: nächstes / voriges Spiel  |  1-3: Ansicht\n"
         "Pfeiltasten: Zeile wählen (Umschalt: mehrere)  |  Strg+Scrollrad: Schriftgröße  |  "
-        "Strg+F: Filter (* und ?)  |  Strg+E: Einstellungen  |  Strg+L: Ausführen  |  Strg+O: Ordner  |  F5: Neu analysieren  |  Esc: Schließen  |  F1: Credits"
+        "/: Filter (* und ?)  |  Enter: Ausführen  |  s: Einstellungen  |  f: Ordner  |  r oder F5: Neu analysieren  |  c oder F1: Credits  |  q oder Esc: Schließen"
     ),
     "window.folder": "Ordner: {directory}",
-    "window.no_folder": "Ordner: noch keiner gewählt (Strg+O)",
+    "window.no_folder": "Ordner: noch keiner gewählt (f)",
     "window.analyzing": "Analysiere den Ordner ...",
     "window.analyzing_progress": "Analysiere: {done} von {total} Dateien",
     "window.deleting_progress": "Lösche: {done} von {total} Dateien",
@@ -380,12 +380,12 @@ _IT = {
     "window.nothing_to_do": "Niente da fare.",
     "window.nothing_to_do_status": "Analisi terminata: niente da fare",
     "window.help": (
-        "D: Demote, elimina file  |  P: Promote, mantieni file  |  Tab / Maiusc+Tab: gioco successivo / precedente\n"
+        "x: elimina file  |  k: mantieni file  |  Tab / Maiusc+Tab: gioco successivo / precedente  |  1-3: vista\n"
         "Frecce: seleziona riga (Maiusc: più righe)  |  Ctrl+rotellina: dimensione del testo  |  "
-        "Ctrl+F: Filtro (* e ?)  |  Ctrl+E: Impostazioni  |  Ctrl+L: Esegui  |  Ctrl+O: Cartella  |  F5: Analizza di nuovo  |  Esc: Chiudi  |  F1: Riconoscimenti"
+        "/: Filtro (* e ?)  |  Invio: Esegui  |  s: Impostazioni  |  f: Cartella  |  r o F5: Analizza di nuovo  |  c o F1: Riconoscimenti  |  q o Esc: Chiudi"
     ),
     "window.folder": "Cartella: {directory}",
-    "window.no_folder": "Cartella: nessuna scelta (Ctrl+O)",
+    "window.no_folder": "Cartella: nessuna scelta (f)",
     "window.analyzing": "Analisi della cartella ...",
     "window.analyzing_progress": "Analisi: {done} di {total} file",
     "window.deleting_progress": "Eliminazione: {done} di {total} file",
@@ -524,12 +524,12 @@ _ES = {
     "window.nothing_to_do": "Nada que hacer.",
     "window.nothing_to_do_status": "Análisis terminado: nada que hacer",
     "window.help": (
-        "D: Demote, eliminar archivo  |  P: Promote, conservar archivo  |  Tab / Mayús+Tab: juego siguiente / anterior\n"
+        "x: eliminar archivo  |  k: conservar archivo  |  Tab / Mayús+Tab: juego siguiente / anterior  |  1-3: vista\n"
         "Flechas: elegir fila (Mayús: varias)  |  Ctrl+rueda: tamaño de letra  |  "
-        "Ctrl+F: Filtro (* y ?)  |  Ctrl+E: Ajustes  |  Ctrl+L: Ejecutar  |  Ctrl+O: Carpeta  |  F5: Analizar de nuevo  |  Esc: Cerrar  |  F1: Créditos"
+        "/: Filtro (* y ?)  |  Intro: Ejecutar  |  s: Ajustes  |  f: Carpeta  |  r o F5: Analizar de nuevo  |  c o F1: Créditos  |  q o Esc: Cerrar"
     ),
     "window.folder": "Carpeta: {directory}",
-    "window.no_folder": "Carpeta: ninguna elegida (Ctrl+O)",
+    "window.no_folder": "Carpeta: ninguna elegida (f)",
     "window.analyzing": "Analizando la carpeta ...",
     "window.analyzing_progress": "Analizando: {done} de {total} archivos",
     "window.deleting_progress": "Eliminando: {done} de {total} archivos",
@@ -666,12 +666,12 @@ _FR = {
     "window.nothing_to_do": "Rien à faire.",
     "window.nothing_to_do_status": "Analyse terminée : rien à faire",
     "window.help": (
-        "D : Demote, supprimer le fichier  |  P : Promote, garder le fichier  |  Tab / Maj+Tab : jeu suivant / précédent\n"
+        "x : supprimer le fichier  |  k : garder le fichier  |  Tab / Maj+Tab : jeu suivant / précédent  |  1-3 : vue\n"
         "Flèches : choisir la ligne (Maj : plusieurs)  |  Ctrl+molette : taille du texte  |  "
-        "Ctrl+F : Filtre (* et ?)  |  Ctrl+E : Paramètres  |  Ctrl+L : Exécuter  |  Ctrl+O : Dossier  |  F5 : Analyser à nouveau  |  Échap : Fermer  |  F1 : Crédits"
+        "/ : Filtre (* et ?)  |  Entrée : Exécuter  |  s : Paramètres  |  f : Dossier  |  r ou F5 : Analyser à nouveau  |  c ou F1 : Crédits  |  q ou Échap : Fermer"
     ),
     "window.folder": "Dossier : {directory}",
-    "window.no_folder": "Dossier : aucun choisi (Ctrl+O)",
+    "window.no_folder": "Dossier : aucun choisi (f)",
     "window.analyzing": "Analyse du dossier ...",
     "window.analyzing_progress": "Analyse : {done} sur {total} fichiers",
     "window.deleting_progress": "Suppression : {done} sur {total} fichiers",
@@ -810,12 +810,12 @@ _JA = {
     "window.nothing_to_do": "やることはありません。",
     "window.nothing_to_do_status": "分析完了: やることはありません",
     "window.help": (
-        "D: Demote、ファイルを削除  |  P: Promote、ファイルを保持  |  Tab / Shift+Tab: 次 / 前のゲーム\n"
+        "x: ファイルを削除  |  k: ファイルを保持  |  Tab / Shift+Tab: 次 / 前のゲーム  |  1-3: 表示\n"
         "矢印キー: 行を選択 (Shift: 複数)  |  Ctrl+ホイール: 文字サイズ  |  "
-        "Ctrl+F: フィルター (* と ?)  |  Ctrl+E: 設定  |  Ctrl+L: 実行  |  Ctrl+O: フォルダー  |  F5: 再分析  |  Esc: 閉じる  |  F1: クレジット"
+        "/: フィルター (* と ?)  |  Enter: 実行  |  s: 設定  |  f: フォルダー  |  r または F5: 再分析  |  c または F1: クレジット  |  q または Esc: 閉じる"
     ),
     "window.folder": "フォルダー: {directory}",
-    "window.no_folder": "フォルダー: 未選択 (Ctrl+O)",
+    "window.no_folder": "フォルダー: 未選択 (f)",
     "window.analyzing": "フォルダーを分析しています ...",
     "window.analyzing_progress": "分析中: {total} ファイル中 {done}",
     "window.deleting_progress": "削除中: {total} ファイル中 {done}",

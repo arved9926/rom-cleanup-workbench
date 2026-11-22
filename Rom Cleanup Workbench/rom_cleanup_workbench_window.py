@@ -12,7 +12,7 @@
 # You should have received a copy of the GNU General Public License along with this program.
 # If not, see <https://www.gnu.org/licenses/>.
 
-"""Analysis window: analyze a folder, review the result, reorder with D and P, and delete.
+"""Analysis window: analyze a folder, review the result, reorder with x and k, and delete.
 
 The rules are in the Review object from rom_cleanup_workbench.py. This module does not import
 the program, because it would otherwise be loaded a second time when started as a script.
@@ -109,7 +109,7 @@ class FolderPanel:
         hint.grid(row=3, column=0, columnspan=3, sticky="ew", pady=(8, 0))
         hint.bind("<Configure>", lambda event: hint.configure(wraplength=max(event.width, 1)))
 
-        # Where text is typed, the window's keys must not fire: A "d" in a path is no Demote.
+        # Where text is typed, the window's keys must not fire: An "x" in a path marks nothing.
         for widget in (self.entry, self.tree):
             widget.bindtags((str(widget), widget.winfo_class(), "all"))
             widget.bind("<Escape>", lambda _event: self.close())
@@ -302,7 +302,7 @@ class SettingsPanel:
         tags_entry = ttk.Entry(right, textvariable=self.tags)
         tags_entry.grid(row=4, column=0, sticky="ew")
 
-        # Where text is typed, the window's keys must not fire: A "d" in a region name is no Demote.
+        # Where text is typed, the window's keys must not fire: An "x" in a region name marks nothing.
         for widget in (language_box, self.regions, new_entry, tags_entry):
             widget.bindtags((str(widget), widget.winfo_class(), "all"))
             widget.bind("<Escape>", lambda _event: self.close())
@@ -523,13 +523,13 @@ class ReviewWindow:
             self.start_analysis()
 
     def show_credits(self) -> None:
-        """F1: who had the idea and who programmed it, the license and the warning, in the window."""
+        """F1 and c: who had the idea and who programmed it, the license and the warning, in the window."""
         if not self._questions:  # not on top of an open question
             message = tr("credits.text") + "\n\n" + tr("credits.license")
             messagebox.showinfo(tr("credits.title"), message, parent=self.root)
 
     def choose_directory(self) -> None:
-        """Folder... and Ctrl+O choose the folder in place of the list; the analysis starts once it is chosen."""
+        """Folder... and f choose the folder in place of the list; the analysis starts once it is chosen."""
         if self._list_locked() or not self._may_discard_changes(tr("window.discard_folder")):
             return
         panel = self.folder_panel = FolderPanel(self, self.directory)
@@ -780,20 +780,27 @@ class ReviewWindow:
         self.tree.tag_configure("separator", foreground=_LINE_COLOR)
 
         # On the window instead of the list, so that the keys also work after clicking a radio button.
-        for key in ("d", "D"):
-            self.root.bind(f"<KeyPress-{key}>", lambda _event: self.demote_selected())
-        for key in ("p", "P"):
-            self.root.bind(f"<KeyPress-{key}>", lambda _event: self.promote_selected())
-        self.root.bind("<Control-l>", lambda _event: self.confirm_delete())
-        self.root.bind("<Control-L>", lambda _event: self.confirm_delete())
-        self.root.bind("<Control-o>", lambda _event: self.choose_directory())
-        self.root.bind("<Control-O>", lambda _event: self.choose_directory())
+        # The keys of the terminal version (2026-11-23): x delete, k keep, Enter execute, s settings,
+        # f folder, r analyze again, c credits, / filter, 1-3 views, q quit; D, P and the Ctrl keys are gone.
+        # Fields where text is typed leave the window's bindtag out, so a letter typed there stays text.
+        keys = {
+            "x": self.demote_selected, "k": self.promote_selected, "s": self.toggle_settings,
+            "f": self.choose_directory, "r": self.reanalyze, "c": self.show_credits, "q": self._quit_key,
+        }
+        for key, action in keys.items():
+            for variant in (key, key.upper()):
+                self.root.bind(f"<KeyPress-{variant}>", lambda _event, action=action: action())
+        for number in range(len(_SCOPES)):
+            self.root.bind(f"<KeyPress-{number + 1}>", lambda _event, number=number: self._choose_scope(number))
+        self.root.bind("<Return>", lambda _event: self.confirm_delete())
+        self.root.bind("<KP_Enter>", lambda _event: self.confirm_delete())
+        self.root.bind("<slash>", lambda _event: self.focus_search())
+        self.root.bind("<KP_Divide>", lambda _event: self.focus_search())
         self.root.bind("<F5>", lambda _event: self.reanalyze())
         self.root.bind("<F1>", lambda _event: self.show_credits())
-        self.root.bind("<Control-e>", lambda _event: self.toggle_settings())
-        self.root.bind("<Control-E>", lambda _event: self.toggle_settings())
-        self.root.bind("<Control-f>", lambda _event: self.focus_search())
-        self.root.bind("<Control-F>", lambda _event: self.focus_search())
+        # As in the terminal version, Ctrl+E only closes the settings.
+        self.root.bind("<Control-e>", lambda _event: self._close_settings_key())
+        self.root.bind("<Control-E>", lambda _event: self._close_settings_key())
         # "break" prevents Tab from passing the focus to the next button as usual.
         self.root.bind("<Tab>", lambda _event: self._move_game(1))
         self.root.bind("<Shift-Tab>", lambda _event: self._move_game(-1))
@@ -811,7 +818,7 @@ class ReviewWindow:
         self.root.protocol("WM_DELETE_WINDOW", self.close)
 
     def _bind_search_entry(self) -> None:
-        # Without the window's bindtag, typing a "d" or "p" here cannot change a deletion mark.
+        # Without the window's bindtag, typing an "x" or "k" here cannot change a deletion mark.
         entry = self.search_entry
         entry.bindtags((str(entry), entry.winfo_class(), "all"))
         self.search.trace_add("write", lambda *_args: self._search_changed())
@@ -821,6 +828,24 @@ class ReviewWindow:
         entry.bind("<Down>", lambda _event: self.leave_search())
         entry.bind("<Escape>", lambda _event: self.leave_search(clear=True))
         entry.bind("<Control-MouseWheel>", self._on_zoom)
+
+    def _choose_scope(self, number: int) -> None:
+        """1, 2 and 3 choose a view, like a click on its option."""
+        if self._list_locked():
+            return
+        value = _SCOPES[number][0]
+        if self.scope.get() != value:
+            self.scope.set(value)
+            self._scope_changed()
+
+    def _quit_key(self) -> None:
+        """q closes the window like Esc, but not while the settings, the folder choice or a question is open."""
+        if not self._list_locked():
+            self.close()
+
+    def _close_settings_key(self) -> None:
+        if self.settings_panel is not None and not self._questions:
+            self.close_settings()
 
     def focus_search(self) -> str | None:
         if self._list_locked():
@@ -848,7 +873,7 @@ class ReviewWindow:
             self.root.after_cancel(self._search_job)
             self._search_job = None
         self._show_all_groups()
-        # Rows hidden by the search leave the selection; D and P should work on what is shown.
+        # Rows hidden by the search leave the selection; x and k should work on what is shown.
         if not self.tree.selection():
             self._select_first_file()
 
@@ -880,7 +905,7 @@ class ReviewWindow:
             self._fill_group(result)
         self._restore_selection(selection)
         self._update_status()
-        # Also when an analysis ends during typing: In the list, the next letter could be a D or P.
+        # Also when an analysis ends during typing: In the list, the next letter could be an x or k.
         if self.root.focus_get() is not self.search_entry and not self._list_locked():
             self.tree.focus_set()
 
@@ -985,7 +1010,7 @@ class ReviewWindow:
         return "break"
 
     def _move_game(self, step: int) -> str | None:
-        """Jumps to the neighboring game and selects its first file, so that D and P work at once."""
+        """Jumps to the neighboring game and selects its first file, so that x and k work at once."""
         if self._list_locked():
             return None  # Tab moves between the fields of the settings as usual.
         game = self.tree.focus()
@@ -1039,7 +1064,7 @@ class ReviewWindow:
         self.status.set(self.review.status(*self._scope_flags()))
 
     def _move_selected(self, move_name: str) -> None:
-        # With the settings open, the list is hidden: D and P must not change what cannot be seen.
+        # With the settings open, the list is hidden: x and k must not change what cannot be seen.
         if self.review is None or self._list_locked():
             return
         move = getattr(self.review, move_name)
@@ -1089,7 +1114,7 @@ class ReviewWindow:
         self.show_review(self.review)
 
     def toggle_settings(self) -> str:
-        """Settings... and Ctrl+E open the settings in place of the list, and a second time close them."""
+        """Settings... and s open the settings in place of the list, and a second time close them."""
         if self._questions or self.folder_panel is not None:
             pass  # A question or the folder choice is open: it must be finished first.
         elif self.settings_panel is not None:
@@ -1137,7 +1162,7 @@ class ReviewWindow:
             self.start_analysis()
 
     def _confirm_save_files_only(self) -> None:
-        """Without marked files, Ctrl+L can still confirm the suspected status or save files."""
+        """Without marked files, Enter can still confirm the suspected status or save files."""
         save_files = self.review.save_file_keys()
         if not save_files:
             messagebox.showinfo(
@@ -1214,7 +1239,8 @@ class ReviewWindow:
         for index, (key, _value) in enumerate(buttons):
             button = ttk.Button(row, text=tr(key), command=lambda index=index: answer.set(index))
             button.pack(side="left", padx=(0, 8))
-            button.bind("<Return>", lambda _event, index=index: answer.set(index))
+            # "break": Enter answers the question and must not also reach the window's Enter (execute).
+            button.bind("<Return>", lambda _event, index=index: answer.set(index) or "break")
             widgets.append(button)
         default_index = values.index(default) if default in values else 0
         self._questions.append((frame, answer, values, len(values) - 1))

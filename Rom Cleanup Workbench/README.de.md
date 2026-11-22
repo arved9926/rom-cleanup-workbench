@@ -107,7 +107,7 @@ Die drei Optionsfelder bestimmen, was die Liste zeigt:
 
 - `Problematische Löschmarkierungen`: nur Spiele mit einer markierten Datei, die als problematisch gelten (Vorgabe beim ersten Start)
 - `Alle Löschmarkierungen`: alle Spiele mit einer markierten Datei
-- `Alle Romdateien`: alle Spiele. Ihre Dateien lassen sich dann auch mit `D` markieren, und problematische Fälle ohne markierte Datei, etwa ein nicht lesbares ZIP, erscheinen ebenfalls.
+- `Alle Romdateien`: alle Spiele. Ihre Dateien lassen sich dann auch mit `x` markieren, und problematische Fälle ohne markierte Datei, etwa ein nicht lesbares ZIP, erscheinen ebenfalls.
 
 Das Fenster merkt sich die zuletzt gewählte Ansicht und die bestätigten Status- oder Spielstanddateien (Regel 9) in `rom_cleanup_workbench_settings.json` neben dem Programm.
 
@@ -115,15 +115,17 @@ Das Fenster merkt sich die zuletzt gewählte Ansicht und die bestätigten Status
 | --- | --- |
 | Pfeiltasten | eine Zeile wählen, mit Umschalt mehrere (zum Beispiel alle Discs eines Spiels) |
 | `Tab` / `Umschalt+Tab` | zum nächsten / vorigen Spiel; die erste Datei des Spiels wird gewählt |
-| `D` (Demote) | die Datei zum Löschen markieren; sie rückt ans Ende ihres Spiels |
-| `P` (Promote) | die Datei behalten; sie rückt an die Stelle, die die Regeln ihr geben |
+| `x` | die Datei zum Löschen markieren; sie rückt ans Ende ihres Spiels |
+| `k` | die Datei behalten; sie rückt an die Stelle, die die Regeln ihr geben |
+| `1` `2` `3` | die Ansichten `Problematische Löschmarkierungen`, `Alle Löschmarkierungen`, `Alle Romdateien` |
 | `Strg` + Mausrad | Schrift vergrößern oder verkleinern (8 bis 32 pt, gilt bis das Fenster geschlossen wird) |
-| `Strg+E` | wie die Schaltfläche `Einstellungen...`: die Einstellungen für Sprache, Priorität und Löschwörter zeigen oder ausblenden (siehe [Einstellungen](#einstellungen)) |
-| `Strg+F` | ins Filterfeld wechseln |
-| `Strg+L` | wie die Schaltfläche `Ausführen...`: nach einer Bestätigung löschen und die vermuteten Status- oder Spielstanddateien bestätigen (Regel 9) |
-| `Strg+O` | einen anderen Ordner wählen, im Fenster an der Stelle der Liste: Ordner mit Doppelklick oder dem Pfeil öffnen oder einen Pfad in `Pfad:` tippen, dann `Auswählen` oder `Enter`; `Abbrechen` oder `Esc` behalten den aktuellen Ordner |
-| `F5` | neu analysieren, liest auch die Konfiguration neu |
-| `F1` | die Credits zeigen |
+| `s` | wie die Schaltfläche `Einstellungen...`: die Einstellungen für Sprache, Priorität und Löschwörter zeigen oder ausblenden (siehe [Einstellungen](#einstellungen)) |
+| `/` | ins Filterfeld wechseln |
+| `Enter` | wie die Schaltfläche `Ausführen...`: nach einer Bestätigung löschen und die vermuteten Status- oder Spielstanddateien bestätigen (Regel 9) |
+| `f` | einen anderen Ordner wählen, im Fenster an der Stelle der Liste: Ordner mit Doppelklick oder dem Pfeil öffnen oder einen Pfad in `Pfad:` tippen, dann `Auswählen` oder `Enter`; `Abbrechen` oder `Esc` behalten den aktuellen Ordner |
+| `r` oder `F5` | neu analysieren, liest auch die Konfiguration neu |
+| `c` oder `F1` | die Credits zeigen |
+| `q` oder `Esc` | schließen, ohne etwas zu löschen; nach Änderungen von Hand fragt das Programm vorher |
 | `Esc` | schließen, ohne etwas zu löschen |
 
 Waagerechte Linien trennen die Spiele, und jedes zweite Spiel hat einen dunkelgrauen Hintergrund. Die Spalte `Größe` zeigt die Größe jeder Datei in KB, aufgerundet wie im Windows-Explorer (`1.234 KB`); `?` heißt, dass sich die Größe nicht lesen ließ. Die Größe wird bei der Analyse gelesen. Behaltene Dateien stehen fett unter `Bleibt erhalten:`, zu löschende Dateien in normaler Schrift unter `Zum Löschen markiert`. Das Fenster zeigt weiße Schrift in Lucida Sans Typewriter 11 pt auf schwarzem Grund. Ist die Schrift nicht installiert, nimmt Windows stillschweigend einen Ersatz. Von Hand verschobene Dateien haben einen braunen Hintergrund und tragen den Hinweis `Von Hand`; solange die Zeile gewählt ist, erscheint sie blau. Die Hinweise des Programms bleiben unverändert, auch wenn sie sich auf eine Datei beziehen, die du verschoben hast.
@@ -137,14 +139,14 @@ Das Filterfeld links in der unteren Zeile schränkt die aktuelle Ansicht auf Spi
 - `*` steht für beliebig viele Zeichen, `?` für genau eines. Alle anderen Zeichen, auch `[` und `]`, zählen wörtlich, und Groß- und Kleinschreibung zählt nicht.
 - Das Muster darf irgendwo im Namen stehen: `Beta`, `*Beta*` und `Mario?2` finden alle auch `Super Mario 2 (Beta).nes`. Entsprechend findet `S*` jeden Namen, der ein `S` enthält, nicht nur Namen, die damit beginnen.
 - `Enter`, `Tab` und der Pfeil nach unten führen zurück in die Liste; `Esc` leert den Filter und führt zurück in die Liste.
-- Solange der Cursor im Feld steht, schreiben Tasten nur dort: `D`, `P`, `Strg+L`, `Strg+O`, `F5` und `Esc` führen ihre Listenfunktionen nicht aus.
+- Solange der Cursor im Feld steht, schreiben Tasten nur dort: `x`, `k`, `Enter`, `f`, `r`, `F5` und `Esc` führen ihre Listenfunktionen nicht aus.
 - Der Filter bleibt nach `F5`, nach dem Löschen und nach der Wahl eines anderen Ordners aktiv. Er wird nicht gespeichert.
 
 **Der Filter ändert nur die Anzeige. Markierte Dateien, die der Filter ausblendet, werden beim Löschen trotzdem gelöscht**; die Bestätigung nennt ihre Anzahl.
 
 ### Einstellungen
 
-Die Schaltfläche `Einstellungen...` in der unteren Zeile oder `Strg+E` zeigt die häufigsten Änderungen an `redundanz_config.json` im Hauptfenster, an der Stelle der Dateiliste. `Speichern` oder `Abbrechen`, `Esc`, ein zweites `Strg+E` oder ein weiterer Klick auf `Einstellungen...` bringen die Liste zurück. Solange sind der Filter, die Ansichten, `Ausführen...`, `Neu analysieren` und `Ordner...` gesperrt, und `D`, `P` und `Strg+L` tun nichts, damit sich in der verdeckten Liste nichts ändern kann.
+Die Schaltfläche `Einstellungen...` in der unteren Zeile oder `s` zeigt die häufigsten Änderungen an `redundanz_config.json` im Hauptfenster, an der Stelle der Dateiliste. `Speichern` oder `Abbrechen`, `Esc`, `Strg+E` oder ein weiterer Klick auf `Einstellungen...` bringen die Liste zurück. Solange sind der Filter, die Ansichten, `Ausführen...`, `Neu analysieren` und `Ordner...` gesperrt, und `x`, `k` und `Enter` tun nichts, damit sich in der verdeckten Liste nichts ändern kann.
 
 - **Sprache:** Legt fest, welche Sprache das UI nutzt. Eine der sechs Sprachen wählen. Eine neue Sprache gilt ab dem nächsten Start des Programms.
 - **Priorität:** Legt fest, welche Länderversionen Vorrang vor anderen haben. Die beste Region oben; Zusatzinfos wie `Beta` oder `Proto` gehören hinter `none`, damit solche Dateien zuletzt kommen (Regel 6). Einen Eintrag wählen und mit `Hoch` und `Runter` verschieben, mit `Entfernen` oder der Taste `Entf` entfernen, einen neuen mit dem Feld unter der Liste und `Hinzufügen` (oder `Enter`) hinzufügen.
@@ -181,7 +183,7 @@ python3 -m venv ~/venvs/rom-cleanup-workbench
 
 Ohne Textual sagt das Programm das und löscht nichts. Der Bildschirm hat die Zeilen des Fensters von oben nach unten: die grüne Titelzeile mit dem Ordner, eine Hilfezeile, die Priorität, die Liste, das Filterfeld, die drei Ansichten und die grüne Statuszeile. In der Liste beginnt jedes Spiel mit seinem Namen in Fettschrift, gefolgt von Strichen bis zum rechten Rand; ein Hinweis wie `Unterschiedliche Schreibweisen des Namens` steht in dieser Zeile. In einem schmalen Terminal, etwa den 80 Spalten von PuTTY, brechen lange Dateinamen und Hinweise in ihrer Spalte um, statt den Bildschirm zu verlassen. `Nichts zu tun.` blinkt mit dem eigenen Blinken des Terminals; in PuTTY muss blinkender Text eventuell erst eingeschaltet werden. Fragen und Meldungen erscheinen in einem Rahmen über der Liste, mit Schaltflächen in der Sprache des Programms; `Nein` ist vorgewählt.
 
-Die Hilfezeile zeigt die Tasten als `Taste:Aktion`, zum Beispiel `x:löschen  k:behalten`. Die Terminal-Version hat eigene Tasten; das Fenster behält `D`, `P` und die `Strg`-Tasten.
+Die Hilfezeile zeigt die Tasten als `Taste:Aktion`, zum Beispiel `x:löschen  k:behalten`. Fenster und Terminal-Version haben dieselben Tasten.
 
 | Taste | Wirkung |
 | --- | --- |
@@ -250,14 +252,14 @@ Manche Dateien übergeht das Programm ganz: Sie erscheinen nirgends und werden n
 - Versteckte Dateien: Namen, die mit einem Punkt beginnen, etwa `.xxx` oder `.DS_Store`, und Dateien mit dem Windows-Attribut „Versteckt“.
 
 1. Dateien gehören zusammen, wenn der Text vor der ersten Klammer gleich ist. Groß- und Kleinschreibung, Leerzeichen, Bindestriche und Unterstriche zählen nicht, also `Pac-Man` = `Pac Man` = `Pac_Man` = `PacMan`. Damit gilt auch `Title 1-2` = `Title 12`. Außerdem gelten `und` = `and` = `&` sowie `The Title` = `Title The` = `Title, The` = `Title` als gleich. Ein `The` mitten im Namen zählt dagegen.
-2. Dateien mit einem Löschwort (`delete_tags`, als Vorgabe `Hack` und `Hacks`) werden immer markiert, auch wenn es die einzige Datei des Spiels ist. `P` behält eine solche Datei trotzdem.
+2. Dateien mit einem Löschwort (`delete_tags`, als Vorgabe `Hack` und `Hacks`) werden immer markiert, auch wenn es die einzige Datei des Spiels ist. `k` behält eine solche Datei trotzdem.
 3. Von den übrigen Dateien bleibt die mit dem besten Eintrag in `region_priority` erhalten. Innerhalb einer Klammer zählt der beste Eintrag: bei `(USA, Japan)` der bessere der beiden. Über Klammern hinweg zählt der schlechteste: `(USA) (Beta)` zählt als `Beta` (Regel 6).
 4. Alle Dateien derselben Version bleiben gemeinsam erhalten, zum Beispiel `(Disc 1)` und `(Disc 2)` oder `.cue` und `.bin`. Alles andere wird markiert.
 5. Eine Region, die nicht in `region_priority` steht, zählt als `none`. Das gilt auch für Angaben wie `(Rev 1)`.
 6. Zusatzinfos wie `Beta`, `Proto` oder `Alpha` werden in `region_priority` hinter `none` geschrieben. Dateien damit kommen nach allen anderen, auch nach Dateien ohne Region, und in der Reihenfolge der Liste: Bei `none, Beta, Proto` kommt eine Beta vor einem Proto. Sie bleiben nur erhalten, wenn es keine bessere Datei des Spiels gibt. Untereinander zählt wieder die Region, dann die Version aus Regel 7, dann die Nummer hinter der Zusatzinfo: `Beta 2` gewinnt gegen `Beta 1` und `Beta 1` gegen `Beta` ohne Nummer. Die Nummern werden numerisch verglichen (`Beta 10` vor `Beta 9`). Die unterlegene Datei bekommt den Hinweis `Ältere Beta`.
 7. Bei gleicher Priorität gewinnt die höchste Versionsnummer, numerisch verglichen (`v1.10` vor `v1.9`). Erkannt werden in Klammern `v1.1`, `Ver 1.1`, `Version 1.1`, `Rev 1` und `Rev A`; im Spielnamen nur die Form `Title v1.1`, auch mit `-` oder `_` statt eines Leerzeichens. Eine Datei ohne Version verliert gegen eine mit Version. Die Region zählt vor der Version.
 8. Danach gewinnt die Datei mit weniger Zusatzinformationen, dann eine Datei ohne ZIP, dann das Alphabet. Der Bericht zeigt dann `Gleichstand`.
-9. Eine Datei, die kleiner ist als 1/4 der größten Datei des Spiels, wird vor den Regeln 3 bis 8 beiseitegelegt und behalten: Sie könnte eine Status- oder Spielstanddatei sein. Sie kann daher weder gelöscht werden noch das echte ROM verdrängen, etwa `1941.state` die Datei `1941.zip`. Die Hinweisspalte zeigt dann `Verdacht auf Status- oder Spielstanddatei`, und das Spiel gilt als problematisch. Ein solches Spiel erscheint in allen drei Ansichten, auch wenn keine seiner Dateien markiert ist. Beim Löschen bestätigt das Programm alle übrigen vermuteten Dateien als legitim: Sie bleiben, wo sie sind, werden weiterhin nie gelöscht und erscheinen nicht mehr in `Problematische Löschmarkierungen` und `Alle Löschmarkierungen`, auch nach `F5` oder einem Neustart. Die Bestätigung nennt ihre Anzahl. Das Programm merkt sie sich mit Pfad und Größe in `rom_cleanup_workbench_settings.json`; ändert sich die Größe, steht die Datei wieder unter Verdacht. Ist nichts markiert, bietet `Strg+L` an, sie zu bestätigen, ohne etwas zu löschen. ZIPs zählen mit ihrer entpackten Größe. Das gilt nicht für eine kleine normale Datei neben einer großen normalen Datei ihrer eigenen Version, etwa eine `.cue` neben ihrer `.bin`, und nicht für Dateien, die wegen `delete_tags` oder eines defekten ZIPs markiert sind. Mit `D` kannst du die Datei trotzdem von Hand markieren.
+9. Eine Datei, die kleiner ist als 1/4 der größten Datei des Spiels, wird vor den Regeln 3 bis 8 beiseitegelegt und behalten: Sie könnte eine Status- oder Spielstanddatei sein. Sie kann daher weder gelöscht werden noch das echte ROM verdrängen, etwa `1941.state` die Datei `1941.zip`. Die Hinweisspalte zeigt dann `Verdacht auf Status- oder Spielstanddatei`, und das Spiel gilt als problematisch. Ein solches Spiel erscheint in allen drei Ansichten, auch wenn keine seiner Dateien markiert ist. Beim Löschen bestätigt das Programm alle übrigen vermuteten Dateien als legitim: Sie bleiben, wo sie sind, werden weiterhin nie gelöscht und erscheinen nicht mehr in `Problematische Löschmarkierungen` und `Alle Löschmarkierungen`, auch nach `F5` oder einem Neustart. Die Bestätigung nennt ihre Anzahl. Das Programm merkt sie sich mit Pfad und Größe in `rom_cleanup_workbench_settings.json`; ändert sich die Größe, steht die Datei wieder unter Verdacht. Ist nichts markiert, bietet `Enter` an, sie zu bestätigen, ohne etwas zu löschen. ZIPs zählen mit ihrer entpackten Größe. Das gilt nicht für eine kleine normale Datei neben einer großen normalen Datei ihrer eigenen Version, etwa eine `.cue` neben ihrer `.bin`, und nicht für Dateien, die wegen `delete_tags` oder eines defekten ZIPs markiert sind. Mit `x` kannst du die Datei trotzdem von Hand markieren.
 
 ## ZIP-Dateien
 
