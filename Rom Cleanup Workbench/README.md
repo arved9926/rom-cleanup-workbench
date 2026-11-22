@@ -19,7 +19,7 @@ The program opens the analysis window and shows everything there; it prints noth
 | `--review all` | open the window with `All deletion marks` for this start |
 | `--review problems` | open the window with `Problematic deletion marks` for this start |
 | `--priority USA Europe Japan none` | set the priority for this run |
-| `--delete-tag Proto Beta` | set the extra info for this run |
+| `--delete-tag Hack Hacks Proto` | set the delete keywords for this run |
 | `--config file.json` | use a different configuration |
 | `--report-only` | without window: only print the report in the terminal |
 | `--yes` | without window: delete marked files without asking |
@@ -53,7 +53,7 @@ The window remembers the most recently chosen view and the confirmed status or s
 | `D` (Demote) | mark the file for deletion; it moves to the end of its game |
 | `P` (Promote) | keep the file; it moves to the position the rules give it |
 | `Ctrl` + mouse wheel | enlarge or shrink the font (8 to 32 pt, applies until the window is closed) |
-| `Ctrl+E` | same as the button `Settings...`: show or hide the settings for language, region priority and low priority tags (see [Settings](#settings)) |
+| `Ctrl+E` | same as the button `Settings...`: show or hide the settings for language, priority and delete keywords (see [Settings](#settings)) |
 | `Ctrl+F` | go to the filter field |
 | `Ctrl+L` | same as the button `Proceed...`: delete after a confirmation and confirm the suspected status or save files (rule 9) |
 | `Ctrl+O` | choose another folder, inside the window in place of the list: open folders with a double-click or the arrow, or type a path into `Path`, then `Select` or `Enter`; `Cancel` or `Esc` keep the current folder |
@@ -81,8 +81,8 @@ The filter field on the left of the bottom row narrows the current view to games
 The button `Settings...` in the bottom row, or `Ctrl+E`, shows the most frequent changes to `redundanz_config.json` in the main window, in place of the file list. `Save` or `Cancel`, `Esc`, a second `Ctrl+E` or another click on `Settings...` bring the list back. Meanwhile the filter, the views, `Proceed...`, `Analyze again` and `Folder...` are locked, and `D`, `P` and `Ctrl+L` do nothing, so that nothing can change in the hidden list.
 
 - **Language:** choose from the six languages. A new language applies from the next start of the program.
-- **Region priority:** the best region at the top. Select a region and move it with `Up` and `Down`, remove it with `Remove` or the `Delete` key, and add a new one with the field below the list and `Add` (or `Enter`).
-- **Low priority tags:** separated by commas, for example `Beta, Proto`.
+- **Priority:** the best region at the top; extra info such as `Beta` or `Proto` goes after `none`, so that such files come last (rule 6). Select an entry and move it with `Up` and `Down`, remove it with `Remove` or the `Delete` key, and add a new one with the field below the list and `Add` (or `Enter`).
+- **Delete keywords:** separated by commas, for example `Hack, Hacks`. Files with them are marked for deletion (rule 2).
 
 `Save` writes the file and analyzes the folder again if the priority or the tags have changed; if you have changed marks by hand, the program asks first, because these changes are lost. All other entries of the file stay as they are. Wrong values, such as an empty region list or the same region twice, are reported, nothing is written, and the settings stay open. If the file cannot be read, the settings do not open, so that they cannot overwrite entries they do not know. With `--config`, the settings edit that file; with `--priority`, the priority given there still applies to this run.
 
@@ -137,20 +137,22 @@ Differences from the window: no font zoom, and the games are not striped but sta
 
 ## Configuration: `redundanz_config.json`
 
-The file is next to the program and is read again for every analysis. Language, region priority and low priority tags are easiest to change in the window with `Settings...` (see [Settings](#settings)). In the file itself, it is enough to rearrange the order in `region_priority` and save the file:
+The file is next to the program and is read again for every analysis. Language, priority and delete keywords are easiest to change in the window with `Settings...` (see [Settings](#settings)). In the file itself, it is enough to rearrange the order in `region_priority` and save the file:
 
 ```json
-"region_priority": ["Germany", "Europe", "USA", "none", "Japan"],
+"region_priority": ["Germany", "Europe", "USA", "none", "Japan", "Beta", "Proto"],
+"delete_tags": ["Hack", "Hacks"],
 ```
 
-If the file contains an error, such as a misspelled entry, no analysis takes place and nothing is deleted. If the file or an entry is missing, the program's defaults apply; the priority there is USA, Europe, Japan, none, and the language is English.
+If the file contains an error, such as a misspelled entry, no analysis takes place and nothing is deleted. If the file or an entry is missing, the program's defaults apply; the priority there is USA, Europe, Japan, none, Beta, the delete keywords are Hack and Hacks, and the language is English.
 
 - `language`: the language of the window, the notes and the terminal output (see below).
-- `region_priority`: regions, the best first. `none` stands for files without a known region; the words of the other languages (`keine`, `nessuna`, `ninguna`, `aucune`, `なし`) work as well.
+- `region_priority`: regions and extra info, the best first. `none` stands for files without a known region; the words of the other languages (`keine`, `nessuna`, `ninguna`, `aucune`, `なし`) work as well. Extra info such as `Beta` after `none` puts such files last (rule 6); `Beta` also matches `Beta 2`.
 - `region_aliases`: other spellings of a region, for example `Europa` for `Europe`.
-- `delete_tags`: extra info that always leads to deletion. `Proto` also matches `Proto 2`.
-- `low_priority_tags`: extra info with the lowest priority. `Beta` also matches `Beta 2`.
+- `delete_tags`: the delete keywords, extra info that always leads to deletion (rule 2). `Hack` also matches `Hack 2` and `Hack by Someone`, but not `Hacks` or `Hackers`, hence both `Hack` and `Hacks`.
 - `part_tags`: parts of a version, for example `Disc 1`.
+
+Older files may still contain `low_priority_tags`, extra info with the lowest priority. The program reads its entries as if they stood at the end of `region_priority`, after `none`; the settings move them there when they save, and the entry disappears.
 
 ### Language
 
@@ -179,11 +181,11 @@ The program ignores some files completely: they appear nowhere and are never del
 - Hidden files: names starting with a dot, such as `.xxx` or `.DS_Store`, and files with the Windows attribute "hidden".
 
 1. Files belong together if the text before the first bracket is the same. Case, spaces, hyphens and underscores do not count, so `Pac-Man` = `Pac Man` = `Pac_Man` = `PacMan`. This also means `Title 1-2` = `Title 12`. In addition, `und` = `and` = `&` as well as `The Title` = `Title The` = `Title, The` = `Title` count as equal. A `The` in the middle of the name does count.
-2. Files with extra info from `delete_tags` are always marked, even if it is the only file of the game.
-3. Of the remaining files, the one with the best region is kept. With `(USA, Japan)`, the better of the two counts.
+2. Files with a delete keyword (`delete_tags`, by default `Hack` and `Hacks`) are always marked, even if it is the only file of the game. `P` keeps such a file anyway.
+3. Of the remaining files, the one with the best entry in `region_priority` is kept. Within one bracket the best entry counts: with `(USA, Japan)`, the better of the two. Across brackets the worst counts: `(USA) (Beta)` counts as `Beta` (rule 6).
 4. All files of the same version are kept together, for example `(Disc 1)` and `(Disc 2)` or `.cue` and `.bin`. Everything else is marked.
 5. A region that is not in `region_priority` counts as `none`. This also applies to information such as `(Rev 1)`.
-6. Files with extra info from `low_priority_tags` come after all others, even after files without a region. They are only kept if there is no other file of the game. Among themselves, the region counts again, then the version from rule 7, then the number after the extra info: `Beta 2` wins over `Beta 1`, and `Beta 1` over `Beta` without a number. The numbers are compared numerically (`Beta 10` before `Beta 9`). The losing file gets the note `Older beta`.
+6. Extra info such as `Beta`, `Proto` or `Alpha` is written into `region_priority` after `none`. Files with it come after all others, even after files without a region, and in the order of the list: with `none, Beta, Proto`, a Beta comes before a Proto. They are only kept if there is no better file of the game. Among themselves, the region counts again, then the version from rule 7, then the number after the extra info: `Beta 2` wins over `Beta 1`, and `Beta 1` over `Beta` without a number. The numbers are compared numerically (`Beta 10` before `Beta 9`). The losing file gets the note `Older beta`.
 7. With equal priority, the highest version number wins, compared numerically (`v1.10` before `v1.9`). Recognized in brackets are `v1.1`, `Ver 1.1`, `Version 1.1`, `Rev 1` and `Rev A`; in the game name only the form `Title v1.1`, also with `-` or `_` instead of a space. A file without a version loses to one with a version. The region counts before the version.
 8. After that, the file with less extra information wins, then a file without ZIP, then the alphabet. The report then shows `Tie`.
 9. A file that is smaller than 1/4 of the largest file of the game is set aside before rules 3 to 8 and kept: it may be a status or save file. It therefore can neither be deleted nor push out the real ROM, for example `1941.state` the file `1941.zip`. The note column then says `Suspected status or save file`, and the game counts as problematic. Such a game appears in all three views, even if none of its files is marked. When you delete, the program confirms all suspected files that remain as legitimate: they stay where they are, are still never deleted, and no longer show up in `Problematic deletion marks` and `All deletion marks`, also after `F5` or a new start. The confirmation names their number. The program remembers them with path and size in `rom_cleanup_workbench_settings.json`; if the size changes, the file is suspected again. If nothing is marked, `Ctrl+L` offers to confirm them without deleting anything. ZIPs count with their unpacked size. This does not apply to a small plain file next to a large plain file of its own version, such as a `.cue` next to its `.bin`, nor to files marked because of `delete_tags` or a defective ZIP. With `D` you can still mark the file by hand.

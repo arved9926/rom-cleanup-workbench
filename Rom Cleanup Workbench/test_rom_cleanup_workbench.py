@@ -1616,6 +1616,15 @@ class ReviewWindowTests(RedundanzTestCase):
         analysis.assert_called_once()  # a new delete keyword changes the rules: analyze again
         self.assertEqual(rf.Config.load(window.config_file.path).delete_tags, ["Hack", "Hacks"])
 
+    def test_label_of_the_priority_list_wraps_instead_of_being_cut(self):
+        window = self.window_with_settings()
+        window.open_settings()
+        label = window.settings_panel.regions_label
+        window.root.update()
+        self.assertEqual(label.grid_info()["sticky"], "ew")
+        self.assertGreater(int(str(label.cget("wraplength"))), 1)  # follows the width of its column
+        self.assertLessEqual(label.winfo_reqwidth(), label.master.winfo_width())
+
     def test_settings_of_an_old_file_show_its_low_priority_tags_as_keywords(self):
         window = self.window_with_settings(
             '{"language": "en", "region_priority": ["USA", "none", "Japan"], "low_priority_tags": ["Beta"]}')

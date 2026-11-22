@@ -241,7 +241,11 @@ class SettingsPanel:
         left.grid(row=1, column=0, sticky="nsew", padx=(0, 16))
         left.columnconfigure(0, weight=1)
         left.rowconfigure(1, weight=1, minsize=4 * window._row_height())
-        ttk.Label(left, text=tr("settings.regions")).grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, 4))
+        # Wraps like the labels on the right: the text names the keywords after none and is long.
+        regions_label = ttk.Label(left, text=tr("settings.regions"))
+        regions_label.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 4))
+        regions_label.bind("<Configure>", lambda event: regions_label.configure(wraplength=max(event.width, 1)))
+        self.regions_label = regions_label
         self.regions = tk.Listbox(
             left, height=6, activestyle="none", exportselection=False, font="TkDefaultFont",
             background=_DARK_GRAY, foreground=_WHITE, selectbackground=_SELECTED, selectforeground=_WHITE,
