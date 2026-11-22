@@ -5,7 +5,8 @@ Like the window, this module does not import the program, because it would other
 second time when started as a script.
 
 Done so far (see docs/tui-plan.md): start, title row, the read-only list with background analysis,
-moving the cursor and selecting several rows, D and P, the three views and the filter.
+moving the cursor and selecting several rows, D and P, the three views, the filter, and questions
+and messages inside the terminal.
 """
 
 from __future__ import annotations
@@ -15,9 +16,10 @@ from pathlib import Path
 from rich.text import Text
 from textual.app import App, ComposeResult
 from textual.binding import Binding
-from textual.containers import Horizontal
+from textual.containers import Horizontal, Vertical
 from textual.geometry import Region
-from textual.widgets import DataTable, Input, ProgressBar, RadioButton, RadioSet, Static
+from textual.screen import ModalScreen
+from textual.widgets import Button, DataTable, Input, ProgressBar, RadioButton, RadioSet, Static
 
 from translations import tr
 from workbench_state import (
@@ -27,6 +29,10 @@ from workbench_state import (
 APP_NAME = "Rom Cleanup Workbench"
 # As in the window: Rebuilding a long list on every keystroke would make typing sluggish.
 FILTER_DELAY = 0.2
+YES_NO = (("dialog.yes", True), ("dialog.no", False))
+OK = (("dialog.ok", None),)
+# The actions that change or move in the list; a question locks them, as in the window.
+_LIST_ACTIONS = {"move_cursor", "move_game", "demote", "promote", "choose_view", "focus_filter", "leave_filter"}
 
 
 def _game_of(key: str) -> int | None:
@@ -137,6 +143,51 @@ class FilterInput(Input):
     ]
 
 
+class QuestionScreen(ModalScreen):
+    """A question or message over the list, with buttons in the program's language.
+
+    buttons: (text key, value) pairs. The button with the value default has the focus, Enter presses
+    it, and Esc chooses the last button (No or OK), as in the window. Left and Right move between them.
+    """
+
+    BINDINGS = [
+        Binding("escape", "answer_last", show=False),
+        Binding("left", "app.focus_previous", show=False),
+        Binding("right", "app.focus_next", show=False),
+    ]
+
+    def __init__(self, kind: str, title: str, message: str, buttons, default=None):
+        super().__init__(classes=f"kind-{kind}")
+        self.kind = kind
+        self.title_text = title
+        self.message = message
+        self.labels = [tr(key) for key, _value in buttons]
+        self.values = [value for _key, value in buttons]
+        self.default_index = self.values.index(default) if default in self.values else 0
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="question"):
+            with Horizontal(id="question-head"):
+                yield Static("●", id="question-dot")
+                yield Static(self.title_text, id="question-title", markup=False)
+            yield Static(self.message, id="question-text", markup=False)
+            with Horizontal(id="question-buttons"):
+                for index, label in enumerate(self.labels):
+                    yield Button(label, id=f"answer-{index}", compact=True)
+
+    def on_mount(self) -> None:
+        buttons = list(self.query(Button))
+        if buttons:  # None while the program is just ending.
+            buttons[self.default_index].focus()
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        event.stop()
+        self.dismiss(self.values[int(event.button.id.removeprefix("answer-"))])
+
+    def action_answer_last(self) -> None:
+        self.dismiss(self.values[-1])
+
+
 class WorkbenchApp(App):
     """The terminal window: the same rows as the Windows window, from top to bottom."""
 
@@ -165,6 +216,18 @@ class WorkbenchApp(App):
     #views > RadioButton > .toggle--button { color: #333333; background: #333333; }
     #views > RadioButton.-on > .toggle--button { color: #e5383b; background: #333333; }
     #status { height: auto; background: #1a7f37; color: #ffffff; padding: 0 1; }
+    QuestionScreen { align: center middle; background: #000000 60%; }
+    #question { width: 72; max-width: 100%; height: auto; max-height: 100%; background: #111111;
+                border: tall #1a7f37; padding: 1 2; }
+    QuestionScreen.kind-warning #question, QuestionScreen.kind-error #question { border: tall #e5383b; }
+    #question-head { height: auto; }
+    #question-dot { width: 2; color: #1a7f37; }
+    QuestionScreen.kind-warning #question-dot, QuestionScreen.kind-error #question-dot { color: #e5383b; }
+    #question-title { width: 1fr; text-style: bold; }
+    #question-text { margin: 1 0 1 2; }
+    #question-buttons { height: 1; margin-left: 2; }
+    #question-buttons > Button { margin-right: 2; min-width: 8; background: #333333; color: #ffffff; }
+    #question-buttons > Button:focus { background: #0a4a8a; text-style: bold; }
     """
     BINDINGS = [
         Binding("q", "quit", show=False),
@@ -267,6 +330,7 @@ class WorkbenchApp(App):
         self.query_one("#progress", ProgressBar).display = False
         if error:
             self._set_status(tr("window.analysis_failed", error=error))
+            self.show_message("error", tr("window.analysis_failed_title"), error)
             return
         self.show_review(review)
 
@@ -372,7 +436,7 @@ class WorkbenchApp(App):
         try:
             save_scope(self.settings_path, scope)
         except OSError as error:
-            self._set_status(f"{tr('window.choice_not_saved')}: {error}")
+            self.show_message("error", tr("window.choice_not_saved"), str(error))
 
     def _update_status(self) -> None:
         self._set_status(self.review.status(*scope_flags(self.scope, self.pattern)))
@@ -536,6 +600,37 @@ class WorkbenchApp(App):
     def _show_nothing_to_do(self, shown: bool) -> None:
         self.query_one("#games", DataTable).display = not shown
         self.query_one("#nothing", Static).display = shown
+
+    # Questions and messages -------------------------------------------------------------------
+
+    def ask(self, kind: str, title: str, message: str, buttons=YES_NO, default=False, then=None) -> None:
+        """Shows a question over the list; then(value) receives the answer.
+
+        Textual cannot wait here as Tk does, so the answer arrives in the callback. Meanwhile the
+        list is locked (check_action), so that nothing changes behind the question.
+        """
+        self.push_screen(QuestionScreen(kind, title, message, buttons, default), then)
+
+    def show_message(self, kind: str, title: str, message: str, then=None) -> None:
+        self.ask(kind, title, message, OK, None, then)
+
+    def question_open(self) -> bool:
+        return isinstance(self.screen, QuestionScreen)
+
+    def check_action(self, action: str, parameters) -> bool | None:
+        if action in _LIST_ACTIONS and self.question_open():
+            return False
+        return True
+
+    async def action_quit(self) -> None:
+        """q and Esc end the program; after changes by hand they ask first, as the window does."""
+        if self.question_open():
+            self.screen.action_answer_last()  # Ctrl+Q answers an open question like Esc.
+        elif self.review is not None and self.review.moved_count():
+            self.ask("question", tr("window.discard_title"), tr("window.discard_close"),
+                     then=lambda close: self.exit() if close else None)
+        else:
+            self.exit()
 
     # Helpers ----------------------------------------------------------------------------------
 

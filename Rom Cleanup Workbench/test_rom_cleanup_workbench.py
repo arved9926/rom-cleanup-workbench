@@ -3338,8 +3338,16 @@ class TerminalVersionTests(unittest.IsolatedAsyncioTestCase):
         async with app.run_test() as pilot:
             await self.analyzed(app, pilot)
             await pilot.press("1")
-            self.assertTrue(self.text(app, "#status").startswith("Choice not saved: "))
+            await pilot.pause()
+            self.assertTrue(app.question_open())
+            self.assertEqual(self.text(app.screen, "#question-title"), "Choice not saved")
+            self.assertTrue(self.text(app.screen, "#question-text"))  # the error of the system
+            self.assertIn("kind-error", app.screen.classes)
             self.assertEqual(self.titles(app), ["Zelda"])
+            await pilot.press("enter")  # OK
+            await pilot.pause()
+            self.assertFalse(app.question_open())
+            self.assertIs(app.focused, app.query_one("#games"))
 
     async def test_selection_stays_when_the_view_changes(self):
         app = self.app_for(self.VIEW_GAMES)
@@ -3466,3 +3474,152 @@ class TerminalVersionTests(unittest.IsolatedAsyncioTestCase):
             await pilot.press("ctrl+f", "x")  # before any analysis: typing works, nothing fails
             await pilot.pause(self.tui.FILTER_DELAY + 0.3)
             self.assertEqual(app.query_one("#filter").value, "x")
+
+    # Step 8: questions and messages -------------------------------------------------------------
+
+    async def ask(self, app, pilot, **options):
+        """Opens a question and returns the list its answer will be added to."""
+        answers = []
+        options.setdefault("then", answers.append)
+        app.ask(options.pop("kind", "question"), "Title?", "Really?", **options)
+        await pilot.pause()
+        return answers
+
+    def buttons(self, app):
+        from textual.widgets import Button
+
+        return [str(button.label) for button in app.screen.query(Button)]
+
+    async def test_question_shows_title_text_and_buttons_with_no_preselected(self):
+        app = self.app_for(self.TWO_GAMES)
+        async with app.run_test() as pilot:
+            await self.analyzed(app, pilot)
+            answers = await self.ask(app, pilot)
+            self.assertTrue(app.question_open())
+            self.assertEqual(self.text(app.screen, "#question-title"), "Title?")
+            self.assertEqual(self.text(app.screen, "#question-text"), "Really?")
+            self.assertEqual(self.buttons(app), ["Yes", "No"])
+            self.assertEqual(str(app.focused.label), "No")
+            self.assertIn("kind-question", app.screen.classes)
+            await pilot.press("enter")
+            await pilot.pause()
+            self.assertEqual(answers, [False])
+            self.assertFalse(app.question_open())
+            self.assertIs(app.focused, app.query_one("#games"))  # back to the list
+
+    async def test_question_is_answered_with_the_arrows_or_a_click(self):
+        app = self.app_for(self.TWO_GAMES)
+        async with app.run_test() as pilot:
+            await self.analyzed(app, pilot)
+            answers = await self.ask(app, pilot)
+            await pilot.press("left")
+            self.assertEqual(str(app.focused.label), "Yes")
+            await pilot.press("enter")
+            await pilot.pause()
+            answers2 = await self.ask(app, pilot)
+            await pilot.click("#answer-0")
+            await pilot.pause()
+            answers3 = await self.ask(app, pilot)
+            await pilot.click("#answer-1")
+            await pilot.pause()
+            self.assertEqual(answers + answers2 + answers3, [True, True, False])
+
+    async def test_question_buttons_follow_the_language(self):
+        for language, expected in (("de", ["Ja", "Nein"]), ("it", ["Sì", "No"]), ("ja", ["はい", "いいえ"])):
+            translations.set_language(language)
+            app = self.tui.WorkbenchApp(None, None)
+            async with app.run_test() as pilot:
+                await self.ask(app, pilot)
+                self.assertEqual(self.buttons(app), expected, language)
+                app.show_message("info", "i", "i")
+                await pilot.pause()
+                self.assertEqual(self.buttons(app), ["OK"], language)
+
+    async def test_escape_and_ctrl_q_answer_no_and_the_program_stays(self):
+        app = self.app_for(self.TWO_GAMES)
+        async with app.run_test() as pilot:
+            await self.analyzed(app, pilot)
+            answers = await self.ask(app, pilot, default=True)
+            self.assertEqual(str(app.focused.label), "Yes")
+            await pilot.press("escape")
+            await pilot.pause()
+            await self.ask(app, pilot, default=True, then=answers.append)
+            await pilot.press("ctrl+q")
+            await pilot.pause()
+            await self.ask(app, pilot, then=answers.append)
+            await pilot.press("q")  # q is no answer
+            await pilot.pause()
+            self.assertTrue(app.question_open())
+            await pilot.press("escape")
+            await pilot.pause()
+            self.assertEqual(answers, [False, False, False])
+            self.assertTrue(app.is_running)
+
+    async def test_keys_of_the_list_do_nothing_while_a_question_is_open(self):
+        app = self.app_for(self.VIEW_GAMES)
+        async with app.run_test() as pilot:
+            await self.analyzed(app, pilot)
+            before = app.selected_keys()
+            await self.ask(app, pilot)
+            await pilot.press("d", "p", "down", "shift+down", "tab", "3", "slash", "ctrl+f")
+            await pilot.pause(self.tui.FILTER_DELAY + 0.3)
+            self.assertTrue(app.question_open())
+            self.assertEqual(app.review.moved_count(), 0)
+            self.assertEqual(app.selected_keys(), before)
+            self.assertEqual(app.scope, "marked")
+            self.assertEqual(app.query_one("#filter").value, "")
+            self.assertIn(str(app.focused.label), ("Yes", "No"))  # Tab only moved between the buttons
+            await pilot.click(offset=(10, 6))  # where the list is: the question covers it
+            await pilot.pause()
+            self.assertTrue(app.question_open())
+            self.assertEqual(app.selected_keys(), before)
+
+    async def test_messages_have_ok_and_their_color(self):
+        app = self.tui.WorkbenchApp(None, None)
+        async with app.run_test() as pilot:
+            answers = []
+            app.show_message("warning", "Careful", "Something [!] happened", then=answers.append)
+            await pilot.pause()
+            self.assertIn("kind-warning", app.screen.classes)
+            self.assertEqual(self.text(app.screen, "#question-text"), "Something [!] happened")
+            dot = app.screen.query_one("#question-dot").styles.color
+            self.assertEqual(dot.hex.lower(), "#e5383b")
+            await pilot.press("escape")
+            await pilot.pause()
+            self.assertEqual(answers, [None])
+            app.show_message("info", "Done", "3 file(s) deleted.")
+            await pilot.pause()
+            self.assertEqual(app.screen.query_one("#question-dot").styles.color.hex.lower(), "#1a7f37")
+
+    async def test_analysis_error_is_also_shown_as_a_message(self):
+        def broken(_directory, _progress=None):
+            raise ValueError("Configuration unreadable: broken")
+        app = self.app_for({}, analyze=broken)
+        async with app.run_test() as pilot:
+            await self.analyzed(app, pilot)
+            self.assertTrue(app.question_open())
+            self.assertEqual(self.text(app.screen, "#question-title"), "Analysis not possible")
+            self.assertEqual(self.text(app.screen, "#question-text"), "Configuration unreadable: broken")
+            await pilot.press("enter")
+            await pilot.pause()
+            self.assertFalse(app.question_open())
+
+    async def test_quitting_after_changes_by_hand_asks_first(self):
+        app = self.app_for(self.TWO_GAMES)
+        async with app.run_test() as pilot:
+            await self.analyzed(app, pilot)
+            await pilot.press("d", "q")
+            await pilot.pause()
+            self.assertTrue(app.question_open())
+            self.assertEqual(self.text(app.screen, "#question-title"), "Discard changes?")
+            await pilot.press("enter")  # No is preselected
+            await pilot.pause()
+            self.assertTrue(app.is_running)
+            self.assertEqual(app.review.moved_count(), 1)
+            await pilot.press("escape")  # Esc in the list also asks
+            await pilot.pause()
+            self.assertTrue(app.question_open())
+            await pilot.press("left", "enter")
+            await pilot.pause()
+            self.assertFalse(app.is_running)
+        self.assertEqual(len(list(app.directory.iterdir())), 4)  # nothing was deleted
