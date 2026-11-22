@@ -66,7 +66,7 @@ Das Programm spricht Englisch, Deutsch, Italienisch, Spanisch, Französisch und 
    git clone https://github.com/arved9926/rom-cleanup-workbench.git
    ```
 
-3. **Textual installieren,** am besten in einer virtuellen Umgebung:
+3. **Textual in einer virtuellen Umgebung installieren:**
 
    ```bash
    cd "rom-cleanup-workbench/Rom Cleanup Workbench"
