@@ -10,3 +10,5 @@ python rom_cleanup_workbench.py "D:\Games"
 The documentation is in [Rom Cleanup Workbench/README.md](<Rom Cleanup Workbench/README.md>).
 
 **Deleted files do not go to the Recycle Bin.**
+
+Copyright (C) 2026 Arved Retrogamer. Free software under the GNU General Public License, version 3 or later; see [LICENSE](LICENSE). Use at your own risk: there is no warranty. We recommend running the program on a copy of your own ROM collection.

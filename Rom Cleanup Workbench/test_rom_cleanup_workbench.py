@@ -1,3 +1,17 @@
+# Rom Cleanup Workbench
+# Copyright (C) 2026 Arved Retrogamer
+#
+# This program is free software: you can redistribute it and/or modify it under the terms of the
+# GNU General Public License as published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without
+# even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+# General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License along with this program.
+# If not, see <https://www.gnu.org/licenses/>.
+
 import contextlib
 import gc
 import io
@@ -1531,9 +1545,27 @@ class ReviewWindowTests(RedundanzTestCase):
         self.assertIn("F1: Credits", translations.tr("window.help"))
         with mock.patch("rom_cleanup_workbench_window.messagebox.showinfo") as info:
             window.show_credits()
-        self.assertEqual(info.call_args.args[:2], ("Credits", "Idea: Arved Retrogamer\nProgramming: Claude Code"))
+        title, message = info.call_args.args[:2]
+        self.assertEqual(title, "Credits")
+        self.assertTrue(message.startswith("Idea: Arved Retrogamer\nProgramming: Claude Code\n\n"))
+        self.assertIn("Copyright (C) 2026 Arved Retrogamer", message)
+        self.assertIn("GNU General Public License, version 3 or later", message)
+        self.assertIn("no warranty", message)
+        self.assertIn("on a copy of your own ROM collection", message)
         translations.set_language("de")
         self.assertEqual(translations.tr("credits.text"), "Idee: Arved Retrogamer\nProgrammierung: Claude Code")
+        self.assertIn("Kopie der eigenen ROM-Sammlung", translations.tr("credits.license"))
+
+    def test_license_file_and_notices_are_there(self):
+        folder = Path(rf.__file__).parent
+        license_text = (folder.parent / "LICENSE").read_text(encoding="utf-8")
+        self.assertIn("GNU GENERAL PUBLIC LICENSE", license_text)
+        self.assertIn("Version 3, 29 June 2007", license_text)
+        for path in folder.glob("*.py"):
+            head = path.read_text(encoding="utf-8")[:1500]
+            self.assertIn("Copyright (C) 2026 Arved Retrogamer", head, path.name)
+            self.assertIn("either version 3 of the", head, path.name)
+        self.assertIn("GNU General Public License", " ".join(rf.build_parser().format_help().split()))  # wraps
 
     def window_with_settings(self, content='{"language": "en", "region_priority": ["USA", "Japan"]}'):
         temp = tempfile.TemporaryDirectory()
@@ -5035,8 +5067,10 @@ class TerminalVersionTests(unittest.IsolatedAsyncioTestCase):
                 await pilot.pause()
                 self.assertTrue(app.question_open(), key)
                 self.assertEqual(self.text(app.screen, "#question-title"), "Credits")
-                self.assertEqual(self.text(app.screen, "#question-text"),
-                                 "Idea: Arved Retrogamer\nProgramming: Claude Code")
+                text = self.text(app.screen, "#question-text")
+                self.assertTrue(text.startswith("Idea: Arved Retrogamer\nProgramming: Claude Code\n\n"))
+                self.assertIn("GNU General Public License", text)
+                self.assertIn("copy of your own ROM collection", text)
                 self.assertEqual(self.buttons(app), ["OK"])
                 await pilot.press("enter")
                 await pilot.pause()

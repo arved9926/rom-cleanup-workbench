@@ -1,3 +1,17 @@
+# Rom Cleanup Workbench
+# Copyright (C) 2026 Arved Retrogamer
+#
+# This program is free software: you can redistribute it and/or modify it under the terms of the
+# GNU General Public License as published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without
+# even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+# General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License along with this program.
+# If not, see <https://www.gnu.org/licenses/>.
+
 """Rom Cleanup Workbench: finds duplicate ROM files in a directory and deletes them on request.
 
 File names: <game name> (region or extra info) (...).<file type>
@@ -1019,6 +1033,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="rom_cleanup_workbench.py",
         description="Rom Cleanup Workbench: finds duplicate ROM files in a directory.",
+        epilog="Copyright (C) 2026 Arved Retrogamer. Free software under the GNU General Public License, "
+               "version 3 or later (see LICENSE). Use at your own risk: there is no warranty. We recommend "
+               "running the program on a copy of your own ROM collection.",
     )
     parser.add_argument("directory", type=Path, nargs="?", help="directory to check (otherwise chosen in the window)")
     parser.add_argument("--config", type=Path, help="JSON configuration (default: redundanz_config.json)")

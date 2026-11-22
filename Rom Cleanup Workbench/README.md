@@ -204,6 +204,14 @@ Every ZIP file is read completely, even if it is the only file of a game. Its co
 - **Defective or encrypted ZIP:** The file is always marked, even if it is the only file of the game. The content of an encrypted ZIP is not checked.
 - **Locked ZIP or unknown method (for example Deflate64):** This says nothing about the condition of the file. Without a plain file of the game, it is kept and named in the report.
 
+## License and disclaimer
+
+Copyright (C) 2026 Arved Retrogamer
+
+Rom Cleanup Workbench is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version. The full text is in [LICENSE](<../LICENSE>).
+
+**Use at your own risk.** The program deletes files, and there is no warranty of any kind; whoever uses it takes on all risks that come with it. We recommend running it on a copy of your own ROM collection first.
+
 ## Credits
 
 - Idea: Arved Retrogamer

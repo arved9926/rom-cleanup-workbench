@@ -1,3 +1,17 @@
+# Rom Cleanup Workbench
+# Copyright (C) 2026 Arved Retrogamer
+#
+# This program is free software: you can redistribute it and/or modify it under the terms of the
+# GNU General Public License as published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without
+# even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+# General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License along with this program.
+# If not, see <https://www.gnu.org/licenses/>.
+
 """Analysis window: analyze a folder, review the result, reorder with D and P, and delete.
 
 The rules are in the Review object from rom_cleanup_workbench.py. This module does not import
@@ -509,9 +523,10 @@ class ReviewWindow:
             self.start_analysis()
 
     def show_credits(self) -> None:
-        """F1: who had the idea and who programmed it, as a message in the window."""
+        """F1: who had the idea and who programmed it, the license and the warning, in the window."""
         if not self._questions:  # not on top of an open question
-            messagebox.showinfo(tr("credits.title"), tr("credits.text"), parent=self.root)
+            message = tr("credits.text") + "\n\n" + tr("credits.license")
+            messagebox.showinfo(tr("credits.title"), message, parent=self.root)
 
     def choose_directory(self) -> None:
         """Folder... and Ctrl+O choose the folder in place of the list; the analysis starts once it is chosen."""

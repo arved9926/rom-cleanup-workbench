@@ -1,3 +1,17 @@
+# Rom Cleanup Workbench
+# Copyright (C) 2026 Arved Retrogamer
+#
+# This program is free software: you can redistribute it and/or modify it under the terms of the
+# GNU General Public License as published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without
+# even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+# General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License along with this program.
+# If not, see <https://www.gnu.org/licenses/>.
+
 """Terminal version of Rom Cleanup Workbench, built with Textual (python3 rom_cleanup_workbench.py --tui).
 
 The rules are in the Review object from rom_cleanup_workbench.py, the shared state in workbench_state.py.
@@ -1330,8 +1344,8 @@ class WorkbenchApp(App):
     # Credits ----------------------------------------------------------------------------------
 
     def action_credits(self) -> None:
-        """c and F1: who had the idea and who programmed it, as a message over the list."""
-        self.show_message("info", tr("credits.title"), tr("credits.text"))
+        """c and F1: who had the idea and who programmed it, the license and the warning."""
+        self.show_message("info", tr("credits.title"), tr("credits.text") + "\n\n" + tr("credits.license"))
 
     # Analyze again ----------------------------------------------------------------------------
 

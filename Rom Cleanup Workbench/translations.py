@@ -1,3 +1,17 @@
+# Rom Cleanup Workbench
+# Copyright (C) 2026 Arved Retrogamer
+#
+# This program is free software: you can redistribute it and/or modify it under the terms of the
+# GNU General Public License as published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without
+# even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+# General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License along with this program.
+# If not, see <https://www.gnu.org/licenses/>.
+
 """All texts the program shows, in every language it knows.
 
 The language comes from "language" in redundanz_config.json and is set once at the start with
@@ -128,6 +142,7 @@ _EN = {
     "dialog.ok": "OK",
     "credits.title": "Credits",
     "credits.text": "Idea: Arved Retrogamer\nProgramming: Claude Code",
+    "credits.license": "Copyright (C) 2026 Arved Retrogamer\nFree software under the GNU General Public License, version 3 or later.\nUse at your own risk: there is no warranty. We recommend running the program on a copy of your own ROM collection.",
     "settings.title": "Settings",
     "settings.file": "File: {path}",
     "settings.language": "Language:",
@@ -272,6 +287,7 @@ _DE = {
     "dialog.ok": "OK",
     "credits.title": "Credits",
     "credits.text": "Idee: Arved Retrogamer\nProgrammierung: Claude Code",
+    "credits.license": "Copyright (C) 2026 Arved Retrogamer\nFreie Software unter der GNU General Public License, Version 3 oder später.\nNutzung auf eigenes Risiko: Es gibt keine Gewährleistung. Wir empfehlen, das Programm auf einer Kopie der eigenen ROM-Sammlung zu verwenden.",
     "settings.title": "Einstellungen",
     "settings.file": "Datei: {path}",
     "settings.language": "Sprache:",
@@ -414,6 +430,7 @@ _IT = {
     "dialog.ok": "OK",
     "credits.title": "Riconoscimenti",
     "credits.text": "Idea: Arved Retrogamer\nProgrammazione: Claude Code",
+    "credits.license": "Copyright (C) 2026 Arved Retrogamer\nSoftware libero sotto la GNU General Public License, versione 3 o successiva.\nUso a proprio rischio: non è prevista alcuna garanzia. Consigliamo di usare il programma su una copia della propria collezione di ROM.",
     "settings.title": "Impostazioni",
     "settings.file": "File: {path}",
     "settings.language": "Lingua:",
@@ -556,6 +573,7 @@ _ES = {
     "dialog.ok": "Aceptar",
     "credits.title": "Créditos",
     "credits.text": "Idea: Arved Retrogamer\nProgramación: Claude Code",
+    "credits.license": "Copyright (C) 2026 Arved Retrogamer\nSoftware libre bajo la GNU General Public License, versión 3 o posterior.\nÚselo bajo su propia responsabilidad: no hay garantía. Recomendamos usar el programa con una copia de su propia colección de ROM.",
     "settings.title": "Ajustes",
     "settings.file": "Archivo: {path}",
     "settings.language": "Idioma:",
@@ -696,6 +714,7 @@ _FR = {
     "dialog.ok": "OK",
     "credits.title": "Crédits",
     "credits.text": "Idée : Arved Retrogamer\nProgrammation : Claude Code",
+    "credits.license": "Copyright (C) 2026 Arved Retrogamer\nLogiciel libre sous la GNU General Public License, version 3 ou ultérieure.\nUtilisation à vos propres risques : aucune garantie n'est fournie. Nous recommandons d'utiliser le programme sur une copie de votre propre collection de ROM.",
     "settings.title": "Paramètres",
     "settings.file": "Fichier : {path}",
     "settings.language": "Langue :",
@@ -838,6 +857,7 @@ _JA = {
     "dialog.ok": "OK",
     "credits.title": "クレジット",
     "credits.text": "アイデア: Arved Retrogamer\nプログラミング: Claude Code",
+    "credits.license": "Copyright (C) 2026 Arved Retrogamer\nGNU General Public License バージョン 3 以降のもとで提供されるフリーソフトウェアです。\n利用は自己責任でお願いします。保証は一切ありません。ご自身の ROM コレクションのコピーで使用することをおすすめします。",
     "settings.title": "設定",
     "settings.file": "ファイル: {path}",
     "settings.language": "言語:",
