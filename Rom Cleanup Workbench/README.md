@@ -113,7 +113,7 @@ python3 -m venv ~/venvs/rom-cleanup-workbench
 ~/venvs/rom-cleanup-workbench/bin/python rom_cleanup_workbench.py --tui ~/roms
 ```
 
-Without Textual, the program says so and deletes nothing. The screen has the rows of the window from top to bottom: the green title row with the folder, a help row, the priority, the list, the filter field, the three views and the green status row. In the list, each game starts with its name in bold, followed by dashes up to the right edge; a note such as `Different spellings of the name` stands in that line. `Nothing to do.` blinks with the terminal's own blinking; in PuTTY, blinking text may have to be switched on first. Questions and messages appear in a frame over the list, with buttons in the program's language; `No` is preselected.
+Without Textual, the program says so and deletes nothing. The screen has the rows of the window from top to bottom: the green title row with the folder, a help row, the priority, the list, the filter field, the three views and the green status row. In the list, each game starts with its name in bold, followed by dashes up to the right edge; a note such as `Different spellings of the name` stands in that line. In a narrow terminal, such as PuTTY's 80 columns, long file names and notes wrap in their column instead of leaving the screen. `Nothing to do.` blinks with the terminal's own blinking; in PuTTY, blinking text may have to be switched on first. Questions and messages appear in a frame over the list, with buttons in the program's language; `No` is preselected.
 
 | Key | Effect |
 | --- | --- |
@@ -133,7 +133,7 @@ The mouse works too: a click selects a row, the wheel scrolls, and the views and
 
 **Colors and characters.** With 256 colors or more, the terminal version uses the colors of the window, but black behind every game (no stripes). Where the terminal only has 16 colors (`TERM=xterm`, `TERM=linux`), it switches to plain ANSI colors: blue selection, green title and status rows, brown rows changed by hand. On the Linux console, in terminals such as `vt100`, and when the locale names a charset other than UTF-8 (for example `en_US` or `de_DE.ISO-8859-1`), it draws only ASCII characters: views as `(*)`, frames from `+`, `-` and `|`. `--ascii` forces this. PuTTY reports itself as `xterm` (16 colors); for the window's colors, set *Connection → Data → Terminal-type string* to `xterm-256color`. File names and texts in other scripts, such as Japanese, still need a terminal and font that can show them.
 
-Differences from the window: no font zoom, and the games are not striped but start with a dashed line. While deleting, the terminal version deletes in the background and shows the progress bar; all keys are locked until it is finished. The window and the terminal version keep their view and the confirmed save files in the same `rom_cleanup_workbench_settings.json`.
+Differences from the window: no font zoom, because the font belongs to the terminal (in PuTTY: *Window → Appearance*); and the games are not striped but start with a dashed line. With 16 colors, the green rows have black text, which stays readable on a light green. While deleting, the terminal version deletes in the background and shows the progress bar; all keys are locked until it is finished. The window and the terminal version keep their view and the confirmed save files in the same `rom_cleanup_workbench_settings.json`.
 
 ## Configuration: `redundanz_config.json`
 

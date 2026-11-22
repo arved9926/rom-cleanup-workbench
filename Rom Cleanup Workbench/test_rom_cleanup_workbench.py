@@ -4950,6 +4950,67 @@ class TerminalVersionTests(unittest.IsolatedAsyncioTestCase):
             self.assertRegex(line, r"^ Tetris -+$")
             self.assertEqual(len(line), 100)
 
+    LONG_NAMES = {
+        "Street Fighter II' - Champion Edition (USA) (Rev 1).sfc": b"x" * 3000,
+        "Street Fighter II' - Champion Edition (Japan).sfc": b"x" * 3000,
+        "Mega Man X (USA).sfc": b"x" * 3000, "Mega Man X.srm": b"x" * 10,
+    }
+
+    async def test_notes_stay_visible_in_a_narrow_terminal(self):
+        # PuTTY opens with 80 columns: the long names must not push the notes off the right edge.
+        app = self.app_for(self.LONG_NAMES, scope="all")
+        async with app.run_test(size=(80, 30)) as pilot:
+            await self.analyzed(app, pilot)
+            await pilot.pause()
+            lines = self.screen_lines(app)
+            text = "\n".join(lines)
+            self.assertTrue(app.query_one("#games").columns_layout[3])  # wrapping
+            self.assertIn("Suspected status or save file", " ".join(text.split()))  # wrapped, but all there
+            self.assertTrue(all(strip.cell_length == 80 for strip in self.strips(app)))
+            # A wrapped name goes on below the name, not at the left edge.
+            first = next(index for index, line in enumerate(lines) if "+ Street Fighter" in line)
+            self.assertTrue(lines[first + 1].startswith("       ") and lines[first + 1].strip())
+            self.assertIn("KB", lines[first])  # the size stays next to the name
+            sizes = {line.index("KB") for line in lines if "KB" in line}
+            self.assertEqual(len(sizes), 1)  # and in one column
+
+    async def test_wide_terminal_keeps_one_row_per_file(self):
+        app = self.app_for(self.LONG_NAMES, scope="all")
+        async with app.run_test(size=(160, 30)) as pilot:
+            await self.analyzed(app, pilot)
+            await pilot.pause()
+            self.assertFalse(app.query_one("#games").columns_layout[3])
+            line = next(line for line in self.screen_lines(app) if "+ Mega Man X.srm" in line)
+            self.assertIn("Suspected status or save file", line)
+
+    async def test_changing_the_width_lays_the_list_out_again_and_keeps_the_place(self):
+        app = self.app_for(self.LONG_NAMES, scope="all")
+        async with app.run_test(size=(160, 30)) as pilot:
+            await self.analyzed(app, pilot)
+            await pilot.press("tab", "shift+down")
+            cursor, selection = app.cursor_key(), app.selected_keys()
+            await pilot.resize_terminal(80, 30)
+            await pilot.pause()
+            await pilot.pause()
+            self.assertTrue(app.query_one("#games").columns_layout[3])
+            self.assertEqual((app.cursor_key(), app.selected_keys()), (cursor, selection))
+            await pilot.resize_terminal(160, 30)
+            await pilot.pause()
+            await pilot.pause()
+            self.assertFalse(app.query_one("#games").columns_layout[3])
+            self.assertEqual((app.cursor_key(), app.selected_keys()), (cursor, selection))
+
+    async def test_16_colors_write_black_on_the_green_rows(self):
+        app = self.colored_app(colors16=True)
+        async with app.run_test(size=(110, 32)) as pilot:
+            await self.analyzed(app, pilot)
+            lines, strips = self.screen_lines(app), self.strips(app)
+            for text in ("Folder:", "Showing:"):
+                row = next(index for index, line in enumerate(lines) if text in line)
+                segment = next(segment for segment in strips[row] if text[:4] in segment.text)
+                self.assertEqual(self.as_16_colors(segment.style.bgcolor), 2, text)  # green
+                self.assertEqual(self.as_16_colors(segment.style.color), 0, text)  # black
+
     async def test_nothing_to_do_blinks_with_the_terminal_attribute(self):
         app = self.app_for({"Alone (USA).bin": b"a"})
         async with app.run_test() as pilot:

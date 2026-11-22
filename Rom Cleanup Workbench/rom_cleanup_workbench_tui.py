@@ -16,6 +16,7 @@ import time
 from pathlib import Path
 
 from rich.cells import cell_len
+from rich.console import Console
 from rich.measure import Measurement
 from rich.text import Text
 from textual import events
@@ -141,10 +142,48 @@ class DashLine:
 
     def __rich_console__(self, console, options):
         width = options.max_width
-        line = Text(self.text, style="bold", no_wrap=True, overflow="crop")
-        line.append("-" * max(0, width - cell_len(self.text)), style="bold")
-        line.truncate(width)
-        yield line
+        if cell_len(self.text) <= width or options.no_wrap:
+            line = Text(self.text, style="bold", no_wrap=True, overflow="crop")
+            line.append("-" * max(0, width - cell_len(self.text)), style="bold")
+            line.truncate(width)
+            yield line
+            return
+        # Too long for its column (a narrow terminal): wrapped, the dashes after the last line.
+        lines = Text(self.text.rstrip(), style="bold").wrap(console, width - 1)
+        for number, line in enumerate(lines):
+            line = Text(" ", style="bold") + line if number else line
+            if number == len(lines) - 1:
+                line.append(" " + "-" * max(0, width - cell_len(line.plain) - 1), style="bold")
+            line.truncate(width)
+            yield line
+
+
+# In a narrow terminal: the least the note and the file column keep (see GameTable.column_layout).
+_NOTE_MIN = 24
+_FILE_MIN = 24
+# Only for measuring when wrapping file names; it never prints.
+_MEASURE = Console(width=200, file=open(os.devnull, "w", encoding="utf-8"), color_system=None)
+
+
+def _hanging(cell: Text, width: int) -> Text:
+    """A cell of the file column wrapped to its width, further lines below the name, not at the edge.
+
+    "     + Super Mario World (Europe) (Beta).sfc " in 24 cells becomes
+    "     + Super Mario World" and "       (Europe) (Beta).sfc".
+    """
+    plain = cell.plain.rstrip()
+    if cell_len(plain) < width:
+        return cell
+    body = plain.lstrip()
+    lead = len(plain) - len(body)
+    if body[:2] in ("+ ", "- "):  # a file: continue below the name
+        lead += 2
+    prefix, name = plain[:lead], plain[lead:]
+    room = max(8, width - lead - 1)
+    lines = Text(name).wrap(_MEASURE, room)
+    wrapped = "\n".join((prefix if number == 0 else " " * lead) + line.plain.rstrip()
+                        for number, line in enumerate(lines))
+    return Text(wrapped + " ", style=cell.style)
 
 
 def _cell(text: str, **options) -> Text:
@@ -160,7 +199,7 @@ class GameTable(DataTable):
 
     It has no cell padding: the table would fill it with spaces, which would break the dashed
     line of a game's title row. The cells carry their own spaces instead (_cell), and the last
-    column reaches the right edge (fit_note_column).
+    column reaches the right edge (see column_layout).
     """
 
     COMPONENT_CLASSES = DataTable.COMPONENT_CLASSES | {
@@ -177,26 +216,45 @@ class GameTable(DataTable):
         super().__init__(*args, cell_padding=0, **kwargs)
         self.selected: set[str] = set()
         self.moved: set[str] = set()
+        self.natural = (0, 0, 0)  # the widths file, size and note would need without wrapping
+        self.columns_layout = None  # (file, size, note, wrap) as the rows were added
 
-    def fit_note_column(self) -> None:
-        """Widens the last column to the right edge, so that the dashed lines reach it.
+    def available_width(self) -> int:
+        """The width for the columns: without a vertical scroll bar, if one is shown.
 
-        Long notes still widen it further; then the table scrolls sideways, as before.
+        When the scroll bar appears or goes, the app lays the list out again (list_resized).
         """
-        note = self.columns.get(ColumnKey("note"))
-        if note is None or not self.size.width:
-            return
-        others = sum(column.get_render_width(self) for key, column in self.columns.items() if key != "note")
-        width = max(note.content_width, self.scrollable_content_region.width - others)
-        if note.auto_width or note.width != width:
-            note.auto_width = False
-            note.width = width
-            self._require_update_dimensions = True
-            self._clear_caches()
-            self.refresh()
+        return max(0, self.scrollable_content_region.width)
+
+    def column_layout(self) -> tuple[int, int, int, bool]:
+        """Widths of file, size and note, and whether long names and notes wrap.
+
+        Wide enough: one row per file, and the note column reaches the right edge. Too narrow
+        (often 80 columns, as in PuTTY): the note column gets at least a third, never less than
+        24 cells, and long file names and notes wrap in their column, so that nothing disappears
+        off the right edge.
+        """
+        file, size, note = self.natural
+        available = self.available_width()
+        if not available or file + size + note <= available:
+            return file, size, max(note, available - file - size), False
+        note_width = min(note, max(_NOTE_MIN, available // 3))
+        file_width = min(file, max(_FILE_MIN, available - size - note_width))
+        note_width = max(note_width, available - size - file_width)
+        return file_width, size, note_width, file_width < file or note_width < note
+
+    def apply_layout(self, layout: tuple[int, int, int, bool]) -> None:
+        """Sets the column widths before rows are added: their heights depend on them."""
+        for key, width in zip(("file", "size", "note"), layout[:3]):
+            column = self.columns.get(ColumnKey(key))
+            if column is not None:
+                column.auto_width = False
+                column.width = max(1, width)
+        self.columns_layout = layout
+        self._require_update_dimensions = True
 
     def on_resize(self, event) -> None:
-        self.call_after_refresh(self.fit_note_column)
+        self.call_after_refresh(self.app.list_resized)
 
     def set_selection(self, keys) -> None:
         self.selected = set(keys)
@@ -780,7 +838,9 @@ class WorkbenchApp(App):
                    scrollbar-background-active: #000000; scrollbar-color: #aaaaaa;
                    scrollbar-color-hover: #ffffff; scrollbar-color-active: #ffffff;
                    scrollbar-corner-color: #000000; }
-    .-colors16 #title-row, .-colors16 #status { background: #00aa00; color: #ffffff; }
+    /* Black on green: many terminals (PuTTY among them) show ANSI green so light that white
+       text on it, such as the folder, is hard to read. */
+    .-colors16 #title-row, .-colors16 #status { background: #00aa00; color: #000000; }
     .-colors16 #games > .datatable--header { background: #000000; color: #ffffff; text-style: bold underline; }
     .-colors16 #games > .datatable--moved { background: #aa5500; color: #ffffff; }
     .-colors16 #games > .datatable--cursor, .-colors16 #games > .datatable--selected,
@@ -1008,37 +1068,71 @@ class WorkbenchApp(App):
         table.clear()
         self.files = {}
         moved = set()
+        rows = []  # (cells, key); collected first, so that the column widths are known before adding
         for place, result in enumerate(self._visible):
             game_index = self._game_numbers[id(result)]
             if place:
                 # An empty row between the games: a drawn line would widen the file column to its length.
-                table.add_row("", "", "", key=f"s{game_index}")
+                rows.append((("", "", ""), f"s{game_index}"))
             # The title row: bold, and dashes up to the right edge, so that a new game stands out.
             problems = "; ".join(result.problems)
-            table.add_row(
-                DashLine(f" {result.title} "), DashLine(), DashLine(f" {problems} " if problems else ""),
-                key=f"g{game_index}",
-            )
+            rows.append(((DashLine(f" {result.title} "), DashLine(), DashLine(f" {problems} " if problems else "")),
+                         f"g{game_index}"))
             entries = [("k", "window.section.keep", "+", "bold", "window.by_hand_keep", result.keep),
                        ("h", "window.section.marked", "-", "", "window.by_hand_delete", result.marked)]
             for suffix, label, sign, style, moved_note, group in entries:
                 if not group:
                     continue
-                table.add_row(_cell("  " + tr(label)), "", "", key=f"g{game_index}{suffix}")
+                rows.append(((_cell("  " + tr(label)), "", ""), f"g{game_index}{suffix}"))
                 for entry in group:
                     key = self._file_keys[id(entry)]
                     self.files[key] = (result, entry)
                     if entry.moved:
                         moved.add(key)
                     notes = ([tr(moved_note)] if entry.moved else []) + list(entry.notes)
-                    table.add_row(
+                    rows.append(((
                         _cell(f"    {sign} {entry.path.name}", style=style),
                         _cell(format_kb(entry.size()), justify="right", style=style),
                         _cell("; ".join(notes), style="italic") if notes else "",
-                        key=key,
-                    )
+                    ), key))
+        widths = [0, 0, 0]
+        for cells, _key in rows + [((column.label for column in table.ordered_columns), None)]:
+            for index, cell in enumerate(cells):
+                text = cell.text if isinstance(cell, DashLine) else str(cell)
+                widths[index] = max(widths[index], cell_len(text))
+        table.natural = tuple(widths)
+        layout = table.column_layout()
+        table.apply_layout(layout)
+        # Wrapping rows take as many lines as they need; otherwise every row has one line.
+        height = None if layout[3] else 1
+        for cells, key in rows:
+            if layout[3]:  # wrapped lines go on below the text, not at the edge of the column
+                cells = tuple(_hanging(cell, width) if isinstance(cell, Text) and index != 1 else cell
+                              for index, (cell, width) in enumerate(zip(cells, layout[:3])))
+            table.add_row(*cells, key=key, height=height)
         table.set_moved(moved)
-        table.call_after_refresh(table.fit_note_column)
+        # A vertical scroll bar may come or go with these rows and change the width.
+        table.call_after_refresh(self.list_resized)
+
+    def list_resized(self) -> None:
+        """Lays the list out again when the terminal's width calls for other columns."""
+        table = self.query_one("#games", GameTable)
+        if (self._list_shown() and table.columns_layout is not None
+                and table.column_layout() != table.columns_layout):
+            self._redraw_keeping_place()
+
+    def _redraw_keeping_place(self, fallback: str | None = None) -> None:
+        """Fills the list again; cursor, selection and scroll position stay where they were."""
+        table = self.query_one("#games", GameTable)
+        cursor, selection, scroll = self.cursor_key(), table.selected, table.scroll_y
+        self._fill_table()
+        keys = self._keys()
+        if cursor not in keys:  # The section row under the cursor has disappeared.
+            cursor = fallback if fallback in keys else (keys[0] if keys else None)
+        table.set_selection({key for key in selection if key in keys})
+        table.scroll_to(y=scroll, animate=False, immediate=True)
+        if cursor is not None:
+            table.move_cursor(row=table.get_row_index(cursor), scroll=False)
 
     # Views ------------------------------------------------------------------------------------
 
@@ -1130,16 +1224,7 @@ class WorkbenchApp(App):
             changed = move(result, entry) or changed
         if not changed:
             return
-        table = self.query_one("#games", GameTable)
-        cursor, selection, scroll = self.cursor_key(), table.selected, table.scroll_y
-        self._fill_table()
-        keys = self._keys()
-        if cursor not in keys:  # The section row under the cursor has disappeared.
-            cursor = rows[-1]
-        selection = {key for key in selection if key in keys}
-        table.set_selection(selection)
-        table.scroll_to(y=scroll, animate=False, immediate=True)
-        table.move_cursor(row=table.get_row_index(cursor), scroll=False)
+        self._redraw_keeping_place(fallback=rows[-1])
         self._update_status()
 
     # Proceed ----------------------------------------------------------------------------------
