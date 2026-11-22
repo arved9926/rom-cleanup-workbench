@@ -16,6 +16,7 @@ import time
 from pathlib import Path
 
 from rich.text import Text
+from textual import events
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
@@ -141,14 +142,32 @@ class GameTable(DataTable):
 class FilterInput(Input):
     """The filter field. Letters typed here stay here, so a "d" or "p" never changes a mark.
 
-    Its own bindings come before the app's: Esc clears the filter instead of ending the program.
+    Textual hands each key to the widget that has the focus when the key arrives. Keys typed fast
+    (or pasted, or sent by tmux) can therefore wait here while an earlier Enter leaves the field.
+    So the field itself handles the keys that leave it, in the order they were typed, and passes
+    the keys that come after them on to where the focus is now.
     """
 
-    BINDINGS = [
-        Binding("escape", "app.leave_filter(True)", show=False),
-        Binding("down", "app.leave_filter(False)", show=False),
-        Binding("ctrl+f", "select_all", show=False),
-    ]
+    BINDINGS = [Binding("ctrl+f", "select_all", show=False)]
+    # key -> whether leaving also clears the filter
+    _LEAVE_KEYS = {"enter": False, "down": False, "tab": False, "shift+tab": False, "escape": True}
+
+    async def _on_key(self, event: events.Key) -> None:
+        app = self.app
+        if app.focused is not self:  # typed ahead, before an Enter or Esc above it had left the field
+            event.stop()
+            event.prevent_default()
+            # As App.on_event does with a new key: priority bindings first (a "/" comes back here),
+            # then the widget that has the focus now.
+            if not await app._check_bindings(event.key, priority=True):
+                (app.focused or app.screen)._forward_event(events.Key(event.key, event.character))
+            return
+        if event.key in self._LEAVE_KEYS:
+            event.stop()
+            event.prevent_default()
+            self.app.action_leave_filter(self._LEAVE_KEYS[event.key])
+            return
+        await super()._on_key(event)
 
 
 class QuestionScreen(ModalScreen):
@@ -156,12 +175,16 @@ class QuestionScreen(ModalScreen):
 
     buttons: (text key, value) pairs. The button with the value default has the focus, Enter presses
     it, and Esc chooses the last button (No or OK), as in the window. Left and Right move between them.
+
+    The screen keeps the chosen button itself (self.choice) instead of relying on the focus alone:
+    keys typed right after the question was asked can arrive before the focus has moved.
     """
 
     BINDINGS = [
         Binding("escape", "answer_last", show=False),
-        Binding("left", "app.focus_previous", show=False),
-        Binding("right", "app.focus_next", show=False),
+        Binding("left", "move(-1)", show=False),
+        Binding("right", "move(1)", show=False),
+        Binding("enter", "answer_chosen", show=False),
     ]
 
     def __init__(self, kind: str, title: str, message: str, buttons, default=None):
@@ -172,6 +195,7 @@ class QuestionScreen(ModalScreen):
         self.labels = [tr(key) for key, _value in buttons]
         self.values = [value for _key, value in buttons]
         self.default_index = self.values.index(default) if default in self.values else 0
+        self.choice = self.default_index
 
     def compose(self) -> ComposeResult:
         with Vertical(id="question"):
@@ -184,16 +208,37 @@ class QuestionScreen(ModalScreen):
                     yield Button(label, id=f"answer-{index}", compact=True)
 
     def on_mount(self) -> None:
+        self._focus_choice()
+
+    def _focus_choice(self) -> None:
         buttons = list(self.query(Button))
         if buttons:  # None while the program is just ending.
-            buttons[self.default_index].focus()
+            self.set_focus(buttons[self.choice])  # at once, unlike focus()
+
+    def on_descendant_focus(self, event) -> None:
+        """Tab or a click may also move the focus; the chosen button follows it."""
+        widget_id = getattr(event.widget, "id", None) or ""
+        if widget_id.startswith("answer-"):
+            self.choice = int(widget_id.removeprefix("answer-"))
+
+    def action_move(self, step: int) -> None:
+        self.choice = max(0, min(len(self.values) - 1, self.choice + step))
+        self._focus_choice()
+
+    def action_answer_chosen(self) -> None:
+        self._answer(self.values[self.choice])
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         event.stop()
-        self.dismiss(self.values[int(event.button.id.removeprefix("answer-"))])
+        self._answer(self.values[int(event.button.id.removeprefix("answer-"))])
 
     def action_answer_last(self) -> None:
-        self.dismiss(self.values[-1])
+        self._answer(self.values[-1])
+
+    def _answer(self, value) -> None:
+        """Only the first answer counts: an Enter typed twice must not answer the next question too."""
+        if self.is_current:
+            self.dismiss(value)
 
 
 def _folder_key(path: Path) -> str:
@@ -404,7 +449,11 @@ class WorkbenchApp(App):
         Binding("2", "choose_view(1)", show=False),
         Binding("3", "choose_view(2)", show=False),
         Binding("p,P", "promote", show=False),
-        Binding("slash,ctrl+f", "focus_filter", show=False),
+        # Priority: Textual hands each key to the focused widget as soon as it arrives and only later
+        # looks at the normal bindings. "/" must move the focus at once, or the letters typed right
+        # after it (fast, pasted or sent by tmux) would still reach the list. In the field itself
+        # check_action switches it off, so that "/" is typed there; FilterInput handles the way out.
+        Binding("slash,ctrl+f", "focus_filter", show=False, priority=True),
         Binding("x,X,ctrl+l", "proceed", show=False),
         Binding("o,O,ctrl+o", "choose_folder", show=False),
     ]
@@ -615,11 +664,17 @@ class WorkbenchApp(App):
     # Filter -----------------------------------------------------------------------------------
 
     def _filter_focused(self) -> bool:
-        return self.focused is self.query_one("#filter", FilterInput)
+        return isinstance(self.focused, FilterInput)
+
+    def _focus_now(self, widget) -> None:
+        """Moves the focus at once. focus() waits for the next round of the event loop, and keys
+        typed fast (or sent by tmux, or pasted) would still reach the old place: a "d" typed right
+        after "/" would then mark a file instead of going into the filter."""
+        widget.screen.set_focus(widget)
 
     def action_focus_filter(self) -> None:
         field = self.query_one("#filter", FilterInput)
-        field.focus()
+        self._focus_now(field)
         field.select_all()
 
     def action_leave_filter(self, clear: bool = False) -> None:
@@ -628,7 +683,7 @@ class WorkbenchApp(App):
         if clear:
             field.value = ""
         self._apply_filter()
-        self.query_one("#games", GameTable).focus()
+        self._focus_now(self.query_one("#games", GameTable))
 
     def on_input_changed(self, event: Input.Changed) -> None:
         if self._filter_timer is not None:
@@ -857,9 +912,6 @@ class WorkbenchApp(App):
 
     def action_move_game(self, step: int) -> None:
         """Jumps to the neighboring game and selects its first file, so that D and P work at once."""
-        if self._filter_focused():  # Tab is a priority key; in the filter it only returns to the list.
-            self.action_leave_filter()
-            return
         if not self._list_shown():
             return
         keys = self._keys()
@@ -919,6 +971,10 @@ class WorkbenchApp(App):
     def check_action(self, action: str, parameters) -> bool | None:
         # In the folder choice, a "d" or "x" must not act on the list behind it.
         if action in _LIST_ACTIONS and (self.question_open() or self.deleting or self.folder_open()):
+            return False
+        if action in ("focus_filter", "move_game") and self._filter_focused():
+            # "/" typed in the field is a "/", Ctrl+F there selects the text, and Tab reaches
+            # FilterInput, which leaves the field in the order the keys were typed.
             return False
         if action == "quit" and self.deleting:  # Half a deletion must not be left behind unreported.
             return False

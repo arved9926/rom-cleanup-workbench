@@ -4084,6 +4084,82 @@ class TerminalVersionTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(self.text(app.screen, "#folder-path-label"), "Pfad:")
             self.assertTrue(self.text(app.screen, "#folder-hint").startswith("Rechts oder Leertaste"))
 
+    # Keys typed faster than the screen changes -------------------------------------------------
+
+    _CHARACTERS = {"slash": "/", "enter": "\r", "escape": "\x1b", "space": " ", "left": None, "right": None,
+                   "down": None, "up": None, "tab": "\t"}
+
+    async def burst(self, app, pilot, *keys):
+        """Sends the keys at once, as tmux, a paste or a fast typist does; Pilot's press waits after each one."""
+        from textual import events
+
+        for key in keys:
+            app.post_message(events.Key(key, self._CHARACTERS.get(key, key)))
+        await pilot.pause(0.3)
+        await pilot.pause()
+
+    async def test_letters_typed_right_after_slash_go_into_the_filter(self):
+        app = self.app_for(self.FILTER_GAMES)
+        async with app.run_test() as pilot:
+            await self.analyzed(app, pilot)
+            await self.burst(app, pilot, "slash", *"dxo", "p")
+            self.assertEqual(app.query_one("#filter").value, "dxop")
+            self.assertEqual(app.review.moved_count(), 0)
+            self.assertFalse(app.question_open())
+            self.assertFalse(app.folder_open())
+            await self.burst(app, pilot, "escape", "d")  # back in the list at once: the d acts there
+            self.assertEqual(app.query_one("#filter").value, "")
+            self.assertEqual(app.review.moved_count(), 1)
+
+    async def test_filter_typed_ahead_then_enter_and_d_act_in_order(self):
+        app = self.app_for(self.FILTER_GAMES)
+        async with app.run_test() as pilot:
+            await self.analyzed(app, pilot)
+            await self.burst(app, pilot, "slash", *"two", "enter", "d")
+            self.assertEqual(self.titles(app), ["Two"])
+            one, two = app.review.results
+            self.assertEqual(app.review._moved_count([one]), 0)
+            self.assertEqual(app.review._moved_count([two]), 1)
+
+    async def test_tab_and_slash_typed_ahead_act_in_order(self):
+        app = self.app_for(self.FILTER_GAMES)
+        async with app.run_test() as pilot:
+            await self.analyzed(app, pilot)
+            await self.burst(app, pilot, "slash", *"two", "tab", "d")
+            self.assertEqual(self.titles(app), ["Two"])
+            one, two = app.review.results
+            self.assertEqual(app.review._moved_count([one]), 0)
+            self.assertEqual(app.review._moved_count([two]), 1)  # the d after Tab acted in the list
+            self.assertEqual(app.query_one("#filter").value, "two")
+            # The first "/" arrives at the field after a Tab has left it: it must come back into it,
+            # select "two", and the second "/" replaces that.
+            await self.burst(app, pilot, "slash", "tab", "slash", "slash")
+            self.assertEqual(app.query_one("#filter").value, "/")
+            self.assertIs(app.focused, app.query_one("#filter"))
+
+    async def test_answer_typed_ahead_reaches_the_question(self):
+        app = self.app_for({"Title (USA).bin": b"a", "Title (Japan).bin": b"b"})
+        async with app.run_test() as pilot:
+            await self.analyzed(app, pilot)
+            await self.burst(app, pilot, "x", "left", "enter")
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            self.assertEqual(self.names(app), ["Title (USA).bin"])  # Yes was chosen
+            await self.burst(app, pilot, "enter", "d")  # OK, then the list again
+            self.assertFalse(app.question_open())
+
+    async def test_keys_typed_ahead_after_o_stay_in_the_folder_choice(self):
+        app = self.app_for(self.TWO_GAMES)
+        async with app.run_test() as pilot:
+            await self.analyzed(app, pilot)
+            await self.burst(app, pilot, "o", "d", "x", "p")
+            self.assertTrue(app.folder_open())
+            self.assertFalse(app.question_open())
+            self.assertEqual(app.review.moved_count(), 0)
+            await self.burst(app, pilot, "escape", "d")
+            self.assertFalse(app.folder_open())
+            self.assertEqual(app.review.moved_count(), 1)
+
     async def test_x_typed_in_the_filter_deletes_nothing(self):
         app = self.app_for(self.FILTER_GAMES)
         async with app.run_test() as pilot:
