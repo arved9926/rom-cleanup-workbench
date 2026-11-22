@@ -8,6 +8,53 @@ Findet doppelte ROM-Dateien in einem Verzeichnis anhand des Spielnamens und lös
 Braucht Python 3.10 oder neuer. Das Fenster braucht keine zusätzlichen Pakete; die Terminal-Version für Linux braucht Textual (siehe [Terminal-Version (Linux)](#terminal-version-linux)).
 Das Programm spricht Englisch, Deutsch, Italienisch, Spanisch, Französisch und Japanisch (siehe [Sprache](#sprache)).
 
+**Wichtig:** Wenden Sie dieses Programm nicht auf Ihre Originale an. Legen Sie eine Kopie an und nutzen Sie das Programm, um die Bereinigung vorzunehmen.
+
+## Installation
+
+### Windows
+
+1. **Python installieren:** Python 3.10 oder neuer von [python.org/downloads](https://www.python.org/downloads/) herunterladen und installieren. Bietet das Installationsprogramm „Add python.exe to PATH“ an, diese Option anhaken. `tkinter` für das Fenster ist dabei. Danach in einem neuen Terminal prüfen:
+
+   ```powershell
+   python --version
+   ```
+
+2. **Das Programm installieren:** Auf der [GitHub-Seite](https://github.com/arved9926/rom-cleanup-workbench) unter **Code → Download ZIP** herunterladen und entpacken, oder mit Git klonen:
+
+   ```powershell
+   git clone https://github.com/arved9926/rom-cleanup-workbench.git
+   cd "rom-cleanup-workbench\Rom Cleanup Workbench"
+   ```
+
+   Das Programm liegt im Ordner `Rom Cleanup Workbench`. Für das Fenster sind keine weiteren Pakete nötig. Nur wer unter Windows die Terminal-Version nutzen will, installiert zusätzlich Textual:
+
+   ```powershell
+   python -m pip install textual==8.2.8
+   ```
+
+### Linux
+
+1. **Python installieren:** Meist ist Python 3 schon da (`python3 --version`). Sonst unter Debian oder Ubuntu:
+
+   ```bash
+   sudo apt install python3 python3-venv git
+   ```
+
+   Das Paket `python3-tk` ist nur nötig, wenn du unter Linux mit grafischer Anzeige das Fenster statt der Terminal-Version nutzen willst.
+
+2. **Das Programm installieren:** Das Repository klonen und Textual in einer virtuellen Umgebung installieren:
+
+   ```bash
+   git clone https://github.com/arved9926/rom-cleanup-workbench.git
+   cd "rom-cleanup-workbench/Rom Cleanup Workbench"
+   python3 -m venv ~/venvs/rom-cleanup-workbench
+   ~/venvs/rom-cleanup-workbench/bin/pip install textual==8.2.8
+   ~/venvs/rom-cleanup-workbench/bin/python rom_cleanup_workbench.py --tui ~/roms
+   ```
+
+   Mehr dazu unter [Terminal-Version (Linux)](#terminal-version-linux).
+
 ## Aufruf
 
 ```bash
@@ -208,15 +255,43 @@ Jede ZIP-Datei wird vollständig gelesen, auch wenn sie die einzige Datei eines 
 - **Defektes oder verschlüsseltes ZIP:** Die Datei wird immer markiert, auch wenn sie die einzige Datei des Spiels ist. Der Inhalt eines verschlüsselten ZIPs wird nicht geprüft.
 - **Gesperrtes ZIP oder unbekannte Methode (zum Beispiel Deflate64):** Das sagt nichts über den Zustand der Datei. Ohne normale Datei des Spiels bleibt es erhalten und wird im Bericht genannt.
 
+## Weiterentwickeln mit Claude Code
+
+Das Programm ist freie Software: Du kannst das Repository klonen und es mit [Claude Code](https://claude.com/claude-code) weiterentwickeln, ganz ohne selbst zu programmieren. So wurde es auch geschrieben.
+
+1. Claude Code installieren. Es braucht ein Claude-Abo oder ein Konto bei der Claude-API. Unter Windows in PowerShell:
+
+   ```powershell
+   irm https://claude.ai/install.ps1 | iex
+   ```
+
+   Unter Linux:
+
+   ```bash
+   curl -fsSL https://claude.ai/install.sh | bash
+   ```
+
+2. Das Repository klonen und Claude Code darin starten:
+
+   ```bash
+   git clone https://github.com/arved9926/rom-cleanup-workbench.git
+   cd rom-cleanup-workbench
+   claude
+   ```
+
+3. In eigenen Worten beschreiben, was sich ändern soll, zum Beispiel „Füge eine Option hinzu, die nur ZIP-Dateien zeigt“. Claude Code liest den Code, schlägt Änderungen vor und fragt, bevor es Dateien ändert oder Befehle ausführt. Lass es danach die Tests laufen (`python -m unittest` im Ordner `Rom Cleanup Workbench`) und probiere die Änderung auf einer Kopie deiner Sammlung aus.
+
+Die Pläne früherer Änderungen stehen in `docs/`. Wer seine Änderungen weitergibt, muss sie ebenfalls unter der GPL veröffentlichen.
+
 ## Lizenz und Haftungsausschluss
 
-Copyright (C) 2026 Arved Retrogamer
+Copyright (C) 2026 M. Kärcher
 
 Rom Cleanup Workbench ist freie Software: Du kannst sie unter den Bedingungen der GNU General Public License, wie von der Free Software Foundation veröffentlicht, weitergeben und/oder verändern, entweder gemäß Version 3 der Lizenz oder (nach deiner Wahl) jeder späteren Version. Der vollständige Text steht in [LICENSE](<../LICENSE>); rechtlich gilt nur dieser englische Originaltext.
 
-**Nutzung auf eigenes Risiko.** Das Programm löscht Dateien, und es gibt keinerlei Gewährleistung; wer es verwendet, trägt alle damit verbundenen Risiken selbst. Wir empfehlen, es zuerst auf einer Kopie der eigenen ROM-Sammlung zu verwenden.
+**Nutzung auf eigenes Risiko.** Das Programm löscht Dateien, und es gibt keinerlei Gewährleistung; wer es verwendet, trägt alle damit verbundenen Risiken selbst. Wir empfehlen dringend, es ausschließlich auf einer Kopie der eigenen ROM-Sammlung zu verwenden.
 
 ## Credits
 
-- Idee: Arved Retrogamer
+- Idee: M. Kärcher
 - Programmierung: Claude Code
