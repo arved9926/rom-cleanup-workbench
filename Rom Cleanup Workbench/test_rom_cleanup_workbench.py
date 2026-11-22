@@ -4469,23 +4469,31 @@ class TerminalVersionTests(unittest.IsolatedAsyncioTestCase):
         (app.directory / "Other (Japan).bin").write_bytes(b"d")
         return app
 
-    async def test_every_second_game_is_striped_as_in_the_window(self):
-        app = self.app_for(self.VIEW_GAMES, scope="all")
+    async def test_games_are_not_striped_the_background_stays_black(self):
+        # Unlike the window: the user prefers black behind every game.
+        with mock.patch.dict(os.environ):
+            os.environ.pop("NO_COLOR", None)  # else Textual draws everything gray
+            app = self.app_for(self.VIEW_GAMES, scope="all")
         async with app.run_test() as pilot:
             await self.analyzed(app, pilot)
+            await pilot.press("tab", "d")  # a selected and moved row in the second game
             table = app.query_one("#games")
             from rich.style import Style
-            background = {key: table._get_row_style(table.get_row_index(key), Style()).bgcolor
-                          for key in app._keys()}
-            games = [key for key in app._keys() if key[0] == "g" and key[1:].isdigit()]
-            second = [key for key in app._keys() if self.tui._game_of(key) == self.tui._game_of(games[1])]
-            self.assertEqual({background[key].name for key in second if key not in table.selected}, {"#222222"})
-            self.assertIsNone(background[games[0]])
-            self.assertIsNone(background[games[2]])
-            self.assertTrue(all(background[key] is None for key in app._keys() if key.startswith("s")))
-            await pilot.press("tab", "d")  # moved and selected win over the stripe
-            self.assertEqual(background[app.cursor_key()].name if False else
-                             table._get_row_style(table.cursor_row, Style()).bgcolor.name, "#0a4a8a")
+
+            def background(key):
+                color = table._get_row_style(table.get_row_index(key), Style()).bgcolor
+                return color.name if color else None
+            moved = {key for key in app.files if app.files[key][1].moved}
+            plain = [key for key in app._keys() if key not in table.selected and key not in moved]
+            self.assertEqual({background(key) for key in plain}, {None})  # the table's own black
+            self.assertEqual(background(app.cursor_key()), "#0a4a8a")
+            table.set_selection(())
+            self.assertEqual({background(key) for key in moved}, {"#5c4400"})
+            lines = self.screen_lines(app)
+            strips = self.strips(app)
+            row = next(index for index, line in enumerate(lines) if "Other" in line)
+            self.assertEqual({segment.style.bgcolor.name for segment in strips[row] if segment.style.bgcolor},
+                             {"#000000"})
 
     @staticmethod
     def as_16_colors(color):

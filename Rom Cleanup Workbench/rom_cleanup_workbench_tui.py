@@ -127,7 +127,7 @@ class GameTable(DataTable):
     """
 
     COMPONENT_CLASSES = DataTable.COMPONENT_CLASSES | {
-        "datatable--selected", "datatable--moved", "datatable--stripe",
+        "datatable--selected", "datatable--moved",
     }
     BINDINGS = [
         Binding("up", "app.move_cursor(-1, False)", show=False),
@@ -140,17 +140,18 @@ class GameTable(DataTable):
         super().__init__(*args, **kwargs)
         self.selected: set[str] = set()
         self.moved: set[str] = set()
-        self.striped: set[str] = set()  # the rows of every second game, dark gray as in the window
 
     def set_selection(self, keys) -> None:
         self.selected = set(keys)
         self._clear_caches()
         self.refresh()
 
-    def set_moved(self, keys, striped=()) -> None:
-        """The files moved by hand; they are brown, as in the window. striped: the rows of every second game."""
+    def set_moved(self, keys) -> None:
+        """The files moved by hand; they are brown, as in the window.
+
+        Unlike the window, the games are not striped: the user prefers a black background.
+        """
         self.moved = set(keys)
-        self.striped = set(striped)
         self._clear_caches()
         self.refresh()
 
@@ -199,8 +200,6 @@ class GameTable(DataTable):
         style = super()._get_row_style(row_index, base_style)
         if 0 <= row_index < self.row_count:
             key = self.ordered_rows[row_index].key.value
-            if key in self.striped:
-                style += self.get_component_styles("datatable--stripe").rich_style
             if key in self.moved:
                 style += self.get_component_styles("datatable--moved").rich_style
             if key in self.selected:
@@ -616,6 +615,9 @@ class WorkbenchApp(App):
     TITLE = APP_NAME
     CSS = """
     Screen { background: #000000; color: #ffffff; }
+    /* Textual tints the focused widget a little; the list nearly always has the focus, and its
+       black would turn dark gray. The focus shows through the cursor, the fields and buttons. */
+    *, *:focus, *:focus-within { background-tint: #000000 0%; }
     #title-row { height: 1; background: #1a7f37; color: #ffffff; }
     #title { width: auto; text-style: bold; padding: 0 1; }
     #folder { width: 1fr; text-align: right; padding: 0 1; }
@@ -624,7 +626,6 @@ class WorkbenchApp(App):
     #games { height: 1fr; background: #000000; }
     #games > .datatable--header { background: #222222; color: #ffffff; text-style: bold; }
     #games > .datatable--cursor { background: #0a4a8a; color: #ffffff; }
-    #games > .datatable--stripe { background: #222222; }
     #games > .datatable--moved { background: #5c4400; }
     #games > .datatable--selected { background: #0a4a8a; color: #ffffff; }
     #nothing { height: 1fr; content-align: center middle; text-style: bold; display: none; }
@@ -706,9 +707,8 @@ class WorkbenchApp(App):
     .-colors16 Screen, .-colors16 #games, .-colors16 #views, .-colors16 #languages,
     .-colors16 #folder-tree, .-colors16 #question, .-colors16 QuestionScreen,
     .-colors16 FolderScreen, .-colors16 SettingsScreen { background: #000000; color: #aaaaaa; }
-    /* Textual tints focused widgets a little and highlights the radio item under the keyboard
-       cursor half-transparently: both would make colors between the 16. */
-    .-colors16 *, .-colors16 *:focus, .-colors16 *:focus-within { background-tint: #000000 0%; }
+    /* Textual highlights the radio item under the keyboard cursor half-transparently, which would
+       make a color between the 16 (the focus tint is off everywhere, see above). */
     .-colors16 #views > RadioButton.-selected, .-colors16 #languages > RadioButton.-selected,
     .-colors16 RadioButton > .toggle--label { background: #000000; }
     .-colors16 * { scrollbar-background: #000000; scrollbar-background-hover: #000000;
@@ -717,7 +717,6 @@ class WorkbenchApp(App):
                    scrollbar-corner-color: #000000; }
     .-colors16 #title-row, .-colors16 #status { background: #00aa00; color: #ffffff; }
     .-colors16 #games > .datatable--header { background: #000000; color: #ffffff; text-style: bold underline; }
-    .-colors16 #games > .datatable--stripe { background: #000000; }
     .-colors16 #games > .datatable--moved { background: #aa5500; color: #ffffff; }
     .-colors16 #games > .datatable--cursor, .-colors16 #games > .datatable--selected,
     .-colors16 #folder-tree > .tree--cursor,
@@ -940,13 +939,12 @@ class WorkbenchApp(App):
         table = self.query_one("#games", GameTable)
         table.clear()
         self.files = {}
-        moved, striped = set(), set()
+        moved = set()
         for place, result in enumerate(self._visible):
             game_index = self._game_numbers[id(result)]
             if place:
                 # An empty row between the games: a drawn line would widen the file column to its length.
                 table.add_row("", "", "", key=f"s{game_index}")
-            first_row = table.row_count
             table.add_row(
                 Text(result.title, style="bold"), "", Text("; ".join(result.problems), style="bold"),
                 key=f"g{game_index}",
@@ -969,9 +967,7 @@ class WorkbenchApp(App):
                         Text("; ".join(notes), style="italic"),
                         key=key,
                     )
-            if place % 2:  # every second game, as in the window
-                striped.update(row.key.value for row in table.ordered_rows[first_row:])
-        table.set_moved(moved, striped)
+        table.set_moved(moved)
 
     # Views ------------------------------------------------------------------------------------
 
