@@ -865,7 +865,8 @@ class Review:
         paths = marked_paths(self.results)
         lines = [
             tr("confirm.question", count=len(paths), size=f"{_total_size(paths) / 1024 / 1024:.1f}"),
-            tr("confirm.no_recycle_bin"),
+            # "Recycle Bin" is the Windows name; other systems call it the trash.
+            tr("confirm.no_recycle_bin" if os.name == "nt" else "confirm.no_trash"),
         ]
         hidden = [result for result in self.results if not self.is_visible(result, only_problems, show_all, pattern)]
         hidden_count = len(marked_paths(hidden))
@@ -931,12 +932,17 @@ def build_parser() -> argparse.ArgumentParser:
         "--tui", action="store_true",
         help="use the terminal version instead of the window (automatic on Linux without a graphical display)",
     )
+    parser.add_argument(
+        "--ascii", action="store_true",
+        help="terminal version with ASCII characters only, for terminals without UTF-8 "
+             "(automatic on the Linux console); implies --tui",
+    )
     return parser
 
 
 def _use_terminal_version(args: argparse.Namespace) -> bool:
-    """--tui, or Linux without a graphical display, for example over SSH or on the console."""
-    if args.tui:
+    """--tui or --ascii, or Linux without a graphical display, for example over SSH or on the console."""
+    if args.tui or args.ascii:
         return True
     if not sys.platform.startswith("linux"):
         return False
@@ -1030,7 +1036,8 @@ def main(argv: list[str] | None = None) -> int:
             print(tr("terminal.no_textual", error=error), file=sys.stderr)
             print(tr("terminal.nothing_deleted"))
             return 1
-        return run_tui(analyze, args.directory, scope, config_file)
+        # None: the terminal version finds out itself whether it may draw more than ASCII.
+        return run_tui(analyze, args.directory, scope, config_file, True if args.ascii else None)
 
     # Loaded only here: Without the window the program also runs without tkinter.
     try:

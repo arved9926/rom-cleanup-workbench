@@ -21,7 +21,9 @@ from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
 from textual.geometry import Region
+from textual.renderables.bar import Bar as BarRenderable
 from textual.screen import ModalScreen, Screen
+from textual.scrollbar import ScrollBar, ScrollBarRender
 from textual.widgets import (
     Button, DataTable, Input, OptionList, ProgressBar, RadioButton, RadioSet, Static, Tree,
 )
@@ -45,6 +47,65 @@ _LIST_ACTIONS = {
 # As in the window: Redrawing after every deleted file would slow down large deletions.
 DELETE_REDRAW = 0.05
 
+# Terminals that cannot show the block and line characters Textual draws by default. The Linux
+# console's fonts have only a few hundred characters; vt100 and dumb terminals know only ASCII.
+_ASCII_TERMS = ("linux", "vt100", "vt102", "vt220", "dumb")
+# Instead of ▐●▌, the question's ●, the tree's lines and arrows, and the bars of the progress bar.
+ASCII_RADIO = ("(", "*", ")")
+ASCII_DOT = "*"
+ASCII_TREE_LINES = ("  ", "| ", "`-", "|-")
+ASCII_TREE_ICONS = ("+ ", "- ")
+
+
+def wants_ascii(environ=os.environ) -> bool:
+    """True on the Linux console and similar terminals, or when the locale names another charset.
+
+    A locale such as "de_DE.ISO-8859-1" or "en_US" (whose charset is Latin-1) cannot show UTF-8.
+    "C", "POSIX" or none at all says nothing: Python then uses UTF-8 itself, and so do most
+    terminals today; --ascii forces it where that is wrong.
+
+    When the locale named in LANG is not installed, Python sets LC_CTYPE to C.UTF-8 itself at
+    startup (PEP 538). That says nothing about the terminal either, so LANG decides then.
+    """
+    if environ.get("TERM", "") in _ASCII_TERMS:
+        return True
+    lc_ctype = environ.get("LC_CTYPE") or ""
+    if not environ.get("LC_ALL") and lc_ctype.lower().replace("-", "") == "c.utf8" and environ.get("LANG"):
+        lc_ctype = ""  # very likely set by Python itself, see above
+    locale_name = environ.get("LC_ALL") or lc_ctype or environ.get("LANG") or ""
+    if locale_name in ("", "C", "POSIX"):
+        return False
+    return "utf8" not in locale_name.lower().replace("-", "").replace("_", "")
+
+
+def wants_16_colors(color_system: str | None, environ=os.environ) -> bool:
+    """True where the window's colors would turn into gray or black: 16 colors, or the Linux console.
+
+    Converted to 16 colors, the green rows, the blue selection and the buttons all become the
+    same gray, and the dark gray fields become black; the console has only 8 background colors.
+    """
+    return environ.get("TERM", "") == "linux" or color_system in ("standard", "windows")
+
+
+class AsciiBar(BarRenderable):
+    """The progress bar with "=" instead of line characters."""
+
+    HALF_BAR_LEFT = "-"
+    BAR = "="
+    HALF_BAR_RIGHT = "-"
+
+
+class AsciiScrollBarRender(ScrollBarRender):
+    """Scroll bars of plain colored spaces, without the partial block characters at their ends."""
+
+    VERTICAL_BARS = [" "] * 8
+    HORIZONTAL_BARS = [" "] * 8
+
+
+def _plain_radio(button: RadioButton) -> RadioButton:
+    button.BUTTON_LEFT, button.BUTTON_INNER, button.BUTTON_RIGHT = ASCII_RADIO
+    return button
+
 
 def _game_of(key: str) -> int | None:
     """Returns the game number of a row key such as g3, g3k or g3f5; None for the empty rows between games."""
@@ -65,7 +126,9 @@ class GameTable(DataTable):
     so the app moves the cursor itself.
     """
 
-    COMPONENT_CLASSES = DataTable.COMPONENT_CLASSES | {"datatable--selected", "datatable--moved"}
+    COMPONENT_CLASSES = DataTable.COMPONENT_CLASSES | {
+        "datatable--selected", "datatable--moved", "datatable--stripe",
+    }
     BINDINGS = [
         Binding("up", "app.move_cursor(-1, False)", show=False),
         Binding("down", "app.move_cursor(1, False)", show=False),
@@ -77,15 +140,17 @@ class GameTable(DataTable):
         super().__init__(*args, **kwargs)
         self.selected: set[str] = set()
         self.moved: set[str] = set()
+        self.striped: set[str] = set()  # the rows of every second game, dark gray as in the window
 
     def set_selection(self, keys) -> None:
         self.selected = set(keys)
         self._clear_caches()
         self.refresh()
 
-    def set_moved(self, keys) -> None:
-        """The files moved by hand; they are brown, as in the window."""
+    def set_moved(self, keys, striped=()) -> None:
+        """The files moved by hand; they are brown, as in the window. striped: the rows of every second game."""
         self.moved = set(keys)
+        self.striped = set(striped)
         self._clear_caches()
         self.refresh()
 
@@ -134,6 +199,8 @@ class GameTable(DataTable):
         style = super()._get_row_style(row_index, base_style)
         if 0 <= row_index < self.row_count:
             key = self.ordered_rows[row_index].key.value
+            if key in self.striped:
+                style += self.get_component_styles("datatable--stripe").rich_style
             if key in self.moved:
                 style += self.get_component_styles("datatable--moved").rich_style
             if key in self.selected:
@@ -202,7 +269,7 @@ class QuestionScreen(ModalScreen):
     def compose(self) -> ComposeResult:
         with Vertical(id="question"):
             with Horizontal(id="question-head"):
-                yield Static("●", id="question-dot")
+                yield Static(ASCII_DOT if getattr(self.app, "ascii", False) else "●", id="question-dot")
                 yield Static(self.title_text, id="question-title", markup=False)
             yield Static(self.message, id="question-text", markup=False)
             with Horizontal(id="question-buttons"):
@@ -210,6 +277,15 @@ class QuestionScreen(ModalScreen):
                     yield Button(label, id=f"answer-{index}", compact=True)
 
     def on_mount(self) -> None:
+        app = self.app
+        if getattr(app, "ascii", False) or getattr(app, "colors16", False):
+            # "tall" is drawn with block characters; the color follows the kind, as the dot does.
+            red = self.kind in ("warning", "error")
+            if getattr(app, "colors16", False):
+                color = "#ff5555" if red else "#00aa00"  # two of the 16 standard colors
+            else:
+                color = "#e5383b" if red else "#1a7f37"
+            self.query_one("#question").styles.border = ("ascii" if getattr(app, "ascii", False) else "tall", color)
         self._focus_choice()
 
     def _focus_choice(self) -> None:
@@ -302,6 +378,9 @@ class FolderScreen(Screen):
         tree = FolderTree("", id="folder-tree")
         tree.show_root = False
         tree.auto_expand = False
+        if getattr(self.app, "ascii", False):
+            tree.LINES = {name: ASCII_TREE_LINES for name in Tree.LINES}
+            tree.ICON_NODE, tree.ICON_NODE_EXPANDED = ASCII_TREE_ICONS
         yield tree
         yield Static(tr("folder.tui_hint"), id="folder-hint", markup=False)
 
@@ -442,7 +521,8 @@ class SettingsScreen(Screen):
                 yield Static(tr("settings.language"), markup=False)
                 with RadioSet(id="languages"):
                     for code, name in LANGUAGE_NAMES.items():
-                        yield RadioButton(name, value=code == self.language, id=f"language-{code}")
+                        button = RadioButton(name, value=code == self.language, id=f"language-{code}")
+                        yield _plain_radio(button) if getattr(self.app, "ascii", False) else button
                 yield Static(tr("settings.language_hint"), id="language-hint", markup=False)
                 yield Static(tr("settings.low_priority"), id="tags-label", markup=False)
                 yield Input(", ".join(self.values["low_priority_tags"]), id="tags")
@@ -544,10 +624,14 @@ class WorkbenchApp(App):
     #games { height: 1fr; background: #000000; }
     #games > .datatable--header { background: #222222; color: #ffffff; text-style: bold; }
     #games > .datatable--cursor { background: #0a4a8a; color: #ffffff; }
+    #games > .datatable--stripe { background: #222222; }
     #games > .datatable--moved { background: #5c4400; }
     #games > .datatable--selected { background: #0a4a8a; color: #ffffff; }
     #nothing { height: 1fr; content-align: center middle; text-style: bold; display: none; }
     #progress { height: 1; padding: 0 1; display: none; }
+    #progress Bar > .bar--bar, #progress Bar > .bar--complete, #progress Bar > .bar--indeterminate {
+        color: #1a7f37; background: #222222;
+    }
     #filter-row { height: 1; padding: 0 1; }
     #filter-label { width: auto; margin-right: 1; }
     #filter { width: 1fr; height: 1; border: none; padding: 0 1; background: #222222; color: #ffffff; }
@@ -555,8 +639,8 @@ class WorkbenchApp(App):
     #views { layout: horizontal; height: auto; width: 100%; border: none; background: #000000; padding: 0 1; }
     #views:focus-within { border: none; }
     #views > RadioButton { background: #000000; color: #ffffff; border: none; margin-right: 2; }
-    #views > RadioButton > .toggle--button { color: #333333; background: #333333; }
-    #views > RadioButton.-on > .toggle--button { color: #e5383b; background: #333333; }
+    #views > RadioButton > .toggle--button { color: #222222; background: #222222; }
+    #views > RadioButton.-on > .toggle--button { color: #e5383b; background: #222222; }
     #status { height: auto; background: #1a7f37; color: #ffffff; padding: 0 1; }
     QuestionScreen { align: center middle; background: #000000 60%; }
     #question { width: 72; max-width: 100%; height: auto; max-height: 100%; background: #111111;
@@ -568,12 +652,12 @@ class WorkbenchApp(App):
     #question-title { width: 1fr; text-style: bold; }
     #question-text { margin: 1 0 1 2; }
     #question-buttons { height: 1; margin-left: 2; }
-    #question-buttons > Button { margin-right: 2; min-width: 8; background: #333333; color: #ffffff; }
+    #question-buttons > Button { margin-right: 2; min-width: 8; background: #222222; color: #ffffff; }
     #question-buttons > Button:focus { background: #0a4a8a; text-style: bold; }
     FolderScreen { background: #000000; padding: 1 2; }
     #folder-head, #folder-path-row { height: 1; margin-bottom: 1; }
     #folder-title { width: 1fr; text-style: bold; }
-    #folder-head > Button { margin-left: 2; min-width: 10; background: #333333; color: #ffffff; }
+    #folder-head > Button { margin-left: 2; min-width: 10; background: #222222; color: #ffffff; }
     #folder-head > Button:focus { background: #0a4a8a; text-style: bold; }
     #folder-path-label { width: auto; margin-right: 1; }
     #folder-path { width: 1fr; height: 1; border: none; padding: 0 1; background: #222222; color: #ffffff; }
@@ -582,7 +666,7 @@ class WorkbenchApp(App):
     #folder-tree > .tree--cursor { background: #0a4a8a; color: #ffffff; }
     #folder-hint { height: auto; margin-top: 1; }
     SettingsScreen { background: #000000; padding: 1 2; }
-    SettingsScreen Button { background: #333333; color: #ffffff; min-width: 10; }
+    SettingsScreen Button { background: #222222; color: #ffffff; min-width: 10; }
     SettingsScreen Button:focus { background: #0a4a8a; text-style: bold; }
     SettingsScreen Input { height: 1; border: none; padding: 0 1; background: #222222; color: #ffffff; }
     SettingsScreen Input:focus { border: none; background: #333333; }
@@ -605,11 +689,67 @@ class WorkbenchApp(App):
     #languages { height: auto; border: none; background: #000000; margin-top: 1; }
     #languages:focus-within { border: none; }
     #languages > RadioButton { background: #000000; color: #ffffff; border: none; }
-    #languages > RadioButton > .toggle--button { color: #333333; background: #333333; }
-    #languages > RadioButton.-on > .toggle--button { color: #e5383b; background: #333333; }
+    #languages > RadioButton > .toggle--button { color: #222222; background: #222222; }
+    #languages > RadioButton.-on > .toggle--button { color: #e5383b; background: #222222; }
     #language-hint { margin: 1 0 1 0; color: #aaaaaa; }
     #tags-label { margin-bottom: 1; }
     #settings-hint { height: auto; margin-top: 1; }
+
+    /* 16 colors and the Linux console (class -colors16, see wants_16_colors). The values are
+       exactly the 16 standard colors (VGA), so that Rich turns each into its own ANSI color and
+       nothing in between: #000000 black, #aa0000 red, #00aa00 green, #aa5500 brown, #0000aa blue,
+       #00aaaa cyan, #aaaaaa light gray, #ff5555 bright red, #ffffff white. Backgrounds use only
+       the first 8, which is all the console can show. Dark gray would become black, so fields and
+       buttons are light gray, and the header is underlined. Nothing is transparent: blending
+       would make colors between them. Each rule names the same ids as the normal one, which it
+       must outrank. */
+    .-colors16 Screen, .-colors16 #games, .-colors16 #views, .-colors16 #languages,
+    .-colors16 #folder-tree, .-colors16 #question, .-colors16 QuestionScreen,
+    .-colors16 FolderScreen, .-colors16 SettingsScreen { background: #000000; color: #aaaaaa; }
+    /* Textual tints focused widgets a little and highlights the radio item under the keyboard
+       cursor half-transparently: both would make colors between the 16. */
+    .-colors16 *, .-colors16 *:focus, .-colors16 *:focus-within { background-tint: #000000 0%; }
+    .-colors16 #views > RadioButton.-selected, .-colors16 #languages > RadioButton.-selected,
+    .-colors16 RadioButton > .toggle--label { background: #000000; }
+    .-colors16 * { scrollbar-background: #000000; scrollbar-background-hover: #000000;
+                   scrollbar-background-active: #000000; scrollbar-color: #aaaaaa;
+                   scrollbar-color-hover: #ffffff; scrollbar-color-active: #ffffff;
+                   scrollbar-corner-color: #000000; }
+    .-colors16 #title-row, .-colors16 #status { background: #00aa00; color: #ffffff; }
+    .-colors16 #games > .datatable--header { background: #000000; color: #ffffff; text-style: bold underline; }
+    .-colors16 #games > .datatable--stripe { background: #000000; }
+    .-colors16 #games > .datatable--moved { background: #aa5500; color: #ffffff; }
+    .-colors16 #games > .datatable--cursor, .-colors16 #games > .datatable--selected,
+    .-colors16 #folder-tree > .tree--cursor,
+    .-colors16 #regions > .option-list--option-highlighted { background: #0000aa; color: #ffffff; }
+    .-colors16 #filter, .-colors16 #folder-path, .-colors16 SettingsScreen Input,
+    .-colors16 #regions { background: #aaaaaa; color: #000000; }
+    .-colors16 #filter:focus, .-colors16 #folder-path:focus,
+    .-colors16 SettingsScreen Input:focus { background: #00aaaa; color: #000000; }
+    .-colors16 #filter > .input--cursor, .-colors16 #folder-path > .input--cursor,
+    .-colors16 SettingsScreen Input > .input--cursor { background: #000000; color: #ffffff; text-style: none; }
+    .-colors16 #filter > .input--selection, .-colors16 #folder-path > .input--selection,
+    .-colors16 SettingsScreen Input > .input--selection { background: #0000aa; color: #ffffff; }
+    .-colors16 #question-buttons > Button, .-colors16 #folder-head > Button,
+    .-colors16 SettingsScreen Button { background: #aaaaaa; color: #000000; }
+    .-colors16 #question-buttons > Button:focus, .-colors16 #folder-head > Button:focus,
+    .-colors16 SettingsScreen Button:focus { background: #0000aa; color: #ffffff; }
+    .-colors16 #views > RadioButton, .-colors16 #languages > RadioButton { background: #000000; color: #aaaaaa; }
+    .-colors16 #views > RadioButton > .toggle--button,
+    .-colors16 #languages > RadioButton > .toggle--button { background: #000000; color: #000000; }
+    .-colors16 #views > RadioButton.-on > .toggle--button,
+    .-colors16 #languages > RadioButton.-on > .toggle--button { background: #000000; color: #ff5555; }
+    .-colors16 #folder-tree > .tree--guides, .-colors16 #folder-tree > .tree--guides-hover,
+    .-colors16 #folder-tree > .tree--guides-selected { color: #aaaaaa; }
+    .-colors16 #question-dot { color: #00aa00; }
+    .-colors16 QuestionScreen.kind-warning #question-dot,
+    .-colors16 QuestionScreen.kind-error #question-dot { color: #ff5555; }
+    .-colors16 #settings-file, .-colors16 #language-hint { color: #aaaaaa; }
+    .-colors16 #progress Bar > .bar--bar, .-colors16 #progress Bar > .bar--complete,
+    .-colors16 #progress Bar > .bar--indeterminate { color: #00aa00; background: #000000; }
+
+    /* Only ASCII (class -ascii, see wants_ascii): no "…" when a label is too long. */
+    .-ascii RadioButton, .-ascii Static, .-ascii Button { text-overflow: clip; }
     """
     BINDINGS = [
         Binding("q", "quit", show=False),
@@ -633,8 +773,12 @@ class WorkbenchApp(App):
     ]
 
     def __init__(self, analyze, directory: Path | None, scope: str | None = None, config_file=None,
-                 settings_path: Path = SETTINGS_PATH):
+                 settings_path: Path = SETTINGS_PATH, ascii: bool = False, colors16: bool = False):
         super().__init__()
+        # run_tui finds both out for the terminal; tests choose them.
+        self.ascii = ascii  # only ASCII characters: Linux console, terminals without UTF-8, --ascii
+        self.colors16 = colors16  # ANSI colors instead of the window's: 16 colors, Linux console
+        self._scrollbar_renderer = None
         self.analyze = analyze
         self.directory = directory
         self.config_file = config_file
@@ -671,10 +815,19 @@ class WorkbenchApp(App):
         # Above the green row, as in the window; 1, 2 and 3 choose the same views.
         with RadioSet(id="views"):
             for value, label in SCOPES:
-                yield RadioButton(tr(label), value=value == self.scope, id=f"view-{value}")
+                button = RadioButton(tr(label), value=value == self.scope, id=f"view-{value}")
+                yield _plain_radio(button) if self.ascii else button
         yield Static("", id="status", markup=False)
 
     def on_mount(self) -> None:
+        if self.colors16:
+            self.add_class("-colors16")
+        if self.ascii:
+            self.add_class("-ascii")
+            self.query_one("#progress", ProgressBar).query_one("Bar").bar_renderable = AsciiBar
+            # Class-wide in Textual; set back in on_unmount, so that it stays with this program run.
+            self._scrollbar_renderer = ScrollBar.renderer
+            ScrollBar.renderer = AsciiScrollBarRender
         # Not focusable: the keys must keep acting on the list after a view was clicked.
         self.query_one("#views", RadioSet).can_focus = False
         self.query_one("#games", GameTable).focus()
@@ -683,6 +836,11 @@ class WorkbenchApp(App):
             self.call_after_refresh(self.action_choose_folder)  # as the window does at the start
         else:
             self.start_analysis()
+
+    def on_unmount(self) -> None:
+        if self._scrollbar_renderer is not None:
+            ScrollBar.renderer = self._scrollbar_renderer
+            self._scrollbar_renderer = None
 
     # Analysis ---------------------------------------------------------------------------------
 
@@ -782,12 +940,13 @@ class WorkbenchApp(App):
         table = self.query_one("#games", GameTable)
         table.clear()
         self.files = {}
-        moved = set()
+        moved, striped = set(), set()
         for place, result in enumerate(self._visible):
             game_index = self._game_numbers[id(result)]
             if place:
                 # An empty row between the games: a drawn line would widen the file column to its length.
                 table.add_row("", "", "", key=f"s{game_index}")
+            first_row = table.row_count
             table.add_row(
                 Text(result.title, style="bold"), "", Text("; ".join(result.problems), style="bold"),
                 key=f"g{game_index}",
@@ -810,7 +969,9 @@ class WorkbenchApp(App):
                         Text("; ".join(notes), style="italic"),
                         key=key,
                     )
-        table.set_moved(moved)
+            if place % 2:  # every second game, as in the window
+                striped.update(row.key.value for row in table.ordered_rows[first_row:])
+        table.set_moved(moved, striped)
 
     # Views ------------------------------------------------------------------------------------
 
@@ -1216,9 +1377,16 @@ class WorkbenchApp(App):
         self.query_one("#status", Static).update(text)
 
 
-def run_tui(analyze, directory: Path | None, scope: str | None = None, config_file=None) -> int:
-    """Shows the terminal version and returns the program's exit code."""
+def run_tui(analyze, directory: Path | None, scope: str | None = None, config_file=None,
+            ascii: bool | None = None) -> int:
+    """Shows the terminal version and returns the program's exit code.
+
+    ascii: True for --ascii; None finds out from the terminal and the locale (wants_ascii).
+    """
     app = WorkbenchApp(analyze, directory, scope, config_file)
+    app.ascii = wants_ascii() if ascii is None else ascii
+    # The app has already asked the terminal how many colors it has (Rich's detection).
+    app.colors16 = wants_16_colors(app.console.color_system)
     app.run()
     if app.had_errors:  # as in the window: a file could not be deleted
         return 1

@@ -2702,9 +2702,16 @@ class MainTests(RedundanzTestCase):
         code, chosen = self.choose_front_end("--tui", "--review", "problems")
         self.assertEqual(code, 0)
         self.assertEqual(chosen[0][0], "tui")
-        directory, scope, config_file = chosen[0][1]
+        directory, scope, config_file, ascii_mode = chosen[0][1]
         self.assertEqual((directory, scope), (self.dir, "problems"))
         self.assertIsInstance(config_file, rf.ConfigFile)
+        self.assertIsNone(ascii_mode)  # the terminal version finds out itself
+
+    def test_ascii_option_starts_the_terminal_version_with_ascii(self):
+        code, chosen = self.choose_front_end("--ascii", platform="win32")
+        self.assertEqual(code, 0)
+        self.assertEqual(chosen[0][0], "tui")
+        self.assertIs(chosen[0][1][3], True)
 
     def test_linux_without_display_starts_the_terminal_version(self):
         self.assertEqual(self.choose_front_end(platform="linux")[1][0][0], "tui")
@@ -3015,12 +3022,13 @@ class TerminalVersionTests(unittest.IsolatedAsyncioTestCase):
             (folder / name).write_bytes(content)
         return folder
 
-    def app_for(self, files, scope="marked", analyze=None):
+    def app_for(self, files, scope="marked", analyze=None, **options):
         folder = self.demo_folder(files)
         config = rf.Config.load(None)
         analyze = analyze or (lambda directory, progress=None: rf.Review(
             rf.scan_directory(directory, config, progress), config))
-        return self.tui.WorkbenchApp(analyze, folder, scope, settings_path=folder.with_name("settings.json"))
+        return self.tui.WorkbenchApp(analyze, folder, scope, settings_path=folder.with_name("settings.json"),
+                                     **options)
 
     async def analyzed(self, app, pilot):
         await app.workers.wait_for_complete()
@@ -4421,6 +4429,220 @@ class TerminalVersionTests(unittest.IsolatedAsyncioTestCase):
                              ["English", "Deutsch", "Italiano", "Español", "Français", "日本語"])
             self.assertTrue(screen.query_one("#language-de").value)
             self.assertTrue(self.text(screen, "#settings-hint").startswith("Umschalt+Hoch/Runter"))
+
+    # Step 12: colors and fallbacks --------------------------------------------------------------
+
+    @staticmethod
+    def strips(app):
+        """The rows Textual would draw on the terminal now, with their styles."""
+        return app.screen._compositor.render_strips()
+
+    def screen_lines(self, app):
+        return [strip.text for strip in self.strips(app)]
+
+    async def visit_every_screen(self, app, pilot, check):
+        """Calls check(name) on the list, a question, the folder choice and the settings."""
+        await self.analyzed(app, pilot)
+        await pilot.press("shift+down", "down", "d")  # a moved row and a selection
+        check("list")
+        app.show_message("warning", "Careful", "Something happened")
+        await pilot.pause()
+        check("question")
+        await pilot.press("enter")
+        await pilot.pause()
+        await self.open_folder_choice(app, pilot)
+        check("folder choice")
+        await pilot.press("escape")
+        await pilot.pause()
+        await self.open_settings(app, pilot)
+        check("settings")
+        await pilot.press("escape")
+        await pilot.pause()
+
+    def colored_app(self, **options):
+        # Without NO_COLOR: Textual would put a gray filter over everything (this shell sets it).
+        with mock.patch.dict(os.environ):
+            os.environ.pop("NO_COLOR", None)
+            app = self.app_with_settings()
+        app.ascii, app.colors16 = options.get("ascii", False), options.get("colors16", False)
+        (app.directory / "Other (USA).bin").write_bytes(b"c")
+        (app.directory / "Other (Japan).bin").write_bytes(b"d")
+        return app
+
+    async def test_every_second_game_is_striped_as_in_the_window(self):
+        app = self.app_for(self.VIEW_GAMES, scope="all")
+        async with app.run_test() as pilot:
+            await self.analyzed(app, pilot)
+            table = app.query_one("#games")
+            from rich.style import Style
+            background = {key: table._get_row_style(table.get_row_index(key), Style()).bgcolor
+                          for key in app._keys()}
+            games = [key for key in app._keys() if key[0] == "g" and key[1:].isdigit()]
+            second = [key for key in app._keys() if self.tui._game_of(key) == self.tui._game_of(games[1])]
+            self.assertEqual({background[key].name for key in second if key not in table.selected}, {"#222222"})
+            self.assertIsNone(background[games[0]])
+            self.assertIsNone(background[games[2]])
+            self.assertTrue(all(background[key] is None for key in app._keys() if key.startswith("s")))
+            await pilot.press("tab", "d")  # moved and selected win over the stripe
+            self.assertEqual(background[app.cursor_key()].name if False else
+                             table._get_row_style(table.cursor_row, Style()).bgcolor.name, "#0a4a8a")
+
+    @staticmethod
+    def as_16_colors(color):
+        """The ANSI color number a 16-color terminal gets for this color, as Rich converts it."""
+        from rich.color import ColorSystem, ColorType
+
+        if color is None or color.type == ColorType.DEFAULT:
+            return None
+        return color.downgrade(ColorSystem.STANDARD).number
+
+    async def test_16_colors_are_exact_and_backgrounds_fit_the_console(self):
+        from rich._palettes import STANDARD_PALETTE
+
+        standard = {f"#{r:02x}{g:02x}{b:02x}" for r, g, b in STANDARD_PALETTE._colors[:16]}
+        app = self.colored_app(colors16=True)
+        async with app.run_test(size=(110, 32)) as pilot:
+            def check(name):
+                between, bright_backgrounds = set(), set()
+                for strip in self.strips(app):
+                    for segment in strip:
+                        style = segment.style
+                        for where, color in (("fg", style.color), ("bg", style.bgcolor)) if style else ():
+                            if color is None or self.as_16_colors(color) is None:
+                                continue
+                            if color.get_truecolor().hex not in standard:  # would be rounded: not ours
+                                between.add((where, color.get_truecolor().hex, segment.text.strip()[:15]))
+                            if where == "bg" and self.as_16_colors(color) > 7:
+                                bright_backgrounds.add((color.get_truecolor().hex, segment.text.strip()[:15]))
+                self.assertEqual(between, set(), name)
+                self.assertEqual(bright_backgrounds, set(), name)  # the Linux console has 8 of them
+            await self.visit_every_screen(app, pilot, check)
+            self.assertTrue(app.has_class("-colors16"))
+
+    async def test_16_colors_keep_selection_moved_rows_and_title_apart(self):
+        app = self.colored_app(colors16=True)
+        async with app.run_test(size=(110, 32)) as pilot:
+            await self.analyzed(app, pilot)
+            await pilot.press("d", "down")  # the first file moved by hand, the cursor one below
+            lines = self.screen_lines(app)
+            strips = self.strips(app)
+
+            def background_of(text):
+                row = next(index for index, line in enumerate(lines) if text in line)
+                segment = next(segment for segment in strips[row] if text[:4] in segment.text)
+                return self.as_16_colors(segment.style.bgcolor)
+
+            moved = app.files[next(key for key in app.files if app.files[key][1].moved)][1].path.name
+            cursor = str(app.query_one("#games").get_row(app.cursor_key())[0]).strip()
+            # ANSI 2 green, 3 brown (yellow), 4 blue: three different colors, as in the window.
+            self.assertEqual(background_of("Rom Cleanup Workbench"), 2)
+            self.assertEqual(background_of("Showing:"), 2)
+            self.assertEqual(background_of(moved), 3)
+            self.assertEqual(background_of(cursor), 4)
+            self.assertIn(background_of("Filter"), (0, None))  # the label; the field itself is light gray
+
+    async def test_ascii_mode_draws_only_ascii_on_every_screen(self):
+        app = self.colored_app(ascii=True, colors16=True)
+        app.directory.with_name("redundanz_config.json").write_text(
+            '{"language": "en", "region_priority": ["USA", "Japan"]}', encoding="utf-8")
+        async with app.run_test(size=(110, 32)) as pilot:
+            def check(name):
+                text = "\n".join(self.screen_lines(app))
+                # The settings name the languages in their own script; that is text, not drawing.
+                text = text.replace("Español", "").replace("Français", "").replace("日本語", "")
+                self.assertEqual(sorted({char for char in text if ord(char) > 127}), [], name)
+            await self.visit_every_screen(app, pilot, check)
+            self.assertIn("(*)", "\n".join(self.screen_lines(app)))
+            app.show_message("info", "Done", "OK")
+            await pilot.pause()
+            self.assertIn("+---", "\n".join(self.screen_lines(app)))  # an ASCII frame around the question
+        from textual.scrollbar import ScrollBar, ScrollBarRender
+        self.assertIs(ScrollBar.renderer, ScrollBarRender)  # set back when the program ends
+
+    async def test_ascii_folder_tree_and_progress_bar(self):
+        app = self.app_for(self.TWO_GAMES, ascii=True)
+        (app.directory / "Sub").mkdir()
+        async with app.run_test(size=(100, 30)) as pilot:
+            await self.analyzed(app, pilot)
+            progress = app.query_one("#progress")
+            progress.display = True
+            progress.update(total=4, progress=2)
+            await pilot.pause()
+            row = next(line for line in self.screen_lines(app) if "=" in line)
+            self.assertIn("50%", row)
+            self.assertNotIn("━", row)
+            progress.display = False
+            await self.open_folder_choice(app, pilot)
+            text = "\n".join(self.screen_lines(app))
+            self.assertIn("`-", text)
+            self.assertNotIn("▶", text)
+            self.assertNotIn("├", text)
+
+    async def test_japanese_rows_keep_their_width_and_the_columns_line_up(self):
+        from rich.cells import cell_len
+
+        translations.set_language("ja")
+        files = {"ゼルダの伝説 (Japan).bin": b"x" * 3000, "ゼルダの伝説 (USA).bin": b"x" * 2000,
+                 "Mario (USA).bin": b"x" * 5000, "Mario (Japan).bin": b"x" * 4000}
+        app = self.app_for(files, scope="all")
+        async with app.run_test(size=(80, 24)) as pilot:
+            await self.analyzed(app, pilot)
+            strips = self.strips(app)
+            self.assertTrue(all(strip.cell_length == 80 for strip in strips))
+            unit = translations.tr("unit.kb")
+            ends = set()
+            for line in self.screen_lines(app):
+                if f" {unit}" in line and (".bin" in line):
+                    ends.add(cell_len(line[:line.index(f" {unit}")]))
+            self.assertEqual(len(ends), 1, ends)  # the size column is right-aligned in every row
+            self.assertIn("ゼルダの伝説", "\n".join(self.screen_lines(app)))
+            await self.open_folder_choice(app, pilot)
+            self.assertTrue(all(strip.cell_length == 80 for strip in self.strips(app)))
+
+    def test_ascii_and_16_colors_are_chosen_from_the_terminal(self):
+        ascii_mode, colors = self.tui.wants_ascii, self.tui.wants_16_colors
+        self.assertTrue(ascii_mode({"TERM": "linux", "LANG": "de_DE.UTF-8"}))
+        self.assertTrue(ascii_mode({"TERM": "vt100"}))
+        self.assertTrue(ascii_mode({"TERM": "xterm", "LANG": "de_DE.ISO-8859-1"}))
+        self.assertTrue(ascii_mode({"TERM": "xterm", "LANG": "en_US"}))  # Latin-1 without a charset
+        self.assertTrue(ascii_mode({"TERM": "xterm", "LC_ALL": "en_US.ISO-8859-15", "LANG": "en_US.UTF-8"}))
+        self.assertFalse(ascii_mode({"TERM": "xterm-256color", "LANG": "de_DE.UTF-8"}))
+        self.assertFalse(ascii_mode({"TERM": "xterm-256color", "LC_CTYPE": "C.utf8"}))
+        # Python replaces a locale that is not installed by LC_CTYPE=C.UTF-8 itself: LANG counts.
+        self.assertTrue(ascii_mode({"TERM": "xterm-256color", "LANG": "en_US", "LC_CTYPE": "C.UTF-8"}))
+        self.assertFalse(ascii_mode({"TERM": "xterm-256color", "LANG": "de_DE.UTF-8", "LC_CTYPE": "C.UTF-8"}))
+        self.assertFalse(ascii_mode({"TERM": "xterm-256color", "LANG": "C"}))
+        self.assertFalse(ascii_mode({}))  # Windows: no TERM, no locale variables
+        self.assertTrue(colors("standard", {"TERM": "xterm"}))
+        self.assertTrue(colors("256", {"TERM": "linux"}))
+        self.assertTrue(colors("windows", {}))
+        self.assertFalse(colors("256", {"TERM": "xterm-256color"}))
+        self.assertFalse(colors("truecolor", {"TERM": "xterm-256color", "COLORTERM": "truecolor"}))
+        self.assertFalse(colors(None, {"TERM": "dumb"}))  # no colors at all: nothing to replace
+
+    def test_run_tui_detects_or_takes_the_modes(self):
+        seen = []
+        with mock.patch.object(self.tui.WorkbenchApp, "run", lambda app: seen.append((app.ascii, app.colors16))), \
+                mock.patch.object(self.tui, "wants_ascii", return_value=True), \
+                mock.patch.object(self.tui, "wants_16_colors", return_value=True):
+            self.tui.run_tui(None, None)
+            self.tui.run_tui(None, None, None, None, False)
+        with mock.patch.object(self.tui.WorkbenchApp, "run", lambda app: seen.append((app.ascii, app.colors16))), \
+                mock.patch.object(self.tui, "wants_ascii", return_value=False), \
+                mock.patch.object(self.tui, "wants_16_colors", return_value=False):
+            self.tui.run_tui(None, None, None, None, True)
+        self.assertEqual(seen, [(True, True), (False, True), (True, False)])
+
+    def test_delete_question_names_the_trash_of_the_system(self):
+        folder = self.demo_folder({"Title (USA).bin": b"a", "Title (Japan).bin": b"b"})
+        config = rf.Config.load(None)
+        review = rf.Review(rf.scan_directory(folder, config), config)
+        with mock.patch.object(rf.os, "name", "nt"):
+            self.assertIn("Recycle Bin", review.confirm_message(False))
+        with mock.patch.object(rf.os, "name", "posix"):
+            self.assertIn("do not go to the trash", review.confirm_message(False))
+            translations.set_language("es")
+            self.assertIn("papelera.", review.confirm_message(False))
 
     async def test_x_typed_in_the_filter_deletes_nothing(self):
         app = self.app_for(self.FILTER_GAMES)
