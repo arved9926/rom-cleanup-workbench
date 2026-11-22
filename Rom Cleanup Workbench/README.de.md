@@ -173,13 +173,7 @@ Dasselbe Programm läuft auch in einem Textterminal, zum Beispiel über SSH (PuT
 
 Unter Linux startet sie von selbst, wenn es keine grafische Anzeige gibt (weder `DISPLAY` noch `WAYLAND_DISPLAY` ist gesetzt, wie über SSH). `--tui` startet sie überall sonst, auch unter Windows; nimm es, wo es eine grafische Anzeige gibt, du aber das Terminal willst, zum Beispiel in MobaXterm oder unter WSL.
 
-Sie braucht [Textual](https://textual.textualize.io/) (getestet mit 8.2.8), am besten in einer virtuellen Umgebung:
-
-```bash
-python3 -m venv ~/venvs/rom-cleanup-workbench
-~/venvs/rom-cleanup-workbench/bin/pip install textual==8.2.8
-~/venvs/rom-cleanup-workbench/bin/python rom_cleanup_workbench.py --tui ~/roms
-```
+Sie braucht [Textual](https://textual.textualize.io/) (getestet mit 8.2.8). Wie du es installierst und das Programm startest, steht unter [Installation](#installation) und [Aufruf](#aufruf).
 
 Ohne Textual sagt das Programm das und löscht nichts. Der Bildschirm hat die Zeilen des Fensters von oben nach unten: die grüne Titelzeile mit dem Ordner, eine Hilfezeile, die Priorität, die Liste, das Filterfeld, die drei Ansichten und die grüne Statuszeile. In der Liste beginnt jedes Spiel mit seinem Namen in Fettschrift, gefolgt von Strichen bis zum rechten Rand; ein Hinweis wie `Unterschiedliche Schreibweisen des Namens` steht in dieser Zeile. In einem schmalen Terminal, etwa den 80 Spalten von PuTTY, brechen lange Dateinamen und Hinweise in ihrer Spalte um, statt den Bildschirm zu verlassen. `Nichts zu tun.` blinkt mit dem eigenen Blinken des Terminals; in PuTTY muss blinkender Text eventuell erst eingeschaltet werden. Fragen und Meldungen erscheinen in einem Rahmen über der Liste, mit Schaltflächen in der Sprache des Programms; `Nein` ist vorgewählt.
 
