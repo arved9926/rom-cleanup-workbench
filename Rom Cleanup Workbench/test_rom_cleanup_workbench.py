@@ -3366,3 +3366,103 @@ class TerminalVersionTests(unittest.IsolatedAsyncioTestCase):
             await pilot.press("2")
             self.assertEqual(self.titles(app), ["Other"])
             self.assertEqual(app.review.moved_count(), 1)
+
+    # Step 7: filter -----------------------------------------------------------------------------
+
+    FILTER_GAMES = {"One (USA).bin": b"a", "One (Japan).bin": b"b", "Two (USA).bin": b"c", "Two (Japan).bin": b"d"}
+
+    async def filter_for(self, app, pilot, *keys):
+        """Types into the filter field and returns to the list with Enter."""
+        await pilot.press("slash", *keys, "enter")
+        await pilot.pause()
+
+    async def test_filter_shows_matching_games_and_clearing_restores_them(self):
+        app = self.app_for(self.FILTER_GAMES)
+        async with app.run_test() as pilot:
+            await self.analyzed(app, pilot)
+            self.assertEqual(self.titles(app), ["One", "Two"])
+            await self.filter_for(app, pilot, *"two")
+            self.assertEqual(self.titles(app), ["Two"])
+            self.assertIn("Showing: 1 of 2 games", self.text(app, "#status"))
+            self.assertIs(app.focused, app.query_one("#games"))
+            await pilot.press("ctrl+f", "escape")
+            await pilot.pause()
+            self.assertEqual(app.query_one("#filter").value, "")
+            self.assertEqual(self.titles(app), ["One", "Two"])
+            self.assertIs(app.focused, app.query_one("#games"))
+            self.assertTrue(app.is_running)  # Esc in the field does not end the program
+
+    async def test_filter_knows_star_and_question_mark_but_not_brackets(self):
+        app = self.app_for({"A [!] (USA).bin": b"a", "A (Japan).bin": b"b",
+                            "Bb (USA).bin": b"c", "Bb (Japan).bin": b"d"})
+        async with app.run_test() as pilot:
+            await self.analyzed(app, pilot)
+            field = app.query_one("#filter")
+            for pattern, titles in (("b? *japan", ["Bb"]), ("[!]", ["A"]), ("*", ["A", "Bb"])):
+                await pilot.press("slash")
+                field.value = pattern
+                await pilot.press("enter")
+                await pilot.pause()
+                self.assertEqual(self.titles(app), titles, pattern)
+
+    async def test_keys_typed_in_the_filter_never_act_on_the_list(self):
+        app = self.app_for(self.FILTER_GAMES)
+        async with app.run_test() as pilot:
+            await self.analyzed(app, pilot)
+            await pilot.press("slash", *"dpq3", "tab")
+            await pilot.pause()
+            self.assertEqual(app.query_one("#filter").value, "dpq3")
+            self.assertEqual(app.review.moved_count(), 0)
+            self.assertEqual(app.scope, "marked")
+            self.assertTrue(app.is_running)
+            self.assertIs(app.focused, app.query_one("#games"))  # Tab only left the field
+            self.assertEqual(self.titles(app), [])
+            self.assertIn("Showing: 0 of 2 games", self.text(app, "#status"))
+            await pilot.press("d", "down", "tab")  # an empty list: nothing happens, nothing fails
+            self.assertEqual(app.review.moved_count(), 0)
+
+    async def test_filter_only_takes_effect_after_the_delay(self):
+        app = self.app_for(self.FILTER_GAMES)
+        async with app.run_test() as pilot:
+            await self.analyzed(app, pilot)
+            await pilot.press("slash", *"two")
+            self.assertEqual(self.titles(app), ["One", "Two"])
+            self.assertIs(app.focused, app.query_one("#filter"))
+            await pilot.pause(self.tui.FILTER_DELAY + 0.3)
+            self.assertEqual(self.titles(app), ["Two"])
+            self.assertIs(app.focused, app.query_one("#filter"))  # typing goes on in the field
+            await pilot.press("down")
+            self.assertIs(app.focused, app.query_one("#games"))
+
+    async def test_filter_selects_a_shown_file_so_d_cannot_hit_a_hidden_one(self):
+        app = self.app_for(self.FILTER_GAMES)
+        async with app.run_test() as pilot:
+            await self.analyzed(app, pilot)
+            self.assertEqual(app.selected_keys(), ["g0f0"])  # a file of One
+            await self.filter_for(app, pilot, *"two")
+            self.assertEqual(app.selected_keys(), ["g1f0"])
+            await pilot.press("d")
+            one, two = app.review.results
+            self.assertEqual(app.review._moved_count([one]), 0)
+            self.assertEqual(app.review._moved_count([two]), 1)
+
+    async def test_filter_stays_with_the_view_and_a_new_analysis(self):
+        app = self.app_for(self.FILTER_GAMES)
+        async with app.run_test() as pilot:
+            await self.analyzed(app, pilot)
+            await self.filter_for(app, pilot, *"two")
+            await pilot.press("3")
+            self.assertEqual(self.titles(app), ["Two"])
+            app.start_analysis()
+            await self.analyzed(app, pilot)
+            self.assertEqual(self.titles(app), ["Two"])
+            self.assertEqual(self.text(app, "#status"), app.review.status(False, True, "two"))
+
+    async def test_filter_field_is_labelled_in_the_language(self):
+        translations.set_language("de")
+        app = self.tui.WorkbenchApp(None, None)
+        async with app.run_test() as pilot:
+            self.assertEqual(self.text(app, "#filter-label"), "Dateinamen filtern:")
+            await pilot.press("ctrl+f", "x")  # before any analysis: typing works, nothing fails
+            await pilot.pause(self.tui.FILTER_DELAY + 0.3)
+            self.assertEqual(app.query_one("#filter").value, "x")

@@ -5,7 +5,7 @@ Like the window, this module does not import the program, because it would other
 second time when started as a script.
 
 Done so far (see docs/tui-plan.md): start, title row, the read-only list with background analysis,
-moving the cursor and selecting several rows, D and P.
+moving the cursor and selecting several rows, D and P, the three views and the filter.
 """
 
 from __future__ import annotations
@@ -17,7 +17,7 @@ from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal
 from textual.geometry import Region
-from textual.widgets import DataTable, ProgressBar, RadioButton, RadioSet, Static
+from textual.widgets import DataTable, Input, ProgressBar, RadioButton, RadioSet, Static
 
 from translations import tr
 from workbench_state import (
@@ -25,6 +25,8 @@ from workbench_state import (
 )
 
 APP_NAME = "Rom Cleanup Workbench"
+# As in the window: Rebuilding a long list on every keystroke would make typing sluggish.
+FILTER_DELAY = 0.2
 
 
 def _game_of(key: str) -> int | None:
@@ -70,15 +72,22 @@ class GameTable(DataTable):
         self._clear_caches()
         self.refresh()
 
-    def _select_cursor_row(self) -> None:
-        """A click or a key of the table itself selects only the row under the cursor (no empty row)."""
+    def _select_cursor_row(self, skip_empty: bool = True) -> None:
+        """A click or a key of the table itself selects only the row under the cursor.
+
+        A key that lands on an empty row between two games moves on to the game below it, so
+        that something stays selected; a click on an empty row selects nothing.
+        """
         if self.row_count:
+            key = self.ordered_rows[self.cursor_row].key.value
+            if skip_empty and _game_of(key) is None and self.cursor_row + 1 < self.row_count:
+                self.move_cursor(row=self.cursor_row + 1)
             key = self.ordered_rows[self.cursor_row].key.value
             self.set_selection({key} if _game_of(key) is not None else ())
 
     async def _on_click(self, event) -> None:
         await super()._on_click(event)
-        self._select_cursor_row()
+        self._select_cursor_row(skip_empty=False)
 
     def action_page_up(self) -> None:
         super().action_page_up()
@@ -115,6 +124,19 @@ class GameTable(DataTable):
         return style
 
 
+class FilterInput(Input):
+    """The filter field. Letters typed here stay here, so a "d" or "p" never changes a mark.
+
+    Its own bindings come before the app's: Esc clears the filter instead of ending the program.
+    """
+
+    BINDINGS = [
+        Binding("escape", "app.leave_filter(True)", show=False),
+        Binding("down", "app.leave_filter(False)", show=False),
+        Binding("ctrl+f", "select_all", show=False),
+    ]
+
+
 class WorkbenchApp(App):
     """The terminal window: the same rows as the Windows window, from top to bottom."""
 
@@ -133,6 +155,10 @@ class WorkbenchApp(App):
     #games > .datatable--selected { background: #0a4a8a; color: #ffffff; }
     #nothing { height: 1fr; content-align: center middle; text-style: bold; display: none; }
     #progress { height: 1; padding: 0 1; display: none; }
+    #filter-row { height: 1; padding: 0 1; }
+    #filter-label { width: auto; margin-right: 1; }
+    #filter { width: 1fr; height: 1; border: none; padding: 0 1; background: #222222; color: #ffffff; }
+    #filter:focus { border: none; background: #333333; }
     #views { layout: horizontal; height: auto; width: 100%; border: none; background: #000000; padding: 0 1; }
     #views:focus-within { border: none; }
     #views > RadioButton { background: #000000; color: #ffffff; border: none; margin-right: 2; }
@@ -151,6 +177,7 @@ class WorkbenchApp(App):
         Binding("2", "choose_view(1)", show=False),
         Binding("3", "choose_view(2)", show=False),
         Binding("p,P", "promote", show=False),
+        Binding("slash,ctrl+f", "focus_filter", show=False),
     ]
 
     def __init__(self, analyze, directory: Path | None, scope: str | None = None, config_file=None,
@@ -168,6 +195,8 @@ class WorkbenchApp(App):
         self._visible = []  # the games shown, in the order of the list
         self._file_keys = {}  # id(entry) -> row key; stays the same for the whole analysis
         self._game_numbers = {}  # id(result) -> the game's number in the row keys
+        self.pattern = ""  # the filter the list shows; the field may hold newer text during the delay
+        self._filter_timer = None
 
     def compose(self) -> ComposeResult:
         with Horizontal(id="title-row"):
@@ -182,6 +211,9 @@ class WorkbenchApp(App):
         yield table
         yield Static(tr("window.nothing_to_do"), id="nothing")
         yield ProgressBar(id="progress", show_eta=False)
+        with Horizontal(id="filter-row"):
+            yield Static(tr("window.filter"), id="filter-label", markup=False)
+            yield FilterInput(id="filter", select_on_focus=True)
         # Above the green row, as in the window; 1, 2 and 3 choose the same views.
         with RadioSet(id="views"):
             for value, label in SCOPES:
@@ -272,7 +304,7 @@ class WorkbenchApp(App):
         self.files = {}
         self._visible = []
         review = self.review
-        flags = scope_flags(self.scope)
+        flags = scope_flags(self.scope, self.pattern)
         if review.nothing_to_do() and not flags[1]:
             self._show_nothing_to_do(True)
             self._set_status(tr("window.nothing_to_do_status"))
@@ -343,7 +375,45 @@ class WorkbenchApp(App):
             self._set_status(f"{tr('window.choice_not_saved')}: {error}")
 
     def _update_status(self) -> None:
-        self._set_status(self.review.status(*scope_flags(self.scope)))
+        self._set_status(self.review.status(*scope_flags(self.scope, self.pattern)))
+
+    # Filter -----------------------------------------------------------------------------------
+
+    def _filter_focused(self) -> bool:
+        return self.focused is self.query_one("#filter", FilterInput)
+
+    def action_focus_filter(self) -> None:
+        field = self.query_one("#filter", FilterInput)
+        field.focus()
+        field.select_all()
+
+    def action_leave_filter(self, clear: bool = False) -> None:
+        """Shows the result at once and returns to the list; Esc also clears the filter."""
+        field = self.query_one("#filter", FilterInput)
+        if clear:
+            field.value = ""
+        self._apply_filter()
+        self.query_one("#games", GameTable).focus()
+
+    def on_input_changed(self, event: Input.Changed) -> None:
+        if self._filter_timer is not None:
+            self._filter_timer.stop()
+        self._filter_timer = self.set_timer(FILTER_DELAY, self._apply_filter)
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        self.action_leave_filter()
+
+    def _apply_filter(self) -> None:
+        if self._filter_timer is not None:
+            self._filter_timer.stop()
+            self._filter_timer = None
+        pattern = self.query_one("#filter", FilterInput).value
+        if pattern == self.pattern:
+            return
+        self.pattern = pattern
+        # Rows hidden by the filter leave the selection; D and P should work on what is shown.
+        if self.review is not None:
+            self.show_games(keep_selection=True)
 
     # D and P ----------------------------------------------------------------------------------
 
@@ -427,6 +497,9 @@ class WorkbenchApp(App):
 
     def action_move_game(self, step: int) -> None:
         """Jumps to the neighboring game and selects its first file, so that D and P work at once."""
+        if self._filter_focused():  # Tab is a priority key; in the filter it only returns to the list.
+            self.action_leave_filter()
+            return
         if not self._list_shown():
             return
         keys = self._keys()
