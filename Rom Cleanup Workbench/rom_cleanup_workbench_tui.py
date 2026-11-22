@@ -6,11 +6,12 @@ second time when started as a script.
 
 Done so far (see docs/tui-plan.md): start, title row, the read-only list with background analysis,
 moving the cursor and selecting several rows, D and P, the three views, the filter, questions
-and messages inside the terminal, and deleting (Proceed).
+and messages inside the terminal, deleting (Proceed) and choosing the folder.
 """
 
 from __future__ import annotations
 
+import os
 import time
 from pathlib import Path
 
@@ -19,13 +20,13 @@ from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
 from textual.geometry import Region
-from textual.screen import ModalScreen
-from textual.widgets import Button, DataTable, Input, ProgressBar, RadioButton, RadioSet, Static
+from textual.screen import ModalScreen, Screen
+from textual.widgets import Button, DataTable, Input, ProgressBar, RadioButton, RadioSet, Static, Tree
 
 from translations import tr
 from workbench_state import (
-    SCOPES, SETTINGS_PATH, add_confirmed_saves, format_kb, load_confirmed_saves, load_scope, save_scope,
-    scope_flags,
+    SCOPES, SETTINGS_PATH, add_confirmed_saves, drives, format_kb, load_confirmed_saves, load_scope, save_scope,
+    scope_flags, subfolders,
 )
 
 APP_NAME = "Rom Cleanup Workbench"
@@ -36,6 +37,7 @@ OK = (("dialog.ok", None),)
 # The actions that change or move in the list; a question locks them, as in the window.
 _LIST_ACTIONS = {
     "move_cursor", "move_game", "demote", "promote", "choose_view", "focus_filter", "leave_filter", "proceed",
+    "choose_folder",
 }
 # As in the window: Redrawing after every deleted file would slow down large deletions.
 DELETE_REDRAW = 0.05
@@ -194,6 +196,151 @@ class QuestionScreen(ModalScreen):
         self.dismiss(self.values[-1])
 
 
+def _folder_key(path: Path) -> str:
+    """Compares folders as the system does: without case on Windows."""
+    return os.path.normcase(os.path.abspath(path))
+
+
+class FolderTree(Tree):
+    """The folders; each one reads its subfolders only when it opens, so that large drives cost nothing."""
+
+    BINDINGS = [
+        Binding("enter", "screen.choose", show=False),
+        Binding("right", "open_folder", show=False),
+        Binding("left", "close_folder", show=False),
+    ]
+
+    def action_open_folder(self) -> None:
+        node = self.cursor_node
+        if node is None or not node.allow_expand:
+            return
+        if node.is_expanded and node.children:
+            self.move_cursor(node.children[0])
+        else:
+            self.screen.load(node)
+            if node.allow_expand:  # A folder without subfolders stays closed.
+                node.expand()
+
+    def action_close_folder(self) -> None:
+        node = self.cursor_node
+        if node is None:
+            return
+        if node.is_expanded and node.children:
+            node.collapse()
+        elif node.parent is not None and not node.parent.is_root:
+            self.move_cursor(node.parent)
+
+
+class FolderScreen(Screen):
+    """Chooses the folder in place of the list, as the window does, in the program's language.
+
+    The tree starts at the drives (/ on Linux) and the home folder. dismiss() hands the chosen
+    folder to the app, or None after Cancel and Esc.
+    """
+
+    BINDINGS = [Binding("escape", "cancel", show=False)]
+
+    def __init__(self, start: Path | None):
+        super().__init__()
+        self.start = start if start is not None and start.is_dir() else Path.home()
+
+    def compose(self) -> ComposeResult:
+        with Horizontal(id="folder-head"):
+            yield Static(tr("window.choose_folder"), id="folder-title", markup=False)
+            yield Button(tr("folder.select"), id="folder-select", compact=True)
+            yield Button(tr("settings.cancel"), id="folder-cancel", compact=True)
+        with Horizontal(id="folder-path-row"):
+            yield Static(tr("folder.path"), id="folder-path-label", markup=False)
+            yield Input(id="folder-path")
+        tree = FolderTree("", id="folder-tree")
+        tree.show_root = False
+        tree.auto_expand = False
+        yield tree
+        yield Static(tr("folder.tui_hint"), id="folder-hint", markup=False)
+
+    def on_mount(self) -> None:
+        tree = self.query_one("#folder-tree", FolderTree)
+        roots = list(drives())
+        home = Path.home()
+        if all(_folder_key(home) != _folder_key(root) for root in roots):
+            roots.append(home)
+        for root in roots:
+            self._add(tree.root, root, str(root))
+        tree.focus()
+        self.reveal(self.start)
+
+    def _add(self, parent, path: Path, label: str):
+        return parent.add(Text(label), data={"path": path, "loaded": False}, allow_expand=True)
+
+    def load(self, node) -> None:
+        """Reads the subfolders of a folder the first time it opens."""
+        data = node.data
+        if data is None or data["loaded"]:
+            return
+        data["loaded"] = True
+        for folder in subfolders(data["path"]):
+            self._add(node, folder, folder.name)
+        if not node.children:
+            node.allow_expand = False  # no arrow any more
+
+    def on_tree_node_expanded(self, event: Tree.NodeExpanded) -> None:
+        self.load(event.node)
+
+    def on_tree_node_highlighted(self, event: Tree.NodeHighlighted) -> None:
+        if event.node.data is not None:
+            self.query_one("#folder-path", Input).value = str(event.node.data["path"])
+
+    def reveal(self, path: Path) -> None:
+        """Opens the tree down to path and highlights it, as far as the folders exist."""
+        tree = self.query_one("#folder-tree", FolderTree)
+        path = Path(os.path.abspath(path))
+        wanted = [_folder_key(folder) for folder in reversed([path, *path.parents])]
+        node, found = tree.root, None
+        for key in wanted:
+            child = next((child for child in node.children if _folder_key(child.data["path"]) == key), None)
+            if child is None:
+                if found is None:
+                    continue  # not below this root yet: the drive comes first
+                break
+            found = node = child
+            self.load(node)
+            node.expand()
+        if found is not None:
+            self.query_one("#folder-path", Input).value = str(found.data["path"])
+            self.call_after_refresh(self._show_folder, found)
+
+    def _show_folder(self, node) -> None:
+        """Highlights the folder; first its last subfolder, so that they also come into view if they fit."""
+        tree = self.query_one("#folder-tree", FolderTree)
+        if node.children:
+            tree.scroll_to_node(node.children[-1], animate=False)
+        tree.move_cursor(node)
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        event.stop()
+        self.action_choose()
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        event.stop()
+        if event.button.id == "folder-select":
+            self.action_choose()
+        else:
+            self.action_cancel()
+
+    def action_choose(self) -> None:
+        """Takes the typed path, which follows the highlighted folder; quotes as in a copied path are dropped."""
+        text = self.query_one("#folder-path", Input).value.strip().strip('"')
+        folder = Path(text) if text else None
+        if folder is None or not folder.is_dir():
+            self.app.show_message("error", tr("window.choose_folder"),
+                                  tr("error.directory_not_found", directory=text))
+            return
+        self.dismiss(folder)
+
+    def action_cancel(self) -> None:
+        self.dismiss(None)
+
+
 class WorkbenchApp(App):
     """The terminal window: the same rows as the Windows window, from top to bottom."""
 
@@ -234,6 +381,17 @@ class WorkbenchApp(App):
     #question-buttons { height: 1; margin-left: 2; }
     #question-buttons > Button { margin-right: 2; min-width: 8; background: #333333; color: #ffffff; }
     #question-buttons > Button:focus { background: #0a4a8a; text-style: bold; }
+    FolderScreen { background: #000000; padding: 1 2; }
+    #folder-head, #folder-path-row { height: 1; margin-bottom: 1; }
+    #folder-title { width: 1fr; text-style: bold; }
+    #folder-head > Button { margin-left: 2; min-width: 10; background: #333333; color: #ffffff; }
+    #folder-head > Button:focus { background: #0a4a8a; text-style: bold; }
+    #folder-path-label { width: auto; margin-right: 1; }
+    #folder-path { width: 1fr; height: 1; border: none; padding: 0 1; background: #222222; color: #ffffff; }
+    #folder-path:focus { border: none; background: #333333; }
+    #folder-tree { height: 1fr; background: #000000; }
+    #folder-tree > .tree--cursor { background: #0a4a8a; color: #ffffff; }
+    #folder-hint { height: auto; margin-top: 1; }
     """
     BINDINGS = [
         Binding("q", "quit", show=False),
@@ -248,6 +406,7 @@ class WorkbenchApp(App):
         Binding("p,P", "promote", show=False),
         Binding("slash,ctrl+f", "focus_filter", show=False),
         Binding("x,X,ctrl+l", "proceed", show=False),
+        Binding("o,O,ctrl+o", "choose_folder", show=False),
     ]
 
     def __init__(self, analyze, directory: Path | None, scope: str | None = None, config_file=None,
@@ -298,6 +457,7 @@ class WorkbenchApp(App):
         self.query_one("#games", GameTable).focus()
         if self.directory is None:
             self._set_status(tr("window.choose_folder_status"))
+            self.call_after_refresh(self.action_choose_folder)  # as the window does at the start
         else:
             self.start_analysis()
 
@@ -314,12 +474,14 @@ class WorkbenchApp(App):
         progress.update(total=None, progress=0)
         progress.display = True
 
+        directory = self.directory  # A folder chosen meanwhile starts an analysis of its own.
+
         def report(done: int, total: int) -> None:
             self.call_from_thread(self._show_progress, number, done, total)
 
         def work() -> None:
             try:
-                review = self.analyze(self.directory, report)
+                review = self.analyze(directory, report)
             except Exception as error:  # Every error must reach the screen, otherwise it would stay at "Analyzing".
                 self.call_from_thread(self._finish_analysis, number, None, str(error) or type(error).__name__)
             else:
@@ -620,6 +782,31 @@ class WorkbenchApp(App):
             return str(error)
         return None
 
+    # Folder choice ----------------------------------------------------------------------------
+
+    def action_choose_folder(self) -> None:
+        """o and Ctrl+O choose the folder in place of the list; after changes by hand they ask first."""
+        if self.folder_open() or self.deleting:
+            return
+        if self.review is not None and self.review.moved_count():
+            self.ask("question", tr("window.discard_title"), tr("window.discard_folder"),
+                     then=lambda yes: self._open_folder_choice() if yes else None)
+        else:
+            self._open_folder_choice()
+
+    def _open_folder_choice(self) -> None:
+        if not self.folder_open():
+            self.push_screen(FolderScreen(self.directory), self.folder_chosen)
+
+    def folder_chosen(self, folder: Path | None) -> None:
+        """The analysis starts once a folder is chosen; Cancel leaves everything as it was."""
+        if folder is None:
+            return
+        self.directory = folder
+        self.query_one("#folder", Static).update(self._folder_text())
+        self.query_one("#games", GameTable).focus()
+        self.start_analysis()
+
     # Cursor and selection ---------------------------------------------------------------------
 
     def _keys(self) -> list[str]:
@@ -726,8 +913,12 @@ class WorkbenchApp(App):
     def question_open(self) -> bool:
         return isinstance(self.screen, QuestionScreen)
 
+    def folder_open(self) -> bool:
+        return any(isinstance(screen, FolderScreen) for screen in self.screen_stack)
+
     def check_action(self, action: str, parameters) -> bool | None:
-        if action in _LIST_ACTIONS and (self.question_open() or self.deleting):
+        # In the folder choice, a "d" or "x" must not act on the list behind it.
+        if action in _LIST_ACTIONS and (self.question_open() or self.deleting or self.folder_open()):
             return False
         if action == "quit" and self.deleting:  # Half a deletion must not be left behind unreported.
             return False

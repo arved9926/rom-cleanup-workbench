@@ -2993,9 +2993,18 @@ class TerminalVersionTests(unittest.IsolatedAsyncioTestCase):
     async def test_q_ends_the_program(self):
         app = self.tui.WorkbenchApp(None, None)
         async with app.run_test() as pilot:
+            await self.started(app, pilot)
             await pilot.press("q")
             await pilot.pause()
             self.assertFalse(app.is_running)
+
+    async def started(self, app, pilot):
+        """Without a folder, the folder choice opens at the start; waits until it is there."""
+        for _ in range(50):
+            if app.folder_open():
+                return
+            await pilot.pause(0.02)
+        self.fail("The folder choice did not open")
 
     def demo_folder(self, files):
         temp = tempfile.TemporaryDirectory()
@@ -3273,6 +3282,7 @@ class TerminalVersionTests(unittest.IsolatedAsyncioTestCase):
     async def test_d_and_p_do_nothing_before_the_analysis(self):
         app = self.tui.WorkbenchApp(None, None)
         async with app.run_test() as pilot:
+            await self.started(app, pilot)
             await pilot.press("d", "p", "down", "tab")
             self.assertEqual(self.text(app, "#status"), translations.tr("window.choose_folder_status"))
 
@@ -3471,7 +3481,8 @@ class TerminalVersionTests(unittest.IsolatedAsyncioTestCase):
         app = self.tui.WorkbenchApp(None, None)
         async with app.run_test() as pilot:
             self.assertEqual(self.text(app, "#filter-label"), "Dateinamen filtern:")
-            await pilot.press("ctrl+f", "x")  # before any analysis: typing works, nothing fails
+            await self.started(app, pilot)
+            await pilot.press("escape", "ctrl+f", "x")  # leave the folder choice; then typing works, nothing fails
             await pilot.pause(self.tui.FILTER_DELAY + 0.3)
             self.assertEqual(app.query_one("#filter").value, "x")
 
@@ -3529,6 +3540,7 @@ class TerminalVersionTests(unittest.IsolatedAsyncioTestCase):
             translations.set_language(language)
             app = self.tui.WorkbenchApp(None, None)
             async with app.run_test() as pilot:
+                await self.started(app, pilot)
                 await self.ask(app, pilot)
                 self.assertEqual(self.buttons(app), expected, language)
                 app.show_message("info", "i", "i")
@@ -3577,6 +3589,7 @@ class TerminalVersionTests(unittest.IsolatedAsyncioTestCase):
     async def test_messages_have_ok_and_their_color(self):
         app = self.tui.WorkbenchApp(None, None)
         async with app.run_test() as pilot:
+            await self.started(app, pilot)
             answers = []
             app.show_message("warning", "Careful", "Something [!] happened", then=answers.append)
             await pilot.pause()
@@ -3844,6 +3857,232 @@ class TerminalVersionTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(app.query_one("#filter").value, "two")
             self.assertEqual(self.titles(app), ["Two"])
             self.assertEqual(self.names(app), ["One (USA).bin", "Two (USA).bin"])
+
+    # Step 10: folder choice --------------------------------------------------------------------
+
+    def other_folder(self, files=None):
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        folder = Path(temp.name) / "other"
+        folder.mkdir()
+        for name, content in (files or {"Another (USA).bin": b"x", "Another (Japan).bin": b"y"}).items():
+            (folder / name).write_bytes(content)
+        return folder
+
+    async def open_folder_choice(self, app, pilot, key="o"):
+        await pilot.press(key)
+        await pilot.pause()
+        await pilot.pause()
+        self.assertTrue(app.folder_open())
+        return app.screen.query_one("#folder-tree"), app.screen.query_one("#folder-path")
+
+    @staticmethod
+    def same_folder(first, second):
+        return os.path.normcase(os.path.abspath(first)) == os.path.normcase(os.path.abspath(second))
+
+    async def test_folder_choice_opens_at_the_current_folder_with_its_subfolders(self):
+        app = self.app_for(self.TWO_GAMES)
+        for name in ("Sub B", "sub a", ".hidden"):
+            (app.directory / name).mkdir()
+        async with app.run_test() as pilot:
+            await self.analyzed(app, pilot)
+            tree, path = await self.open_folder_choice(app, pilot, key="ctrl+o")
+            self.assertTrue(self.same_folder(path.value, app.directory))
+            node = tree.cursor_node
+            self.assertTrue(self.same_folder(node.data["path"], app.directory))
+            self.assertTrue(node.is_expanded)
+            self.assertEqual([str(child.label) for child in node.children], ["sub a", "Sub B"])
+            self.assertIs(app.focused, tree)
+            self.assertEqual(self.text(app.screen, "#folder-title"), "Choose folder")
+            roots = [child.data["path"] for child in tree.root.children]
+            self.assertTrue(any(self.same_folder(root, Path.home()) for root in roots))
+            self.assertTrue(any(root == Path(root.anchor) for root in roots))  # a drive, or / on Linux
+
+    async def test_folder_is_chosen_in_the_tree_and_analyzed(self):
+        app = self.app_for(self.TWO_GAMES)
+        (app.directory / "More").mkdir()
+        (app.directory / "More" / "Other (USA).bin").write_bytes(b"a")
+        (app.directory / "More" / "Other (Japan).bin").write_bytes(b"b")
+        async with app.run_test() as pilot:
+            await self.analyzed(app, pilot)
+            tree, path = await self.open_folder_choice(app, pilot)
+            await pilot.press("right")  # to the first subfolder
+            await pilot.pause()
+            self.assertEqual(str(tree.cursor_node.label), "More")
+            self.assertTrue(path.value.endswith("More"))
+            more = app.directory / "More"
+            await pilot.press("enter")
+            await self.analyzed(app, pilot)
+            self.assertFalse(app.folder_open())
+            self.assertTrue(self.same_folder(app.directory, more))
+            self.assertEqual(self.titles(app), ["Other"])
+            self.assertIn("More", self.text(app, "#folder"))
+            self.assertIs(app.focused, app.query_one("#games"))
+
+    async def test_typed_path_is_taken_and_a_missing_one_is_refused(self):
+        app = self.app_for(self.TWO_GAMES)
+        other = self.other_folder()
+        async with app.run_test() as pilot:
+            await self.analyzed(app, pilot)
+            _tree, path = await self.open_folder_choice(app, pilot)
+            path.value = str(other / "missing")
+            await pilot.click("#folder-select")
+            await pilot.pause()
+            self.assertTrue(app.question_open())
+            self.assertIn("missing", self.text(app.screen, "#question-text"))
+            self.assertIn("kind-error", app.screen.classes)
+            await pilot.press("enter")
+            await pilot.pause()
+            self.assertTrue(app.folder_open())  # the choice stays open
+            self.assertEqual(self.titles(app), ["A", "B"])
+            path.value = f'"{other}"'  # pasted with quotes, as a file manager copies a path
+            path.focus()
+            await pilot.press("enter")
+            await self.analyzed(app, pilot)
+            self.assertFalse(app.folder_open())
+            self.assertEqual(app.directory, other)
+            self.assertEqual(self.titles(app), ["Another"])
+
+    async def test_cancel_and_escape_change_nothing(self):
+        app = self.app_for(self.TWO_GAMES)
+        async with app.run_test() as pilot:
+            await self.analyzed(app, pilot)
+            folder, before = app.directory, app.review
+            self.no_new_analysis(app)
+            await self.open_folder_choice(app, pilot)
+            await pilot.click("#folder-cancel")
+            await pilot.pause()
+            self.assertFalse(app.folder_open())
+            await self.open_folder_choice(app, pilot)
+            await pilot.press("escape")
+            await pilot.pause()
+            self.assertFalse(app.folder_open())
+            self.assertTrue(app.is_running)
+            self.assertEqual(app.directory, folder)
+            self.assertIs(app.review, before)
+            self.assertEqual(self.titles(app), ["A", "B"])
+            self.assertIs(app.focused, app.query_one("#games"))
+
+    async def test_keys_of_the_list_do_nothing_while_choosing_a_folder(self):
+        app = self.app_for(self.TWO_GAMES)
+        async with app.run_test() as pilot:
+            await self.analyzed(app, pilot)
+            await self.open_folder_choice(app, pilot)
+            await pilot.press("d", "p", "x", "3", "slash", "o", "tab")
+            await pilot.pause()
+            self.assertTrue(app.folder_open())
+            self.assertFalse(app.question_open())
+            self.assertEqual(app.review.moved_count(), 0)
+            self.assertEqual(app.scope, "marked")
+            self.assertEqual(app.query_one("#filter").value, "")
+            self.assertEqual(len(app.screen_stack), 2)  # o did not open a second choice
+        self.assertEqual(len(list(app.directory.iterdir())), 4)
+
+    async def test_changes_by_hand_ask_before_choosing_another_folder(self):
+        app = self.app_for(self.TWO_GAMES)
+        async with app.run_test() as pilot:
+            await self.analyzed(app, pilot)
+            await pilot.press("d", "o")
+            await pilot.pause()
+            self.assertTrue(app.question_open())
+            self.assertIn("Choose another folder?", self.text(app.screen, "#question-text"))
+            await pilot.press("enter")  # No
+            await pilot.pause()
+            self.assertFalse(app.folder_open())
+            self.assertEqual(app.review.moved_count(), 1)
+            await pilot.press("o", "left", "enter")  # Yes
+            await pilot.pause()
+            await pilot.pause()
+            self.assertTrue(app.folder_open())
+
+    async def test_without_a_folder_the_choice_opens_at_the_start(self):
+        other = self.other_folder()
+        config = rf.Config.load(None)
+        app = self.tui.WorkbenchApp(lambda directory, progress=None: rf.Review(
+            rf.scan_directory(directory, config, progress), config), None, "marked",
+            settings_path=other.with_name("settings.json"))
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            await pilot.pause()
+            self.assertTrue(app.folder_open())
+            self.assertTrue(self.same_folder(app.screen.query_one("#folder-path").value, Path.home()))
+            app.screen.query_one("#folder-path").value = str(other)
+            app.screen.query_one("#folder-path").focus()
+            await pilot.press("enter")
+            await self.analyzed(app, pilot)
+            self.assertEqual(self.titles(app), ["Another"])
+            self.assertIn(str(other), self.text(app, "#folder"))
+
+    async def test_folder_can_be_changed_during_analysis(self):
+        other = self.other_folder()
+        release = threading.Event()
+        config = rf.Config.load(None)
+        seen = []
+
+        def analyze(directory, progress=None):
+            seen.append(directory)
+            if directory != other:
+                release.wait(10)  # the first folder hangs, as a large ZIP would
+            return rf.Review(rf.scan_directory(directory, config), config)
+        app = self.app_for(self.TWO_GAMES, analyze=analyze)
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            self.assertIsNone(app.review)  # still analyzing
+            _tree, path = await self.open_folder_choice(app, pilot)
+            path.value = str(other)
+            path.focus()
+            await pilot.press("enter")
+            await pilot.pause(0.3)
+            self.assertEqual(self.titles(app), ["Another"])
+            release.set()
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            self.assertEqual(self.titles(app), ["Another"])  # the old result came too late
+            self.assertEqual(seen[1], other)
+            self.assertNotEqual(seen[0], other)
+
+    async def test_folders_are_read_only_when_opened_and_left_closes_them(self):
+        app = self.app_for(self.TWO_GAMES)
+        (app.directory / "Outer").mkdir()
+        (app.directory / "Outer" / "Inner").mkdir()
+        async with app.run_test() as pilot:
+            await self.analyzed(app, pilot)
+            tree, _path = await self.open_folder_choice(app, pilot)
+            await pilot.press("right")
+            await pilot.pause()
+            outer = tree.cursor_node
+            self.assertEqual(str(outer.label), "Outer")
+            self.assertFalse(outer.data["loaded"])
+            self.assertEqual(list(outer.children), [])
+            await pilot.press("right")  # opens it
+            await pilot.pause()
+            self.assertTrue(outer.data["loaded"])
+            self.assertEqual([str(child.label) for child in outer.children], ["Inner"])
+            await pilot.press("right")  # into it
+            await pilot.pause()
+            inner = tree.cursor_node
+            self.assertEqual(str(inner.label), "Inner")
+            await pilot.press("right")  # has no subfolders: the arrow disappears
+            await pilot.pause()
+            self.assertFalse(inner.allow_expand)
+            await pilot.press("left")  # to the parent
+            await pilot.pause()
+            self.assertIs(tree.cursor_node, outer)
+            await pilot.press("left")  # closes it
+            await pilot.pause()
+            self.assertFalse(outer.is_expanded)
+
+    async def test_folder_choice_speaks_the_language(self):
+        translations.set_language("de")
+        app = self.app_for(self.TWO_GAMES)
+        async with app.run_test() as pilot:
+            await self.analyzed(app, pilot)
+            await self.open_folder_choice(app, pilot)
+            from textual.widgets import Button
+            self.assertEqual(self.text(app.screen, "#folder-title"), "Ordner wählen")
+            self.assertEqual([str(button.label) for button in app.screen.query(Button)], ["Auswählen", "Abbrechen"])
+            self.assertEqual(self.text(app.screen, "#folder-path-label"), "Pfad:")
+            self.assertTrue(self.text(app.screen, "#folder-hint").startswith("Rechts oder Leertaste"))
 
     async def test_x_typed_in_the_filter_deletes_nothing(self):
         app = self.app_for(self.FILTER_GAMES)
