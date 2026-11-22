@@ -27,14 +27,17 @@ REVIEW_PROBLEMS = "problems"
 _REVIEW_SCOPES = {REVIEW_ALL: "marked", REVIEW_PROBLEMS: "problems"}
 DEFAULT_CONFIG_PATH = Path(__file__).with_name("redundanz_config.json")
 DEFAULT_CONFIG = {
-    "region_priority": ["USA", "Europe", "Japan", NO_REGION],
+    # Entries after "none", such as "Beta", push a file back (see Config.rank).
+    "region_priority": ["USA", "Europe", "Japan", NO_REGION, "Beta"],
     "region_aliases": {
         "USA": ["US"],
         "Europe": ["Europa", "EU"],
         "Japan": ["JP", "JPN"],
     },
     "delete_tags": ["Proto"],
-    "low_priority_tags": ["Beta"],
+    # Old: extra info that comes after all others. Its entries are now appended to
+    # region_priority after "none" (Config.__post_init__); the settings drop it in step 3.
+    "low_priority_tags": [],
     "part_tags": ["Disc", "Disk", "CD", "Side", "Seite", "Part", "Teil", "Track"],
     "language": DEFAULT_LANGUAGE,
 }
@@ -99,6 +102,17 @@ def game_key(game: str) -> str:
 
 def parse_filename(filename: str) -> tuple[str, list[str]]:
     """Splits a file name into the game name and the bracket contents."""
+    game, groups = parse_tag_groups(filename)
+    return game, [tag for group in groups for tag in group]
+
+
+def parse_tag_groups(filename: str) -> tuple[str, list[list[str]]]:
+    """Like parse_filename, but keeps the parts of each bracket together.
+
+    "(USA, Japan)" is one group with two parts, "(USA) (Beta)" two groups: the priority list
+    counts the best entry within a group and the worst group (see Config.rank).
+    A version in the game name ("Title v1.1") is a group of its own.
+    """
     ext_match = _EXT_RE.search(filename)
     ext = ext_match.group() if ext_match else ""
     stem = filename[: -len(ext)] if ext else filename
@@ -109,16 +123,18 @@ def parse_filename(filename: str) -> tuple[str, list[str]]:
     if ext and game.casefold().endswith(ext.casefold()):
         game = game[: -len(ext)].strip()
 
-    tags = []
+    groups = []
     name_version = _NAME_VERSION_RE.search(game)
     if name_version:
-        tags.append(name_version.group(1))
+        groups.append([name_version.group(1)])
         game = game[: name_version.start()].strip()
 
     for match in _TAG_RE.finditer(stem):
         content = match.group(1) if match.group(1) is not None else match.group(2)
-        tags.extend(part.strip() for part in content.split(",") if part.strip())
-    return game or stem.strip(), tags
+        parts = [part.strip() for part in content.split(",") if part.strip()]
+        if parts:
+            groups.append(parts)
+    return game or stem.strip(), groups
 
 
 def _matches_tag(tag: str, names: list[str]) -> bool:
@@ -172,9 +188,21 @@ class Config:
         # "keine", "aucune" and so on mean the same as "none" in region_priority.
         for word in NO_REGION_WORDS:
             self._canonical.setdefault(normalize(word), NO_REGION)
+        # Old low priority tags become keywords at the end of the list, after "none".
+        if self.low_priority_tags:
+            merged = list(self.region_priority)
+            if not any(self.canonical(entry) == NO_REGION for entry in merged):
+                merged.append(NO_REGION)
+            known = {self.canonical(entry) for entry in merged}
+            merged += [tag for tag in self.low_priority_tags if self.canonical(tag) not in known]
+            self.region_priority = merged
+            self.low_priority_tags = []
         self._ranks = {}
         for index, region in enumerate(self.region_priority):
             self._ranks.setdefault(self.canonical(region), index)
+        self._none_rank = self._ranks.get(NO_REGION, len(self.region_priority))
+        # Regions with other spellings stay regions wherever they stand (for ZIP contents).
+        self._aliased = {self.canonical(region) for region in self.region_aliases}
 
     @classmethod
     def load(cls, path: Path | None) -> "Config":
@@ -205,30 +233,64 @@ class Config:
         return self._canonical.get(normalized, normalized)
 
     def is_region(self, tag: str) -> bool:
-        return tag != normalize(NO_REGION) and tag in self._ranks
+        """A region of the list: an entry before "none", or one with other spellings anywhere.
 
-    def rank(self, tags: list[str]) -> int:
-        """Smaller is better; without a known region the entry "none" applies.
-
-        Files with extra info from low_priority_tags come after all others
-        and are still sorted by region among themselves.
+        Keywords such as "Beta" after "none" are no regions: a ZIP does not lend them its name.
         """
-        ranks = [self._ranks[tag] for tag in tags if self.is_region(tag)]
-        if ranks:
-            rank = min(ranks)
-        else:
-            rank = self._ranks.get(normalize(NO_REGION), len(self.region_priority))
-        if any(_matches_tag(tag, self.low_priority_tags) for tag in tags):
-            rank += len(self.region_priority) + 1
-        return rank
+        if tag == normalize(NO_REGION) or tag not in self._ranks:
+            return False
+        return self._ranks[tag] < self._none_rank or tag in self._aliased
 
-    def low_priority_number(self, tags: list[str]) -> tuple[int, ...]:
-        """Returns the highest number after a low priority tag: Beta 2 > Beta 1 > Beta; else ()."""
+    def _position(self, tag: str) -> int | None:
+        """The place of a bracket part in the priority list; a keyword also matches "Beta 2"."""
+        tag = self.canonical(tag)
+        if tag == NO_REGION:
+            return None
+        if tag in self._ranks:
+            return self._ranks[tag]
+        positions = [index for index, entry in enumerate(self.region_priority)
+                     if self.canonical(entry) != NO_REGION and _matches_tag(tag, [entry])]
+        return min(positions) if positions else None
+
+    def rank(self, tags: list[str], groups: list[list[str]] | None = None) -> tuple[int, int]:
+        """Smaller is better: (the file's place, its best entry).
+
+        Within one bracket the best entry counts ("(USA, Japan)" counts as USA), across
+        brackets the worst ("(USA) (Beta)" counts as Beta): so an entry at the end of the list,
+        such as Beta after "none", pushes a file back. Without any entry of the list, "none"
+        applies. Among files in the same place, the best entry decides, but never better than
+        "none": a Beta without region and a Beta from a region placed after "none" are equal.
+        groups: the brackets; without them every tag counts as a bracket of its own.
+        """
+        groups = groups if groups is not None else [[tag] for tag in tags]
+        bracket_places = []
+        best = self._none_rank
+        for group in groups:
+            places = [place for place in map(self._position, group) if place is not None]
+            if places:
+                bracket_places.append(min(places))
+                best = min(best, min(places))
+        place = max(bracket_places) if bracket_places else self._none_rank
+        return place, best
+
+    def with_regions(self, regions: list[str]) -> list[str]:
+        """--priority: these regions; without "none" in them, "none" and the keywords after it stay.
+
+        So "--priority USA Europe Japan" still puts Betas last, as the configuration says.
+        """
+        if any(self.canonical(region) == NO_REGION for region in regions):
+            return list(regions)
+        keywords = self.region_priority[self._none_rank:] if self._none_rank < len(self.region_priority) else []
+        given = {self.canonical(region) for region in regions}
+        return list(regions) + [entry for entry in keywords if self.canonical(entry) not in given]
+
+    def keyword_number(self, tags: list[str]) -> tuple[int, ...]:
+        """Returns the highest number after an entry of the list: Beta 2 > Beta 1 > Beta; else ()."""
         best: tuple[int, ...] = ()
         for tag in tags:
             text = normalize(tag)
-            for name in self.low_priority_tags:
-                if not _matches_tag(text, [name]):
+            for name in self.region_priority:
+                if self.canonical(name) == NO_REGION or not _matches_tag(text, [name]):
                     continue
                 match = _NUMBER_RE.fullmatch(text[len(normalize(name)):].strip())
                 if match:
@@ -333,6 +395,8 @@ class Entry:
     zip_defective: bool = False
     notes: list[str] = field(default_factory=list)
     moved: bool = False  # Moved by hand during the review, against the program's decision.
+    # The tags bracket by bracket, for the priority list (Config.rank); None: each tag on its own.
+    tag_groups: list[list[str]] | None = None
     _sha256: str | None = None
     _size: int | None = None
 
@@ -440,10 +504,14 @@ def _adopt_tags_from_zip(entry: Entry, config: Config) -> None:
                 versions.append(tag)
     if regions and not any(config.is_region(tag) for tag in entry.tags):
         entry.tags.extend(regions)
+        if entry.tag_groups is not None:
+            entry.tag_groups.append(list(regions))  # like one bracket "(USA, Europe)"
         entry.notes.append(Note("region_from_zip", regions=", ".join(regions)))
     if versions and not version_number(entry.tags):
         newest = max(versions, key=lambda tag: version_number([tag]))
         entry.tags.append(newest)
+        if entry.tag_groups is not None:
+            entry.tag_groups.append([newest])
         entry.notes.append(Note("version_from_zip", version=newest))
 
 
@@ -465,12 +533,18 @@ def _names(entries: list[Entry]) -> str:
     return ", ".join(entry.path.name for entry in entries)
 
 
+def _rank(entry: Entry, config: Config) -> tuple[int, int]:
+    return config.rank(entry.tags, entry.tag_groups)
+
+
 def _sort_key(entry: Entry, config: Config):
+    place, best = _rank(entry, config)
     return (
-        config.rank(entry.tags),
+        place,
+        best,
         _newest_first(entry.tags),
         # Like a version: The higher number wins, a Beta without a number loses to Beta 1.
-        tuple(-part for part in config.low_priority_number(entry.tags)) + (1,),
+        tuple(-part for part in config.keyword_number(entry.tags)) + (1,),
         len(config.version_key(entry.tags)),
         entry.is_zip,
         entry.path.name.casefold(),
@@ -603,12 +677,12 @@ def analyze_group(entries: list[Entry], config: Config) -> GroupResult:
             if config.version_key(entry.tags) == best_version:
                 keep.append(entry)
             else:
-                if config.rank(entry.tags) == config.rank(best.tags):
+                if _rank(entry, config) == _rank(best, config):
                     if version_number(entry.tags) < version_number(best.tags):
                         entry.notes.append(Note("older_version"))
                     elif (
                         version_number(entry.tags) == version_number(best.tags)
-                        and config.low_priority_number(entry.tags) < config.low_priority_number(best.tags)
+                        and config.keyword_number(entry.tags) < config.keyword_number(best.tags)
                     ):
                         entry.notes.append(Note("older_beta"))
                     else:
@@ -674,8 +748,9 @@ def scan_directory(directory: Path, config: Config, progress=None) -> list[Group
     groups: dict[str, list[Entry]] = {}
     files = sorted((p for p in directory.iterdir() if _is_rom_candidate(p)), key=lambda p: p.name.casefold())
     for path in files:
-        game, tags = parse_filename(path.name)
-        entry = Entry(path, game, [config.canonical(tag) for tag in tags])
+        game, tag_groups = parse_tag_groups(path.name)
+        tag_groups = [[config.canonical(tag) for tag in group] for group in tag_groups]
+        entry = Entry(path, game, [tag for group in tag_groups for tag in group], tag_groups=tag_groups)
         entry.size()  # Here in the background thread, so that showing the list needs no file access.
         groups.setdefault(game_key(game), []).append(entry)
     results = []
@@ -1016,7 +1091,7 @@ def main(argv: list[str] | None = None) -> int:
         except (OSError, ValueError, TypeError) as error:
             raise ValueError(tr("config.unreadable", error=error)) from error
         if args.priority:
-            config = replace(config, region_priority=args.priority)
+            config = replace(config, region_priority=config.with_regions(args.priority))
         if args.delete_tag is not None:
             config = replace(config, delete_tags=args.delete_tag)
         source = "--priority" if args.priority else str(config_path or "")

@@ -340,12 +340,98 @@ class AnalyzeTests(RedundanzTestCase):
             self.names(result.keep), ["Title (USA) (Beta 2) (Disc 1).bin", "Title (USA) (Beta 2) (Disc 2).bin"],
         )
 
-    def test_low_priority_number(self):
+    def test_keyword_number(self):
         for tags, expected in (
             (["Beta 2"], (2,)), (["beta2"], (2,)), (["Beta 1.10"], (1, 10)), (["Beta"], ()),
             (["Beta 2.0"], (2,)), (["Betamax 3"], ()), (["Beta v2"], ()), (["USA", "Beta 4"], (4,)),
         ):
-            self.assertEqual(self.config.low_priority_number(tags), expected, tags)
+            self.assertEqual(self.config.keyword_number(tags), expected, tags)
+
+    # Keywords in the priority list (docs/keywords-plan.md, step 1) --------------------------
+
+    def use_priority(self, *entries, **options):
+        self.config = rf.Config(list(entries), dict(rf.DEFAULT_CONFIG["region_aliases"], **options.get(
+            "aliases", {})), [], list(rf.DEFAULT_CONFIG["part_tags"]))
+
+    def test_beta_at_the_end_of_the_list_loses_to_a_worse_region(self):
+        self.use_priority("USA", "Europe", "Japan", "none", "Beta")
+        self.write("Title (USA) (Beta).bin")
+        self.write("Title (Japan).bin")
+        result = self.single()
+        self.assertEqual(self.names(result.keep), ["Title (Japan).bin"])
+        self.assertEqual(self.names(result.marked), ["Title (USA) (Beta).bin"])
+
+    def test_several_regions_in_one_bracket_still_count_with_the_best(self):
+        # The user's own list puts Japan after "none": (USA, Japan) must still count as USA.
+        self.use_priority("Germany", "Europe", "USA", "none", "Japan", "Beta")
+        self.write("Title (USA, Japan).bin")
+        self.write("Title (Europe) (Beta).bin")
+        self.write("Title.bin")
+        result = self.single()
+        self.assertEqual(self.names(result.keep), ["Title (USA, Japan).bin"])
+        self.assertEqual(self.config.rank(["USA", "Japan"], [["USA", "Japan"]]), (2, 2))
+        self.assertEqual(self.config.rank(["Japan"]), (4, 3))  # after "none", and no better than it
+
+    def test_region_after_none_loses_to_a_file_without_region(self):
+        self.use_priority("Germany", "Europe", "USA", "none", "Japan")
+        self.write("Title (Japan).bin")
+        self.write("Title (Rev 1).bin")
+        self.assertEqual(self.names(self.single().keep), ["Title (Rev 1).bin"])
+
+    def test_order_of_the_keywords_counts(self):
+        self.use_priority("USA", "Europe", "none", "Beta", "Proto")
+        self.write("Title (USA) (Proto).bin")
+        self.write("Title (Europe) (Beta).bin")
+        self.assertEqual(self.names(self.single().keep), ["Title (Europe) (Beta).bin"])
+        self.use_priority("USA", "Europe", "none", "Proto", "Beta")
+        self.assertEqual(self.names(self.single().keep), ["Title (USA) (Proto).bin"])
+
+    def test_keywords_match_whole_words_with_numbers(self):
+        self.use_priority("USA", "none", "Alpha")
+        self.write("Title (USA) (Alpha 2).bin")
+        self.write("Title (USA) (Alpha 1).bin")
+        result = self.single()
+        self.assertEqual(self.names(result.keep), ["Title (USA) (Alpha 2).bin"])
+        self.assertIn("Older beta", result.marked[0].notes)
+        self.write("Title (USA) (Alphabet).bin")  # no keyword: an ordinary USA file
+        result = self.single()
+        self.assertEqual(self.names(result.keep), ["Title (USA) (Alphabet).bin"])
+        self.assertEqual(self.names(result.marked), ["Title (USA) (Alpha 2).bin", "Title (USA) (Alpha 1).bin"])
+
+    def test_old_low_priority_tags_become_keywords_after_none(self):
+        config = rf.Config(["USA", "none", "Japan"], {}, [], [], ["Beta", "Proto", "japan"])
+        self.assertEqual(config.region_priority, ["USA", "none", "Japan", "Beta", "Proto"])
+        self.assertEqual(config.low_priority_tags, [])
+        without_none = rf.Config(["USA", "Europe"], {}, [], [], ["Beta"])
+        self.assertEqual(without_none.region_priority, ["USA", "Europe", "none", "Beta"])
+
+    def test_old_configuration_file_with_low_priority_tags_still_loads(self):
+        temp = tempfile.TemporaryDirectory()  # not in the game folder: it would count as a game
+        self.addCleanup(temp.cleanup)
+        path = Path(temp.name) / "old.json"
+        path.write_text('{"region_priority": ["Germany", "Europe", "USA", "none", "Japan"], '
+                        '"low_priority_tags": ["Beta", "Proto", "Alpha"], "delete_tags": []}', encoding="utf-8")
+        self.config = rf.Config.load(path)
+        self.assertEqual(self.config.region_priority,
+                         ["Germany", "Europe", "USA", "none", "Japan", "Beta", "Proto", "Alpha"])
+        self.write("Title (USA) (Beta).bin")
+        self.write("Title (Japan).bin")
+        self.assertEqual(self.names(self.single().keep), ["Title (Japan).bin"])
+
+    def test_priority_option_keeps_the_keywords_of_the_configuration(self):
+        config = rf.Config(["USA", "Europe", "none", "Beta", "Proto"], {}, [], [])
+        self.assertEqual(config.with_regions(["Japan", "USA"]), ["Japan", "USA", "none", "Beta", "Proto"])
+        self.assertEqual(config.with_regions(["Japan", "none"]), ["Japan", "none"])  # given whole
+        self.assertEqual(config.with_regions(["Beta", "USA"]), ["Beta", "USA", "none", "Proto"])
+
+    def test_keyword_inside_a_zip_is_no_region_for_its_name(self):
+        self.use_priority("USA", "Europe", "none", "Beta")
+        self.write_zip("Title.zip", {"Title (Beta).bin": b"zip"})
+        self.write("Title (Europe).bin", b"plain")
+        result = self.single()
+        zip_entry = next(entry for entry in result.keep + result.marked if entry.is_zip)
+        self.assertNotIn("beta", zip_entry.tags)
+        self.assertFalse(any("Beta" in note for note in zip_entry.notes))
 
     def test_much_smaller_file_is_kept_as_suspected_save_file(self):
         self.write("Title (USA).sfc", b"x" * 1000)
@@ -939,7 +1025,7 @@ class LanguageTests(RedundanzTestCase):
     def test_no_region_word_of_every_language_works(self):
         for word in translations.NO_REGION_WORDS:
             config = rf.Config(["USA", word, "Japan"], {}, [], [])
-            self.assertEqual(config.rank([]), 1, word)
+            self.assertEqual(config.rank([]), (1, 1), word)  # (place, best entry): both "none"
             self.assertFalse(config.is_region(config.canonical(word)), word)
 
     def test_rules_decide_the_same_in_every_language(self):
@@ -1000,7 +1086,7 @@ class ConfigFileTests(RedundanzTestCase):
     def test_missing_file_shows_the_defaults(self):
         values = self.config_file().read()
         self.assertEqual(values, {
-            "language": "en", "region_priority": ["USA", "Europe", "Japan", "none"], "low_priority_tags": ["Beta"],
+            "language": "en", "region_priority": ["USA", "Europe", "Japan", "none", "Beta"], "low_priority_tags": [],
         })
 
     def test_write_keeps_other_entries_and_their_order(self):
@@ -1420,7 +1506,7 @@ class ReviewWindowTests(RedundanzTestCase):
         dialog = window.settings_panel
         self.assertEqual(dialog.language.get(), "English")
         self.assertEqual(dialog.region_list(), ["USA", "Japan"])
-        self.assertEqual(dialog.tag_list(), ["Beta"])
+        self.assertEqual(dialog.tag_list(), [])  # Beta is now a keyword in the default priority list
         window.open_settings()  # Already open: nothing happens.
         self.assertIs(window.settings_panel, dialog)
 
