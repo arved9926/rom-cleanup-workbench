@@ -167,6 +167,10 @@ Ein Spiel gilt als problematisch, wenn
 
 Das Fenster verwendet `tkinter`, das zur üblichen Python-Installation unter Windows gehört. Fehlt es, meldet das Programm das und löscht nichts.
 
+## Nach der maschinellen Bereinigung
+
+Auch nach der maschinellen Bereinigung können noch redundante Spielversionen vorhanden sein. Diese kannst du am einfachsten über die Filterfunktion finden (Taste `/` und dann den Namen des Spiels). Danach kannst du dann die noch zu löschenden Dateien markieren.
+
 ## Terminal-Version (Linux)
 
 Dasselbe Programm läuft auch in einem Textterminal, zum Beispiel über SSH (PuTTY, MobaXterm), in `tmux` oder auf der Linux-Konsole. Es zeigt dieselbe Liste, wendet dieselben Regeln an und teilt `redundanz_config.json`, `rom_cleanup_workbench_settings.json` und `translations.py` mit dem Fenster.
