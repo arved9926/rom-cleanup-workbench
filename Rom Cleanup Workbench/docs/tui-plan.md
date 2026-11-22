@@ -1,6 +1,8 @@
 # Handover: Linux terminal version (`--tui`)
 
-Status: **steps 1–6 of 14 done.** The terminal version shows the analyzed list; the cursor and a selection of several rows can be moved, `d`/`p` mark and keep files, and the three views can be chosen with `1`/`2`/`3` or by clicking. Next: step 7 (filter). Textual 8.2.8 is installed for the user.
+Status: **steps 1–6 of 14 done.** The terminal version shows the analyzed list; the cursor and a selection of several rows can be moved, `d`/`p` mark and keep files, and the three views can be chosen with `1`/`2`/`3` or by clicking. Next: step 7 (filter). Developed with Python 3.12.3 and Textual 8.2.8.
+
+**Moved to a new Windows computer (2026-11-22).** Before step 7 there: `git clone https://github.com/arved9926/rom-cleanup-workbench.git`, `pip install textual==8.2.8`, then `python -m unittest` in `Rom Cleanup Workbench` (322 tests must pass). Not in the repository, by design: `rom_cleanup_workbench_settings.json` (per-computer, created again on first start) and the `.pptx` presentation (copy by hand if needed).
 
 ## Decisions (agreed with the user)
 
