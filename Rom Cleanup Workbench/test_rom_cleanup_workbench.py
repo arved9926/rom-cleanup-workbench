@@ -4160,6 +4160,268 @@ class TerminalVersionTests(unittest.IsolatedAsyncioTestCase):
             self.assertFalse(app.folder_open())
             self.assertEqual(app.review.moved_count(), 1)
 
+    # Step 11: settings -------------------------------------------------------------------------
+
+    def app_with_settings(self, content='{"language": "en", "region_priority": ["USA", "Japan"]}'):
+        """An app with a configuration file, which the analysis reads again each time, as main does."""
+        folder = self.demo_folder({"Title (USA).bin": b"a", "Title (Japan).bin": b"b"})
+        path = folder.with_name("redundanz_config.json")
+        path.write_text(content, encoding="utf-8")
+
+        def analyze(directory, progress=None):
+            config = rf.Config.load(path)
+            return rf.Review(rf.scan_directory(directory, config, progress), config, str(path))
+        return self.tui.WorkbenchApp(analyze, folder, "marked", rf.ConfigFile(path),
+                                     settings_path=folder.with_name("settings.json"))
+
+    async def open_settings(self, app, pilot, key="e"):
+        await pilot.press(key)
+        await pilot.pause()
+        await pilot.pause()
+        self.assertTrue(app.settings_open())
+        return app.screen
+
+    def region_texts(self, screen):
+        listing = screen.query_one("#regions")
+        return [str(listing.get_option_at_index(index).prompt) for index in range(listing.option_count)]
+
+    async def test_without_a_configuration_file_e_does_nothing(self):
+        app = self.app_for(self.TWO_GAMES)
+        async with app.run_test() as pilot:
+            await self.analyzed(app, pilot)
+            await pilot.press("e", "ctrl+e")
+            await pilot.pause()
+            self.assertFalse(app.settings_open())
+            self.assertFalse(app.question_open())
+
+    async def test_settings_show_the_current_values(self):
+        app = self.app_with_settings()
+        async with app.run_test(size=(110, 32)) as pilot:
+            await self.analyzed(app, pilot)
+            screen = await self.open_settings(app, pilot, key="ctrl+e")
+            self.assertEqual(self.text(screen, "#settings-title"), "Settings")
+            self.assertIn("redundanz_config.json", self.text(screen, "#settings-file"))
+            self.assertTrue(screen.query_one("#language-en").value)
+            self.assertEqual(screen.language_code(), "en")
+            self.assertEqual(screen.region_list(), ["USA", "Japan"])
+            self.assertEqual(self.region_texts(screen), ["USA", "Japan"])
+            self.assertEqual(screen.tag_list(), rf.DEFAULT_CONFIG["low_priority_tags"])
+            self.assertIs(app.focused, screen.query_one("#new-region"))  # as in the window
+            await pilot.press("e")  # typed into the field; no second settings screen
+            self.assertEqual(screen.query_one("#new-region").value, "e")
+            self.assertEqual(len(app.screen_stack), 2)
+
+    async def test_regions_are_moved_added_and_removed(self):
+        app = self.app_with_settings()
+        async with app.run_test(size=(110, 32)) as pilot:
+            await self.analyzed(app, pilot)
+            screen = await self.open_settings(app, pilot)
+            listing = screen.query_one("#regions")
+            listing.highlighted = 1
+            screen.set_focus(listing)
+            await pilot.press("shift+up")
+            self.assertEqual(screen.region_list(), ["Japan", "USA"])
+            self.assertEqual(listing.highlighted, 0)
+            await pilot.press("shift+up")  # already at the top: nothing changes
+            self.assertEqual(screen.region_list(), ["Japan", "USA"])
+            await pilot.click("#region-down")  # the buttons do the same
+            await pilot.pause()
+            self.assertEqual(screen.region_list(), ["USA", "Japan"])
+            await pilot.click("#region-up")
+            await pilot.pause()
+            field = screen.query_one("#new-region")
+            screen.set_focus(field)
+            field.value = " Germany "
+            await pilot.press("enter")
+            field.value = "usa"
+            await pilot.press("enter")  # already there: highlighted instead of added twice
+            self.assertEqual(screen.region_list(), ["Japan", "USA", "Germany"])
+            self.assertEqual(self.region_texts(screen), ["Japan", "USA", "Germany"])
+            self.assertEqual(listing.highlighted, 1)
+            self.assertEqual(field.value, "")
+            screen.set_focus(listing)
+            await pilot.press("delete")
+            self.assertEqual(screen.region_list(), ["Japan", "Germany"])
+            field.value = "Europe [!]"
+            await pilot.click("#region-add")
+            await pilot.pause()
+            self.assertEqual(self.region_texts(screen)[-1], "Europe [!]")  # brackets stay literal
+            await pilot.click("#region-remove")
+            await pilot.pause()
+            self.assertEqual(screen.region_list(), ["Japan", "Germany"])
+
+    async def test_saving_writes_the_file_and_analyzes_again(self):
+        app = self.app_with_settings()
+        async with app.run_test(size=(110, 32)) as pilot:
+            await self.analyzed(app, pilot)
+            self.assertEqual(self.text(app, "#status"), app.review.status(False, False, ""))
+            before = app.review
+            screen = await self.open_settings(app, pilot)
+            listing = screen.query_one("#regions")
+            listing.highlighted = 1
+            screen.set_focus(listing)
+            await pilot.press("shift+up")
+            screen.query_one("#tags").value = "Beta, Proto"
+            await pilot.press("ctrl+s")
+            await self.analyzed(app, pilot)
+            self.assertFalse(app.settings_open())
+            self.assertFalse(app.question_open())  # the language stayed the same: no message
+            values = app.config_file.read()
+            self.assertEqual(values["region_priority"], ["Japan", "USA"])
+            self.assertEqual(values["low_priority_tags"], ["Beta", "Proto"])
+            self.assertIsNot(app.review, before)  # analyzed again with the new rules
+            self.assertIn("Priority: Japan > USA", self.text(app, "#info"))
+            self.assertIn("+ Title (Japan).bin", self.row_texts(app))
+            self.assertIs(app.focused, app.query_one("#games"))
+
+    async def test_new_language_is_announced_for_the_next_start(self):
+        app = self.app_with_settings()
+        async with app.run_test(size=(110, 32)) as pilot:
+            await self.analyzed(app, pilot)
+            before = app.review
+            await self.open_settings(app, pilot)
+            await pilot.click("#language-it")
+            await pilot.pause()
+            await pilot.click("#settings-save")
+            await pilot.pause()
+            self.assertEqual(app.config_file.read()["language"], "it")
+            self.assertTrue(app.question_open())
+            self.assertEqual(self.text(app.screen, "#question-title"), "Language changed")
+            self.assertIn("next start", self.text(app.screen, "#question-text"))
+            await pilot.press("enter")
+            await pilot.pause()
+            self.assertIs(app.review, before)  # priority and tags are unchanged: nothing to analyze again
+            self.assertEqual(translations.current_language(), "en")  # the open program keeps its language
+
+    async def test_saving_asks_before_dropping_changes_by_hand(self):
+        app = self.app_with_settings()
+        async with app.run_test(size=(110, 32)) as pilot:
+            await self.analyzed(app, pilot)
+            await pilot.press("d")
+            original = app.config_file.path.read_text(encoding="utf-8")
+            screen = await self.open_settings(app, pilot)
+            screen.query_one("#regions").highlighted = 1
+            screen.set_focus(screen.query_one("#regions"))
+            await pilot.press("shift+up", "ctrl+s")
+            await pilot.pause()
+            self.assertTrue(app.question_open())
+            self.assertIn("Save the settings and analyze again?", self.text(app.screen, "#question-text"))
+            await pilot.press("enter")  # No
+            await pilot.pause()
+            self.assertEqual(app.config_file.path.read_text(encoding="utf-8"), original)
+            self.assertTrue(app.settings_open())
+            self.assertEqual(app.review.moved_count(), 1)
+            await pilot.press("ctrl+s")
+            await pilot.pause()
+            await pilot.press("left", "enter")  # Yes
+            await self.analyzed(app, pilot)
+            self.assertFalse(app.settings_open())
+            self.assertEqual(app.config_file.read()["region_priority"], ["Japan", "USA"])
+            self.assertEqual(app.review.moved_count(), 0)
+
+    async def test_wrong_settings_are_reported_and_the_settings_stay_open(self):
+        app = self.app_with_settings()
+        async with app.run_test(size=(110, 32)) as pilot:
+            await self.analyzed(app, pilot)
+            original = app.config_file.path.read_text(encoding="utf-8")
+            screen = await self.open_settings(app, pilot)
+            screen.set_focus(screen.query_one("#regions"))
+            await pilot.press("delete", "delete")
+            self.assertEqual(screen.region_list(), [])
+            await pilot.press("ctrl+s")
+            await pilot.pause()
+            self.assertIn("kind-error", app.screen.classes)
+            self.assertEqual(self.text(app.screen, "#question-title"), "Settings not saved")
+            self.assertIn("at least one region", self.text(app.screen, "#question-text"))
+            await pilot.press("enter")
+            await pilot.pause()
+            self.assertIs(app.screen, screen)
+            screen.query_one("#new-region").value = "USA"
+            screen.add_region()
+            screen.query_one("#tags").value = "Beta, beta"
+            await pilot.press("ctrl+s")
+            await pilot.pause()
+            self.assertIn('"beta" appears more than once', self.text(app.screen, "#question-text"))
+            await pilot.press("escape")  # OK
+            await pilot.pause()
+            self.assertIs(app.screen, screen)
+            self.assertEqual(app.config_file.path.read_text(encoding="utf-8"), original)
+
+    async def test_broken_configuration_is_not_opened_for_editing(self):
+        app = self.app_with_settings("{not json")
+        async with app.run_test() as pilot:
+            await self.analyzed(app, pilot)  # the analysis reports it too
+            await pilot.press("enter")
+            await pilot.pause()
+            await pilot.press("e")
+            await pilot.pause()
+            self.assertFalse(app.settings_open())
+            self.assertTrue(app.question_open())
+            self.assertEqual(self.text(app.screen, "#question-title"), "Settings not saved")
+            await pilot.press("enter")
+            await pilot.pause()
+            self.assertEqual(app.config_file.path.read_text(encoding="utf-8"), "{not json")
+
+    async def test_list_is_locked_while_the_settings_are_open(self):
+        app = self.app_with_settings()
+        async with app.run_test(size=(110, 32)) as pilot:
+            await self.analyzed(app, pilot)
+            screen = await self.open_settings(app, pilot)
+            screen.set_focus(screen.query_one("#regions"))
+            await pilot.press("d", "p", "x", "o", "3", "slash", "r")
+            await pilot.pause()
+            self.assertIs(app.screen, screen)
+            self.assertEqual(app.review.moved_count(), 0)
+            self.assertEqual(app.scope, "marked")
+            self.assertEqual(app.query_one("#filter").value, "")
+            self.assertEqual(len(app.screen_stack), 2)
+            await pilot.press("tab")  # Tab moves between the fields
+            self.assertIsNot(app.focused, screen.query_one("#regions"))
+            self.assertIs(app.focused.screen, screen)
+            screen.set_focus(screen.query_one("#tags"))
+            await self.burst(app, pilot, *"dxo")  # typed into the field, also when fast
+            self.assertTrue(screen.query_one("#tags").value.endswith("dxo"))
+            self.assertEqual(app.review.moved_count(), 0)
+        self.assertEqual(len(list(app.directory.iterdir())), 2)
+
+    async def test_escape_and_ctrl_e_close_only_the_settings(self):
+        app = self.app_with_settings()
+        async with app.run_test(size=(110, 32)) as pilot:
+            await self.analyzed(app, pilot)
+            original = app.config_file.path.read_text(encoding="utf-8")
+            screen = await self.open_settings(app, pilot)
+            screen.query_one("#tags").value = "Changed"
+            await pilot.press("escape")
+            await pilot.pause()
+            self.assertFalse(app.settings_open())
+            self.assertTrue(app.is_running)
+            self.assertIs(app.focused, app.query_one("#games"))
+            await self.open_settings(app, pilot)
+            self.assertNotEqual(app.screen.query_one("#tags").value, "Changed")  # nothing was kept
+            await pilot.press("ctrl+e")
+            await pilot.pause()
+            self.assertFalse(app.settings_open())
+            await self.open_settings(app, pilot)
+            await pilot.click("#settings-cancel")
+            await pilot.pause()
+            self.assertFalse(app.settings_open())
+            self.assertEqual(app.config_file.path.read_text(encoding="utf-8"), original)
+
+    async def test_settings_speak_the_language(self):
+        translations.set_language("de")
+        app = self.app_with_settings('{"language": "de", "region_priority": ["USA", "Japan"]}')
+        async with app.run_test(size=(110, 32)) as pilot:
+            await self.analyzed(app, pilot)
+            screen = await self.open_settings(app, pilot)
+            from textual.widgets import Button, RadioButton
+            self.assertEqual(self.text(screen, "#settings-title"), "Einstellungen")
+            self.assertEqual([str(button.label) for button in screen.query(Button)],
+                             ["Speichern", "Abbrechen", "Hoch", "Runter", "Entfernen", "Hinzufügen"])
+            self.assertEqual([str(button.label) for button in screen.query(RadioButton)],
+                             ["English", "Deutsch", "Italiano", "Español", "Français", "日本語"])
+            self.assertTrue(screen.query_one("#language-de").value)
+            self.assertTrue(self.text(screen, "#settings-hint").startswith("Umschalt+Hoch/Runter"))
+
     async def test_x_typed_in_the_filter_deletes_nothing(self):
         app = self.app_for(self.FILTER_GAMES)
         async with app.run_test() as pilot:

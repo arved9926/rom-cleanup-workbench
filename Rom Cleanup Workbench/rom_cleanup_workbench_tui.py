@@ -22,9 +22,11 @@ from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
 from textual.geometry import Region
 from textual.screen import ModalScreen, Screen
-from textual.widgets import Button, DataTable, Input, ProgressBar, RadioButton, RadioSet, Static, Tree
+from textual.widgets import (
+    Button, DataTable, Input, OptionList, ProgressBar, RadioButton, RadioSet, Static, Tree,
+)
 
-from translations import tr
+from translations import LANGUAGE_NAMES, current_language, tr
 from workbench_state import (
     SCOPES, SETTINGS_PATH, add_confirmed_saves, drives, format_kb, load_confirmed_saves, load_scope, save_scope,
     scope_flags, subfolders,
@@ -38,7 +40,7 @@ OK = (("dialog.ok", None),)
 # The actions that change or move in the list; a question locks them, as in the window.
 _LIST_ACTIONS = {
     "move_cursor", "move_game", "demote", "promote", "choose_view", "focus_filter", "leave_filter", "proceed",
-    "choose_folder",
+    "choose_folder", "open_settings",
 }
 # As in the window: Redrawing after every deleted file would slow down large deletions.
 DELETE_REDRAW = 0.05
@@ -386,6 +388,148 @@ class FolderScreen(Screen):
         self.dismiss(None)
 
 
+class RegionList(OptionList):
+    """The region priority, best first. Shift+Up/Down move the highlighted region, Delete removes it."""
+
+    BINDINGS = [
+        Binding("shift+up", "screen.move_region(-1)", show=False),
+        Binding("shift+down", "screen.move_region(1)", show=False),
+        Binding("delete", "screen.remove_region", show=False),
+    ]
+
+
+class SettingsScreen(Screen):
+    """Language, region priority and low priority tags, in place of the list as in the window.
+
+    It only edits; the app saves (WorkbenchApp.save_settings), as the window does. A broken file
+    raises ValueError before anything opens, so that it is never overwritten.
+    """
+
+    BINDINGS = [
+        Binding("escape", "cancel", show=False),
+        # Priority: in a text field Ctrl+E would otherwise only move to the end (End does that too).
+        Binding("ctrl+e", "cancel", show=False, priority=True),
+        Binding("ctrl+s", "save", show=False, priority=True),
+    ]
+
+    def __init__(self, config_file):
+        super().__init__()
+        self.config_file = config_file
+        self.values = config_file.read()
+        self.regions = list(self.values["region_priority"])
+        language = self.values["language"]
+        self.language = language if language in LANGUAGE_NAMES else current_language()
+
+    def compose(self) -> ComposeResult:
+        with Horizontal(id="settings-head"):
+            yield Static(tr("settings.title"), id="settings-title", markup=False)
+            yield Static(tr("settings.file", path=self.config_file.path), id="settings-file", markup=False)
+            yield Button(tr("settings.save"), id="settings-save", compact=True)
+            yield Button(tr("settings.cancel"), id="settings-cancel", compact=True)
+        with Horizontal(id="settings-columns"):
+            with Vertical(id="settings-left"):
+                yield Static(tr("settings.regions"), markup=False)
+                with Horizontal(id="regions-row"):
+                    yield RegionList(id="regions")
+                    with Vertical(id="region-buttons"):
+                        yield Button(tr("settings.up"), id="region-up", compact=True)
+                        yield Button(tr("settings.down"), id="region-down", compact=True)
+                        yield Button(tr("settings.remove"), id="region-remove", compact=True)
+                with Horizontal(id="new-region-row"):
+                    yield Input(id="new-region")
+                    yield Button(tr("settings.add"), id="region-add", compact=True)
+            with Vertical(id="settings-right"):
+                yield Static(tr("settings.language"), markup=False)
+                with RadioSet(id="languages"):
+                    for code, name in LANGUAGE_NAMES.items():
+                        yield RadioButton(name, value=code == self.language, id=f"language-{code}")
+                yield Static(tr("settings.language_hint"), id="language-hint", markup=False)
+                yield Static(tr("settings.low_priority"), id="tags-label", markup=False)
+                yield Input(", ".join(self.values["low_priority_tags"]), id="tags")
+        yield Static(tr("settings.tui_hint"), id="settings-hint", markup=False)
+
+    def on_mount(self) -> None:
+        self._show_regions(0 if self.regions else None)
+        self.set_focus(self.query_one("#new-region", Input))  # as in the window
+
+    # The values, as the window's panel gives them ----------------------------------------------
+
+    def language_code(self) -> str:
+        return self.language
+
+    def region_list(self) -> list[str]:
+        return list(self.regions)
+
+    def tag_list(self) -> list[str]:
+        return [tag.strip() for tag in self.query_one("#tags", Input).value.split(",") if tag.strip()]
+
+    # Editing the regions ---------------------------------------------------------------------
+
+    def _show_regions(self, highlighted: int | None) -> None:
+        listing = self.query_one("#regions", RegionList)
+        listing.clear_options()
+        listing.add_options([Text(region) for region in self.regions])  # Text: "[" stays literal
+        if self.regions and highlighted is not None:
+            listing.highlighted = max(0, min(highlighted, len(self.regions) - 1))
+
+    def _highlighted(self) -> int | None:
+        index = self.query_one("#regions", RegionList).highlighted
+        return index if index is not None and 0 <= index < len(self.regions) else None
+
+    def action_move_region(self, step: int) -> None:
+        index = self._highlighted()
+        if index is None or not 0 <= index + step < len(self.regions):
+            return
+        self.regions.insert(index + step, self.regions.pop(index))
+        self._show_regions(index + step)
+
+    def action_remove_region(self) -> None:
+        index = self._highlighted()
+        if index is not None:
+            del self.regions[index]
+            self._show_regions(index)
+
+    def add_region(self) -> None:
+        field = self.query_one("#new-region", Input)
+        region = field.value.strip()
+        if not region:
+            return
+        existing = [index for index, other in enumerate(self.regions) if other.casefold() == region.casefold()]
+        if existing:
+            self._show_regions(existing[0])  # Already in the list: show it instead of adding it twice.
+        else:
+            self.regions.append(region)
+            self._show_regions(len(self.regions) - 1)
+        field.value = ""
+
+    # Buttons and keys --------------------------------------------------------------------------
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        event.stop()
+        if event.input.id == "new-region":
+            self.add_region()
+
+    def on_radio_set_changed(self, event: RadioSet.Changed) -> None:
+        event.stop()  # not the app's views
+        self.language = event.pressed.id.removeprefix("language-")
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        event.stop()
+        actions = {
+            "settings-save": self.action_save, "settings-cancel": self.action_cancel,
+            "region-up": lambda: self.action_move_region(-1), "region-down": lambda: self.action_move_region(1),
+            "region-remove": self.action_remove_region, "region-add": self.add_region,
+        }
+        actions[event.button.id]()
+
+    def action_save(self) -> None:
+        self.app.save_settings(self)
+
+    def action_cancel(self) -> None:
+        """Returns to the list without saving."""
+        self.dismiss(None)
+
+
 class WorkbenchApp(App):
     """The terminal window: the same rows as the Windows window, from top to bottom."""
 
@@ -437,6 +581,35 @@ class WorkbenchApp(App):
     #folder-tree { height: 1fr; background: #000000; }
     #folder-tree > .tree--cursor { background: #0a4a8a; color: #ffffff; }
     #folder-hint { height: auto; margin-top: 1; }
+    SettingsScreen { background: #000000; padding: 1 2; }
+    SettingsScreen Button { background: #333333; color: #ffffff; min-width: 10; }
+    SettingsScreen Button:focus { background: #0a4a8a; text-style: bold; }
+    SettingsScreen Input { height: 1; border: none; padding: 0 1; background: #222222; color: #ffffff; }
+    SettingsScreen Input:focus { border: none; background: #333333; }
+    #settings-head { height: 1; margin-bottom: 1; }
+    #settings-title { width: auto; text-style: bold; margin-right: 2; }
+    #settings-file { width: 1fr; color: #aaaaaa; }
+    #settings-head > Button { margin-left: 2; }
+    #settings-columns { height: 1fr; }
+    #settings-left { width: 1fr; margin-right: 2; }
+    #settings-right { width: 1fr; }
+    #regions-row { height: 1fr; min-height: 5; margin-top: 1; }
+    #regions { width: 1fr; height: 1fr; border: none; background: #222222; }
+    #regions:focus { border: none; }
+    #regions > .option-list--option-highlighted { background: #0a4a8a; color: #ffffff; }
+    #region-buttons { width: 14; height: auto; margin-left: 1; }
+    #region-buttons > Button { width: 100%; margin-bottom: 1; }
+    #new-region-row { height: 1; margin-top: 1; }
+    #new-region { width: 1fr; }
+    #new-region-row > Button { margin-left: 1; width: 14; }
+    #languages { height: auto; border: none; background: #000000; margin-top: 1; }
+    #languages:focus-within { border: none; }
+    #languages > RadioButton { background: #000000; color: #ffffff; border: none; }
+    #languages > RadioButton > .toggle--button { color: #333333; background: #333333; }
+    #languages > RadioButton.-on > .toggle--button { color: #e5383b; background: #333333; }
+    #language-hint { margin: 1 0 1 0; color: #aaaaaa; }
+    #tags-label { margin-bottom: 1; }
+    #settings-hint { height: auto; margin-top: 1; }
     """
     BINDINGS = [
         Binding("q", "quit", show=False),
@@ -456,6 +629,7 @@ class WorkbenchApp(App):
         Binding("slash,ctrl+f", "focus_filter", show=False, priority=True),
         Binding("x,X,ctrl+l", "proceed", show=False),
         Binding("o,O,ctrl+o", "choose_folder", show=False),
+        Binding("e,E,ctrl+e", "open_settings", show=False),
     ]
 
     def __init__(self, analyze, directory: Path | None, scope: str | None = None, config_file=None,
@@ -862,6 +1036,45 @@ class WorkbenchApp(App):
         self.query_one("#games", GameTable).focus()
         self.start_analysis()
 
+    # Settings ---------------------------------------------------------------------------------
+
+    def action_open_settings(self) -> None:
+        """e and Ctrl+E show the settings in place of the list; Esc or Ctrl+E again close them."""
+        if self.config_file is None or self.settings_open() or self.folder_open() or self.deleting:
+            return
+        try:
+            screen = SettingsScreen(self.config_file)
+        except ValueError as error:
+            # A broken file is not overwritten: It may contain entries the settings do not know.
+            self.show_message("error", tr("settings.error_title"), str(error))
+            return
+        self.push_screen(screen, lambda _result: self._focus_now(self.query_one("#games", GameTable)))
+
+    def save_settings(self, screen: SettingsScreen) -> None:
+        """Writes the settings, as the window does; a new priority or new tags take effect at once."""
+        language, regions, tags = screen.language_code(), screen.region_list(), screen.tag_list()
+        before = screen.values
+        rules_changed = regions != before["region_priority"] or tags != before["low_priority_tags"]
+
+        def write() -> None:
+            try:
+                self.config_file.write(language, regions, tags)
+            except (OSError, ValueError) as error:
+                self.show_message("error", tr("settings.error_title"), str(error))  # the settings stay open
+                return
+            screen.dismiss(None)
+            if language != before["language"]:
+                # The open program keeps its language, so that the list and its notes match.
+                self.show_message("info", tr("settings.restart_title"), tr("settings.language_hint"))
+            if rules_changed and self.directory is not None:
+                self.start_analysis()
+
+        if rules_changed and self.review is not None and self.review.moved_count():
+            self.ask("question", tr("window.discard_title"), tr("settings.discard"),
+                     then=lambda yes: write() if yes else None)
+        else:
+            write()
+
     # Cursor and selection ---------------------------------------------------------------------
 
     def _keys(self) -> list[str]:
@@ -968,9 +1181,13 @@ class WorkbenchApp(App):
     def folder_open(self) -> bool:
         return any(isinstance(screen, FolderScreen) for screen in self.screen_stack)
 
+    def settings_open(self) -> bool:
+        return any(isinstance(screen, SettingsScreen) for screen in self.screen_stack)
+
     def check_action(self, action: str, parameters) -> bool | None:
-        # In the folder choice, a "d" or "x" must not act on the list behind it.
-        if action in _LIST_ACTIONS and (self.question_open() or self.deleting or self.folder_open()):
+        # In the folder choice or the settings, a "d" or "x" must not act on the list behind them.
+        locked = self.question_open() or self.deleting or self.folder_open() or self.settings_open()
+        if action in _LIST_ACTIONS and locked:
             return False
         if action in ("focus_filter", "move_game") and self._filter_focused():
             # "/" typed in the field is a "/", Ctrl+F there selects the text, and Tab reaches
