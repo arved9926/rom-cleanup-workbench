@@ -116,22 +116,24 @@ python3 -m venv ~/venvs/rom-cleanup-workbench
 
 Without Textual, the program says so and deletes nothing. The screen has the rows of the window from top to bottom: the green title row with the folder, a help row, the priority, the list, the filter field, the three views and the green status row. In the list, each game starts with its name in bold, followed by dashes up to the right edge; a note such as `Different spellings of the name` stands in that line. In a narrow terminal, such as PuTTY's 80 columns, long file names and notes wrap in their column instead of leaving the screen. `Nothing to do.` blinks with the terminal's own blinking; in PuTTY, blinking text may have to be switched on first. Questions and messages appear in a frame over the list, with buttons in the program's language; `No` is preselected.
 
+The help row shows the keys as `key:action`, for example `x:delete  k:keep`. The terminal version has its own keys; the window keeps `D`, `P` and the `Ctrl` keys.
+
 | Key | Effect |
 | --- | --- |
 | Arrow keys | select a row, with Shift several |
 | `Tab` / `Shift+Tab` | next / previous game; its first file is selected |
-| `d` / `p` | mark the selected files for deletion / keep them |
+| `x` / `k` | mark the selected files for deletion / keep them |
 | `1` `2` `3` | the views `Problematic deletion marks`, `All deletion marks`, `All ROM files` |
-| `/` or `Ctrl+F` | go to the filter field (`Enter`, `Tab` or the down arrow return, `Esc` clears) |
-| `x` or `Ctrl+L` | delete after a confirmation (as `Proceed...`) |
-| `o` or `Ctrl+O` | choose another folder: `Right` or `Space` opens a folder, `Left` closes it, `Enter` chooses; a path can also be typed |
-| `e` or `Ctrl+E` | settings: `Shift+Up`/`Shift+Down` move a region, `Delete` removes it, `Ctrl+S` saves, `Esc` cancels |
+| `/` | go to the filter field (`Enter`, `Tab` or the down arrow return, `Esc` clears) |
+| `Enter` | execute: delete after a confirmation (as `Proceed...`) |
+| `f` | choose another folder: `Right` or `Space` opens a folder, `Left` closes it, `Enter` chooses; a path can also be typed |
+| `s` | settings: `Shift+Up`/`Shift+Down` move a region, `Delete` removes it, `Ctrl+S` saves, `Esc` cancels |
 | `r` or `F5` | analyze again |
 | `c` or `F1` | show the credits (`c` too, because some terminals keep `F1` for their own help) |
 | `q` or `Esc` | close without deleting anything; after changes by hand the program asks first |
 | In a question | `Left`/`Right` choose a button, `Enter` presses it, `Esc` answers `No` |
 
-The mouse works too: a click selects a row, the wheel scrolls, and the views and buttons can be clicked. Letters typed in a field stay in the field, also when typed fast or pasted: a `d` in the filter never marks a file.
+The mouse works too: a click selects a row, the wheel scrolls, and the views and buttons can be clicked. Letters typed in a field stay in the field, also when typed fast or pasted: an `x` in the filter never marks a file.
 
 **Colors and characters.** With 256 colors or more, the terminal version uses the colors of the window, but black behind every game (no stripes). Where the terminal only has 16 colors (`TERM=xterm`, `TERM=linux`), it switches to plain ANSI colors: blue selection, green title and status rows, brown rows changed by hand. On the Linux console, in terminals such as `vt100`, and when the locale names a charset other than UTF-8 (for example `en_US` or `de_DE.ISO-8859-1`), it draws only ASCII characters: views as `(*)`, frames from `+`, `-` and `|`. `--ascii` forces this. PuTTY reports itself as `xterm` (16 colors); for the window's colors, set *Connection → Data → Terminal-type string* to `xterm-256color`. File names and texts in other scripts, such as Japanese, still need a terminal and font that can show them.
 

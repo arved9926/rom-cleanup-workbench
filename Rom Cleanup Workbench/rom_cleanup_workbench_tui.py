@@ -137,6 +137,35 @@ def _game_of(key: str) -> int | None:
     return int(digits) if digits else None
 
 
+class HelpLine:
+    """The help row: entries such as "r:analyze again", separated by two spaces.
+
+    A narrow terminal breaks the row only between entries, never inside one. str() gives the text.
+    """
+
+    def __init__(self, text: str):
+        self.text = text
+
+    def __str__(self) -> str:
+        return self.text
+
+    def __rich_measure__(self, console, options) -> Measurement:
+        return Measurement(1, cell_len(self.text))
+
+    def __rich_console__(self, console, options):
+        width = max(1, options.max_width)
+        line = ""
+        for entry in (part.strip() for part in self.text.split("  ")):
+            if not entry:
+                continue
+            candidate = f"{line}  {entry}" if line else entry
+            if line and cell_len(candidate) > width:
+                yield from Text(line).wrap(console, width)
+                candidate = entry
+            line = candidate
+        yield from Text(line).wrap(console, width)  # an entry longer than the row still wraps
+
+
 class DashLine:
     """A cell of a game's title row: its text, then "-" up to the right end of the column.
 
@@ -224,6 +253,7 @@ class GameTable(DataTable):
         Binding("down", "app.move_cursor(1, False)", show=False),
         Binding("shift+up", "app.move_cursor(-1, True)", show=False),
         Binding("shift+down", "app.move_cursor(1, True)", show=False),
+        Binding("enter", "app.proceed", show=False),  # execute: delete after a question
     ]
 
     def __init__(self, *args, **kwargs):
@@ -896,19 +926,22 @@ class WorkbenchApp(App):
         # priority: otherwise Tab would move the focus to the next widget, as usual in Textual.
         Binding("tab", "move_game(1)", show=False, priority=True),
         Binding("shift+tab", "move_game(-1)", show=False, priority=True),
-        Binding("d,D", "demote", show=False),
+        # The keys of the user's concept (2026-11-22): x delete, k keep, Enter execute, s settings,
+        # f folder; the old d, p, x (proceed), e, o and the Ctrl keys of the window are gone here.
+        Binding("x,X", "demote", show=False),
+        Binding("k,K", "promote", show=False),
         Binding("1", "choose_view(0)", show=False),
         Binding("2", "choose_view(1)", show=False),
         Binding("3", "choose_view(2)", show=False),
-        Binding("p,P", "promote", show=False),
         # Priority: Textual hands each key to the focused widget as soon as it arrives and only later
         # looks at the normal bindings. "/" must move the focus at once, or the letters typed right
         # after it (fast, pasted or sent by tmux) would still reach the list. In the field itself
         # check_action switches it off, so that "/" is typed there; FilterInput handles the way out.
-        Binding("slash,ctrl+f", "focus_filter", show=False, priority=True),
-        Binding("x,X,ctrl+l", "proceed", show=False),
-        Binding("o,O,ctrl+o", "choose_folder", show=False),
-        Binding("e,E,ctrl+e", "open_settings", show=False),
+        Binding("slash", "focus_filter", show=False, priority=True),
+        # Enter in the list is bound in GameTable too, which would otherwise select the row.
+        Binding("enter", "proceed", show=False),
+        Binding("f,F", "choose_folder", show=False),
+        Binding("s,S", "open_settings", show=False),
         Binding("r,R,f5", "reanalyze", show=False),
         # c as well: some terminals keep F1 for their own help.
         Binding("c,C,f1", "credits", show=False),
@@ -942,7 +975,7 @@ class WorkbenchApp(App):
         with Horizontal(id="title-row"):
             yield Static(APP_NAME, id="title")
             yield Static(self._folder_text(), id="folder", markup=False)
-        yield Static(tr("tui.help"), id="help", markup=False)
+        yield Static(HelpLine(tr("tui.help")), id="help")
         yield Static("", id="info", markup=False)
         table = GameTable(id="games", cursor_type="row", zebra_stripes=False)
         table.add_column(_cell(tr("window.column.file")), key="file")
@@ -1558,7 +1591,8 @@ class WorkbenchApp(App):
     # Helpers ----------------------------------------------------------------------------------
 
     def _folder_text(self) -> str:
-        return tr("window.folder", directory=self.directory) if self.directory else tr("window.no_folder")
+        # Not the window's text: that names Ctrl+O, here the key is f.
+        return tr("window.folder", directory=self.directory) if self.directory else tr("tui.no_folder")
 
     def _set_status(self, text: str) -> None:
         self.query_one("#status", Static).update(text)

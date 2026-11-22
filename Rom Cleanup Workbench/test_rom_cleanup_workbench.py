@@ -3209,7 +3209,7 @@ class TerminalVersionTests(unittest.IsolatedAsyncioTestCase):
         translations.set_language("de")
         app = self.tui.WorkbenchApp(None, None)
         async with app.run_test():
-            self.assertEqual(self.text(app, "#folder"), "Ordner: noch keiner gewählt (Strg+O)")
+            self.assertEqual(self.text(app, "#folder"), "Ordner: noch keiner gewählt (f)")  # the key here is f
 
     async def test_q_ends_the_program(self):
         app = self.tui.WorkbenchApp(None, None)
@@ -3447,14 +3447,14 @@ class TerminalVersionTests(unittest.IsolatedAsyncioTestCase):
             await self.analyzed(app, pilot)
             keep_row = app.cursor_key()
             self.assertEqual(self.row_texts(app)[2], "+ Title (USA).bin")
-            await pilot.press("d")
+            await pilot.press("x")
             self.assertEqual(app.selected_keys(), [keep_row])
             self.assertEqual(app.cursor_key(), keep_row)
             self.assertIn("- Title (USA).bin", self.row_texts(app))
             self.assertIn("By hand: delete", self.note_of(app, "Title (USA).bin"))
             self.assertEqual(app.review.moved_count(), 1)
             self.assertIn(keep_row, app.query_one("#games").moved)
-            await pilot.press("P")
+            await pilot.press("K")
             self.assertEqual(app.review.moved_count(), 0)
             self.assertEqual(self.row_texts(app)[2], "+ Title (USA).bin")
             self.assertNotIn("By hand", self.note_of(app, "Title (USA).bin"))
@@ -3466,7 +3466,7 @@ class TerminalVersionTests(unittest.IsolatedAsyncioTestCase):
             await self.analyzed(app, pilot)
             await pilot.press("down", "down")
             self.assertEqual(app.selected_keys(), ["g0f1"])
-            await pilot.press("p")
+            await pilot.press("k")
             self.assertEqual(self.row_texts(app)[1:4], ["Keep:", "+ Title (USA).bin", "+ Title (Japan).bin"])
             self.assertIn("By hand: keep", self.note_of(app, "Title (Japan).bin"))
             self.assertEqual(app.selected_keys(), ["g0f1"])
@@ -3475,7 +3475,7 @@ class TerminalVersionTests(unittest.IsolatedAsyncioTestCase):
         app = self.app_for({"Title (USA).bin": b"a", "Title (Japan).bin": b"b"})
         async with app.run_test() as pilot:
             await self.analyzed(app, pilot)
-            await pilot.press("d")
+            await pilot.press("x")
             self.assertEqual(self.row_texts(app), ["Title", "Marked for deletion",
                                                    "- Title (Japan).bin", "- Title (USA).bin"])
             self.assertEqual(app.cursor_key(), "g0f0")
@@ -3485,10 +3485,10 @@ class TerminalVersionTests(unittest.IsolatedAsyncioTestCase):
                             "Title (Japan).bin": b"c"})
         async with app.run_test() as pilot:
             await self.analyzed(app, pilot)
-            await pilot.press("up", "d", "up", "d")  # the heading and the game row
+            await pilot.press("up", "x", "up", "x")  # the heading and the game row
             self.assertEqual(app.selected_keys(), ["g0"])
             self.assertEqual(app.review.moved_count(), 0)
-            await pilot.press("down", "down", "shift+down", "d")
+            await pilot.press("down", "down", "shift+down", "x")
             self.assertEqual(app.review.moved_count(), 2)
             self.assertEqual(sum(text.startswith("- ") for text in self.row_texts(app)), 3)
             self.assertEqual(len(app.selected_keys()), 2)
@@ -3498,7 +3498,7 @@ class TerminalVersionTests(unittest.IsolatedAsyncioTestCase):
         async with app.run_test() as pilot:
             await self.analyzed(app, pilot)
             before = self.text(app, "#status")
-            await pilot.press("d")
+            await pilot.press("x")
             self.assertEqual(self.text(app, "#status"), app.review.status(False, False, ""))
             self.assertNotEqual(self.text(app, "#status"), before)
 
@@ -3506,7 +3506,7 @@ class TerminalVersionTests(unittest.IsolatedAsyncioTestCase):
         app = self.tui.WorkbenchApp(None, None)
         async with app.run_test() as pilot:
             await self.started(app, pilot)
-            await pilot.press("d", "p", "down", "tab")
+            await pilot.press("x", "k", "down", "tab")
             self.assertEqual(self.text(app, "#status"), translations.tr("window.choose_folder_status"))
 
     # Step 6: views ------------------------------------------------------------------------------
@@ -3603,7 +3603,7 @@ class TerminalVersionTests(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(app.query_one("#nothing").display)
             await pilot.press("3")
             self.assertFalse(app.query_one("#nothing").display)
-            await pilot.press("d")
+            await pilot.press("x")
             await pilot.press("2")
             self.assertEqual(self.titles(app), ["Other"])
             self.assertEqual(app.review.moved_count(), 1)
@@ -3626,7 +3626,7 @@ class TerminalVersionTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(self.titles(app), ["Two"])
             self.assertIn("Showing: 1 of 2 games", self.text(app, "#status"))
             self.assertIs(app.focused, app.query_one("#games"))
-            await pilot.press("ctrl+f", "escape")
+            await pilot.press("slash", "escape")
             await pilot.pause()
             self.assertEqual(app.query_one("#filter").value, "")
             self.assertEqual(self.titles(app), ["One", "Two"])
@@ -3650,16 +3650,16 @@ class TerminalVersionTests(unittest.IsolatedAsyncioTestCase):
         app = self.app_for(self.FILTER_GAMES)
         async with app.run_test() as pilot:
             await self.analyzed(app, pilot)
-            await pilot.press("slash", *"dpq3", "tab")
+            await pilot.press("slash", *"xkq3", "tab")
             await pilot.pause()
-            self.assertEqual(app.query_one("#filter").value, "dpq3")
+            self.assertEqual(app.query_one("#filter").value, "xkq3")
             self.assertEqual(app.review.moved_count(), 0)
             self.assertEqual(app.scope, "marked")
             self.assertTrue(app.is_running)
             self.assertIs(app.focused, app.query_one("#games"))  # Tab only left the field
             self.assertEqual(self.titles(app), [])
             self.assertIn("Showing: 0 of 2 games", self.text(app, "#status"))
-            await pilot.press("d", "down", "tab")  # an empty list: nothing happens, nothing fails
+            await pilot.press("x", "down", "tab")  # an empty list: nothing happens, nothing fails
             self.assertEqual(app.review.moved_count(), 0)
 
     async def test_filter_only_takes_effect_after_the_delay(self):
@@ -3682,7 +3682,7 @@ class TerminalVersionTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(app.selected_keys(), ["g0f0"])  # a file of One
             await self.filter_for(app, pilot, *"two")
             self.assertEqual(app.selected_keys(), ["g1f0"])
-            await pilot.press("d")
+            await pilot.press("x")
             one, two = app.review.results
             self.assertEqual(app.review._moved_count([one]), 0)
             self.assertEqual(app.review._moved_count([two]), 1)
@@ -3705,7 +3705,7 @@ class TerminalVersionTests(unittest.IsolatedAsyncioTestCase):
         async with app.run_test() as pilot:
             self.assertEqual(self.text(app, "#filter-label"), "Dateinamen filtern:")
             await self.started(app, pilot)
-            await pilot.press("escape", "ctrl+f", "x")  # leave the folder choice; then typing works, nothing fails
+            await pilot.press("escape", "slash", "x")  # leave the folder choice; then typing works, nothing fails
             await pilot.pause(self.tui.FILTER_DELAY + 0.3)
             self.assertEqual(app.query_one("#filter").value, "x")
 
@@ -3796,7 +3796,7 @@ class TerminalVersionTests(unittest.IsolatedAsyncioTestCase):
             await self.analyzed(app, pilot)
             before = app.selected_keys()
             await self.ask(app, pilot)
-            await pilot.press("d", "p", "down", "shift+down", "tab", "3", "slash", "ctrl+f")
+            await pilot.press("x", "k", "down", "shift+down", "tab", "3", "slash", "s", "f")
             await pilot.pause(self.tui.FILTER_DELAY + 0.3)
             self.assertTrue(app.question_open())
             self.assertEqual(app.review.moved_count(), 0)
@@ -3844,7 +3844,7 @@ class TerminalVersionTests(unittest.IsolatedAsyncioTestCase):
         app = self.app_for(self.TWO_GAMES)
         async with app.run_test() as pilot:
             await self.analyzed(app, pilot)
-            await pilot.press("d", "q")
+            await pilot.press("x", "q")
             await pilot.pause()
             self.assertTrue(app.question_open())
             self.assertEqual(self.text(app.screen, "#question-title"), "Discard changes?")
@@ -3871,7 +3871,7 @@ class TerminalVersionTests(unittest.IsolatedAsyncioTestCase):
             raise AssertionError("analyzed again")
         app.analyze = fail
 
-    async def proceed(self, app, pilot, key="x", answer="yes"):
+    async def proceed(self, app, pilot, key="enter", answer="yes"):
         """Presses x (or Ctrl+L), answers the question and waits for the deletion and its message."""
         await pilot.press(key)
         await pilot.pause()
@@ -3884,7 +3884,7 @@ class TerminalVersionTests(unittest.IsolatedAsyncioTestCase):
         app = self.app_for({"Title (USA).bin": b"a", "Title (Japan).bin": b"b"})
         async with app.run_test() as pilot:
             await self.analyzed(app, pilot)
-            await pilot.press("x")
+            await pilot.press("enter")
             await pilot.pause()
             self.assertIn("kind-warning", app.screen.classes)
             self.assertEqual(self.text(app.screen, "#question-text"), app.review.confirm_message(False, False, ""))
@@ -3901,7 +3901,7 @@ class TerminalVersionTests(unittest.IsolatedAsyncioTestCase):
         async with app.run_test() as pilot:
             await self.analyzed(app, pilot)
             self.no_new_analysis(app)
-            await self.proceed(app, pilot, key="ctrl+l")
+            await self.proceed(app, pilot, key="enter")
             self.assertEqual(self.names(app), ["Stays (USA).bin", "Title (USA).bin"])
             self.assertTrue(app.question_open())
             self.assertEqual(self.text(app.screen, "#question-title"), "Deleted")
@@ -3920,7 +3920,7 @@ class TerminalVersionTests(unittest.IsolatedAsyncioTestCase):
         app = self.app_for({"Title (USA).bin": b"a", "Title (Japan).bin": b"b"})
         async with app.run_test() as pilot:
             await self.analyzed(app, pilot)
-            await pilot.press("down", "down", "p", "up", "d")  # keep Japan, then delete USA
+            await pilot.press("down", "down", "k", "up", "x")  # keep Japan, then delete USA
             self.assertEqual(app.review.moved_count(), 2)
             await self.proceed(app, pilot)
             await pilot.press("enter")
@@ -3948,14 +3948,14 @@ class TerminalVersionTests(unittest.IsolatedAsyncioTestCase):
                     time.sleep(0.1)  # time for the keys below
                 return real_delete(report)
             app.review.delete = slow_delete
-            await pilot.press("x", "left", "enter")
+            await pilot.press("enter", "left", "enter")
             await pilot.pause(0.05)
             self.assertTrue(app.deleting)
             self.assertTrue(app.query_one("#progress").display)
             self.assertTrue(self.text(app, "#status").startswith("Deleting: "))
             self.assertTrue(app.query_one("#filter").disabled)
             self.assertTrue(app.query_one("#views").disabled)
-            await pilot.press("d", "3", "slash", "x", "q")
+            await pilot.press("x", "3", "slash", "enter", "q")
             await app.workers.wait_for_complete()
             await pilot.pause()
             self.assertTrue(app.is_running)
@@ -4041,13 +4041,13 @@ class TerminalVersionTests(unittest.IsolatedAsyncioTestCase):
         app = self.app_for({"Title (USA).sfc": b"x" * 1000, "Title.srm": b"x" * 100}, scope="problems")
         async with app.run_test() as pilot:
             await self.analyzed(app, pilot)
-            await pilot.press("x")
+            await pilot.press("enter")
             await pilot.pause()
             self.assertIn("Confirm 1 suspected status or save file(s)", self.text(app.screen, "#question-text"))
             await pilot.press("enter")  # No
             await pilot.pause()
             self.assertEqual(self.titles(app), ["Title"])
-            await pilot.press("x", "left", "enter")
+            await pilot.press("enter", "left", "enter")
             await pilot.pause()
             self.assertTrue(app.query_one("#nothing").display)
             self.assertEqual(len(list(app.directory.iterdir())), 2)
@@ -4056,7 +4056,7 @@ class TerminalVersionTests(unittest.IsolatedAsyncioTestCase):
         app = self.app_for({"Alpha (USA).bin": b"a"})
         async with app.run_test() as pilot:
             await self.analyzed(app, pilot)
-            await pilot.press("x")
+            await pilot.press("enter")
             await pilot.pause()
             self.assertEqual(self.text(app.screen, "#question-title"), "Nothing to delete")
             self.assertEqual(self.buttons(app), ["OK"])
@@ -4069,7 +4069,7 @@ class TerminalVersionTests(unittest.IsolatedAsyncioTestCase):
         async with app.run_test() as pilot:
             await self.analyzed(app, pilot)
             await self.filter_for(app, pilot, *"two")
-            await pilot.press("x")
+            await pilot.press("enter")
             await pilot.pause()
             self.assertIn("Not shown: 1 file(s)", self.text(app.screen, "#question-text"))
             await pilot.press("left", "enter")
@@ -4092,7 +4092,7 @@ class TerminalVersionTests(unittest.IsolatedAsyncioTestCase):
             (folder / name).write_bytes(content)
         return folder
 
-    async def open_folder_choice(self, app, pilot, key="o"):
+    async def open_folder_choice(self, app, pilot, key="f"):
         await pilot.press(key)
         await pilot.pause()
         await pilot.pause()
@@ -4109,7 +4109,7 @@ class TerminalVersionTests(unittest.IsolatedAsyncioTestCase):
             (app.directory / name).mkdir()
         async with app.run_test() as pilot:
             await self.analyzed(app, pilot)
-            tree, path = await self.open_folder_choice(app, pilot, key="ctrl+o")
+            tree, path = await self.open_folder_choice(app, pilot, key="f")
             self.assertTrue(self.same_folder(path.value, app.directory))
             node = tree.cursor_node
             self.assertTrue(self.same_folder(node.data["path"], app.directory))
@@ -4191,7 +4191,7 @@ class TerminalVersionTests(unittest.IsolatedAsyncioTestCase):
         async with app.run_test() as pilot:
             await self.analyzed(app, pilot)
             await self.open_folder_choice(app, pilot)
-            await pilot.press("d", "p", "x", "3", "slash", "o", "tab")
+            await pilot.press("x", "k", "3", "slash", "f", "s", "tab")
             await pilot.pause()
             self.assertTrue(app.folder_open())
             self.assertFalse(app.question_open())
@@ -4205,7 +4205,7 @@ class TerminalVersionTests(unittest.IsolatedAsyncioTestCase):
         app = self.app_for(self.TWO_GAMES)
         async with app.run_test() as pilot:
             await self.analyzed(app, pilot)
-            await pilot.press("d", "o")
+            await pilot.press("x", "f")
             await pilot.pause()
             self.assertTrue(app.question_open())
             self.assertIn("Choose another folder?", self.text(app.screen, "#question-text"))
@@ -4213,7 +4213,7 @@ class TerminalVersionTests(unittest.IsolatedAsyncioTestCase):
             await pilot.pause()
             self.assertFalse(app.folder_open())
             self.assertEqual(app.review.moved_count(), 1)
-            await pilot.press("o", "left", "enter")  # Yes
+            await pilot.press("f", "left", "enter")  # Yes
             await pilot.pause()
             await pilot.pause()
             self.assertTrue(app.folder_open())
@@ -4325,12 +4325,12 @@ class TerminalVersionTests(unittest.IsolatedAsyncioTestCase):
         app = self.app_for(self.FILTER_GAMES)
         async with app.run_test() as pilot:
             await self.analyzed(app, pilot)
-            await self.burst(app, pilot, "slash", *"dxo", "p")
-            self.assertEqual(app.query_one("#filter").value, "dxop")
+            await self.burst(app, pilot, "slash", *"xkf", "s")
+            self.assertEqual(app.query_one("#filter").value, "xkfs")
             self.assertEqual(app.review.moved_count(), 0)
             self.assertFalse(app.question_open())
             self.assertFalse(app.folder_open())
-            await self.burst(app, pilot, "escape", "d")  # back in the list at once: the d acts there
+            await self.burst(app, pilot, "escape", "x")  # back in the list at once: the x acts there
             self.assertEqual(app.query_one("#filter").value, "")
             self.assertEqual(app.review.moved_count(), 1)
 
@@ -4338,7 +4338,7 @@ class TerminalVersionTests(unittest.IsolatedAsyncioTestCase):
         app = self.app_for(self.FILTER_GAMES)
         async with app.run_test() as pilot:
             await self.analyzed(app, pilot)
-            await self.burst(app, pilot, "slash", *"two", "enter", "d")
+            await self.burst(app, pilot, "slash", *"two", "enter", "x")
             self.assertEqual(self.titles(app), ["Two"])
             one, two = app.review.results
             self.assertEqual(app.review._moved_count([one]), 0)
@@ -4348,7 +4348,7 @@ class TerminalVersionTests(unittest.IsolatedAsyncioTestCase):
         app = self.app_for(self.FILTER_GAMES)
         async with app.run_test() as pilot:
             await self.analyzed(app, pilot)
-            await self.burst(app, pilot, "slash", *"two", "tab", "d")
+            await self.burst(app, pilot, "slash", *"two", "tab", "x")
             self.assertEqual(self.titles(app), ["Two"])
             one, two = app.review.results
             self.assertEqual(app.review._moved_count([one]), 0)
@@ -4364,22 +4364,22 @@ class TerminalVersionTests(unittest.IsolatedAsyncioTestCase):
         app = self.app_for({"Title (USA).bin": b"a", "Title (Japan).bin": b"b"})
         async with app.run_test() as pilot:
             await self.analyzed(app, pilot)
-            await self.burst(app, pilot, "x", "left", "enter")
+            await self.burst(app, pilot, "enter", "left", "enter")
             await app.workers.wait_for_complete()
             await pilot.pause()
             self.assertEqual(self.names(app), ["Title (USA).bin"])  # Yes was chosen
-            await self.burst(app, pilot, "enter", "d")  # OK, then the list again
+            await self.burst(app, pilot, "enter", "x")  # OK, then the list again
             self.assertFalse(app.question_open())
 
     async def test_keys_typed_ahead_after_o_stay_in_the_folder_choice(self):
         app = self.app_for(self.TWO_GAMES)
         async with app.run_test() as pilot:
             await self.analyzed(app, pilot)
-            await self.burst(app, pilot, "o", "d", "x", "p")
+            await self.burst(app, pilot, "f", "x", "k", "s")
             self.assertTrue(app.folder_open())
             self.assertFalse(app.question_open())
             self.assertEqual(app.review.moved_count(), 0)
-            await self.burst(app, pilot, "escape", "d")
+            await self.burst(app, pilot, "escape", "x")
             self.assertFalse(app.folder_open())
             self.assertEqual(app.review.moved_count(), 1)
 
@@ -4397,7 +4397,7 @@ class TerminalVersionTests(unittest.IsolatedAsyncioTestCase):
         return self.tui.WorkbenchApp(analyze, folder, "marked", rf.ConfigFile(path),
                                      settings_path=folder.with_name("settings.json"))
 
-    async def open_settings(self, app, pilot, key="e"):
+    async def open_settings(self, app, pilot, key="s"):
         await pilot.press(key)
         await pilot.pause()
         await pilot.pause()
@@ -4449,7 +4449,7 @@ class TerminalVersionTests(unittest.IsolatedAsyncioTestCase):
         app = self.app_for(self.TWO_GAMES)
         async with app.run_test() as pilot:
             await self.analyzed(app, pilot)
-            await pilot.press("e", "ctrl+e")
+            await pilot.press("s", "s")
             await pilot.pause()
             self.assertFalse(app.settings_open())
             self.assertFalse(app.question_open())
@@ -4458,7 +4458,7 @@ class TerminalVersionTests(unittest.IsolatedAsyncioTestCase):
         app = self.app_with_settings()
         async with app.run_test(size=(110, 32)) as pilot:
             await self.analyzed(app, pilot)
-            screen = await self.open_settings(app, pilot, key="ctrl+e")
+            screen = await self.open_settings(app, pilot, key="s")
             self.assertEqual(self.text(screen, "#settings-title"), "Settings")
             self.assertIn("redundanz_config.json", self.text(screen, "#settings-file"))
             self.assertTrue(screen.query_one("#language-en").value)
@@ -4467,8 +4467,8 @@ class TerminalVersionTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(self.region_texts(screen), ["USA", "Japan"])
             self.assertEqual(screen.tag_list(), rf.DEFAULT_CONFIG["delete_tags"])
             self.assertIs(app.focused, screen.query_one("#new-region"))  # as in the window
-            await pilot.press("e")  # typed into the field; no second settings screen
-            self.assertEqual(screen.query_one("#new-region").value, "e")
+            await pilot.press("s")  # typed into the field; no second settings screen
+            self.assertEqual(screen.query_one("#new-region").value, "s")
             self.assertEqual(len(app.screen_stack), 2)
 
     async def test_regions_are_moved_added_and_removed(self):
@@ -4557,7 +4557,7 @@ class TerminalVersionTests(unittest.IsolatedAsyncioTestCase):
         app = self.app_with_settings()
         async with app.run_test(size=(110, 32)) as pilot:
             await self.analyzed(app, pilot)
-            await pilot.press("d")
+            await pilot.press("x")
             original = app.config_file.path.read_text(encoding="utf-8")
             screen = await self.open_settings(app, pilot)
             screen.query_one("#regions").highlighted = 1
@@ -4613,7 +4613,7 @@ class TerminalVersionTests(unittest.IsolatedAsyncioTestCase):
             await self.analyzed(app, pilot)  # the analysis reports it too
             await pilot.press("enter")
             await pilot.pause()
-            await pilot.press("e")
+            await pilot.press("s")
             await pilot.pause()
             self.assertFalse(app.settings_open())
             self.assertTrue(app.question_open())
@@ -4628,7 +4628,7 @@ class TerminalVersionTests(unittest.IsolatedAsyncioTestCase):
             await self.analyzed(app, pilot)
             screen = await self.open_settings(app, pilot)
             screen.set_focus(screen.query_one("#regions"))
-            await pilot.press("d", "p", "x", "o", "3", "slash", "r")
+            await pilot.press("x", "k", "f", "s", "3", "slash", "r")
             await pilot.pause()
             self.assertIs(app.screen, screen)
             self.assertEqual(app.review.moved_count(), 0)
@@ -4639,8 +4639,8 @@ class TerminalVersionTests(unittest.IsolatedAsyncioTestCase):
             self.assertIsNot(app.focused, screen.query_one("#regions"))
             self.assertIs(app.focused.screen, screen)
             screen.set_focus(screen.query_one("#tags"))
-            await self.burst(app, pilot, *"dxo")  # typed into the field, also when fast
-            self.assertTrue(screen.query_one("#tags").value.endswith("dxo"))
+            await self.burst(app, pilot, *"xkf")  # typed into the field, also when fast
+            self.assertTrue(screen.query_one("#tags").value.endswith("xkf"))
             self.assertEqual(app.review.moved_count(), 0)
         self.assertEqual(len(list(app.directory.iterdir())), 2)
 
@@ -4695,7 +4695,7 @@ class TerminalVersionTests(unittest.IsolatedAsyncioTestCase):
     async def visit_every_screen(self, app, pilot, check):
         """Calls check(name) on the list, a question, the folder choice and the settings."""
         await self.analyzed(app, pilot)
-        await pilot.press("shift+down", "down", "d")  # a moved row and a selection
+        await pilot.press("shift+down", "down", "x")  # a moved row and a selection
         check("list")
         app.show_message("warning", "Careful", "Something happened")
         await pilot.pause()
@@ -4728,7 +4728,7 @@ class TerminalVersionTests(unittest.IsolatedAsyncioTestCase):
             app = self.app_for(self.VIEW_GAMES, scope="all")
         async with app.run_test() as pilot:
             await self.analyzed(app, pilot)
-            await pilot.press("tab", "d")  # a selected and moved row in the second game
+            await pilot.press("tab", "x")  # a selected and moved row in the second game
             table = app.query_one("#games")
             from rich.style import Style
 
@@ -4783,7 +4783,7 @@ class TerminalVersionTests(unittest.IsolatedAsyncioTestCase):
         app = self.colored_app(colors16=True)
         async with app.run_test(size=(110, 32)) as pilot:
             await self.analyzed(app, pilot)
-            await pilot.press("d", "down")  # the first file moved by hand, the cursor one below
+            await pilot.press("x", "down")  # the first file moved by hand, the cursor one below
             lines = self.screen_lines(app)
             strips = self.strips(app)
 
@@ -4930,7 +4930,7 @@ class TerminalVersionTests(unittest.IsolatedAsyncioTestCase):
         async with app.run_test() as pilot:
             await self.analyzed(app, pilot)
             before = app.review
-            await pilot.press("d", "r")
+            await pilot.press("x", "r")
             await pilot.pause()
             self.assertTrue(app.question_open())
             self.assertIn("Analyze again?", self.text(app.screen, "#question-text"))
@@ -5057,11 +5057,52 @@ class TerminalVersionTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(self.as_16_colors(segment.style.bgcolor), 2, text)  # green
                 self.assertEqual(self.as_16_colors(segment.style.color), 0, text)  # black
 
+    async def test_help_row_names_the_new_keys_in_every_language(self):
+        expected = {"en": "x:delete  k:keep", "de": "x:löschen  k:behalten", "it": "x:elimina  k:mantieni",
+                    "es": "x:eliminar  k:conservar", "fr": "x:supprimer  k:garder", "ja": "x:削除  k:保持"}
+        for language, start in expected.items():
+            translations.set_language(language)
+            help_row = translations.tr("tui.help")
+            self.assertTrue(help_row.startswith(start), language)
+            for key in ("Tab:", "1-3:", "/:", "s:", "f:", "r:", "c:", "q:"):
+                self.assertIn(key, help_row, language)
+            self.assertNotIn("d:", help_row, language)
+
+    async def test_help_row_breaks_only_between_entries(self):
+        app = self.tui.WorkbenchApp(None, Path("/home/user/games"))
+        for width in (80, 104, 60):
+            async with app.run_test(size=(width, 30)) as pilot:
+                await pilot.pause()
+                help_widget = app.query_one("#help")
+                lines = [strip.text.strip() for strip in app.screen._compositor.render_strips()
+                         [help_widget.region.y:help_widget.region.bottom]]
+                self.assertGreater(len(lines), 1, width)  # too long for one row at these widths
+                self.assertEqual("  ".join(lines), translations.tr("tui.help"), width)
+                self.assertTrue(all(line.split("  ")[0].count(":") == 1 for line in lines), lines)
+            app = self.tui.WorkbenchApp(None, Path("/home/user/games"))
+
+    async def test_old_keys_do_nothing_any_more(self):
+        app = self.app_for(self.TWO_GAMES)
+        app.config_file = rf.ConfigFile(app.directory.with_name("config.json"))
+        async with app.run_test() as pilot:
+            await self.analyzed(app, pilot)
+            await pilot.press("d", "p", "e", "o", "ctrl+l", "ctrl+e", "ctrl+o", "ctrl+f")
+            await pilot.pause()
+            self.assertEqual(app.review.moved_count(), 0)
+            self.assertFalse(app.question_open())
+            self.assertFalse(app.folder_open())
+            self.assertFalse(app.settings_open())
+            self.assertIs(app.focused, app.query_one("#games"))
+            await pilot.press("x", "k")  # the new ones act: marked, then kept again
+            self.assertEqual(app.review.moved_count(), 0)
+            await pilot.press("x")
+            self.assertEqual(app.review.moved_count(), 1)
+
     async def test_c_and_f1_show_the_credits(self):
         app = self.app_for(self.TWO_GAMES)
         async with app.run_test(size=(110, 30)) as pilot:
             await self.analyzed(app, pilot)
-            self.assertIn("c credits", self.text(app, "#help"))
+            self.assertIn("c:credits", str(app.query_one("#help").content))
             for key in ("c", "f1"):
                 await pilot.press(key)
                 await pilot.pause()
@@ -5092,7 +5133,7 @@ class TerminalVersionTests(unittest.IsolatedAsyncioTestCase):
         app = self.app_for(self.FILTER_GAMES)
         async with app.run_test() as pilot:
             await self.analyzed(app, pilot)
-            await pilot.press("slash", "x", "ctrl+l")
+            await pilot.press("slash", "x", "enter")
             await pilot.pause()
             self.assertEqual(app.query_one("#filter").value, "x")
         self.assertEqual(len(list(app.directory.iterdir())), 4)
