@@ -20,7 +20,16 @@ Das Programm spricht Englisch, Deutsch, Italienisch, Spanisch, Französisch und 
    python --version
    ```
 
-2. **Das Programm installieren:** Auf der [GitHub-Seite](https://github.com/arved9926/rom-cleanup-workbench) unter **Code → Download ZIP** herunterladen und entpacken, oder mit Git klonen:
+2. **Das Programm herunterladen:** Ohne Git geht es am einfachsten als ZIP-Datei. Entweder im Browser: Auf der [GitHub-Seite](https://github.com/arved9926/rom-cleanup-workbench) die grüne Schaltfläche **Code** und dann **Download ZIP** wählen, die Datei `rom-cleanup-workbench-main.zip` im Explorer mit der rechten Maustaste anklicken, **Alle extrahieren...** wählen und den entpackten Ordner `rom-cleanup-workbench-main` in `rom-cleanup-workbench` umbenennen. Oder dasselbe in PowerShell:
+
+   ```powershell
+   Invoke-WebRequest https://github.com/arved9926/rom-cleanup-workbench/archive/refs/heads/main.zip -OutFile rom-cleanup-workbench.zip
+   Expand-Archive rom-cleanup-workbench.zip -DestinationPath .
+   Rename-Item rom-cleanup-workbench-main rom-cleanup-workbench
+   cd "rom-cleanup-workbench\Rom Cleanup Workbench"
+   ```
+
+   Wer Git installiert hat, kann das Repository stattdessen klonen:
 
    ```powershell
    git clone https://github.com/arved9926/rom-cleanup-workbench.git
@@ -38,15 +47,28 @@ Das Programm spricht Englisch, Deutsch, Italienisch, Spanisch, Französisch und 
 1. **Python installieren:** Meist ist Python 3 schon da (`python3 --version`). Sonst unter Debian oder Ubuntu:
 
    ```bash
-   sudo apt install python3 python3-venv git
+   sudo apt install python3 python3-venv wget unzip
    ```
 
    Das Paket `python3-tk` ist nur nötig, wenn du unter Linux mit grafischer Anzeige das Fenster statt der Terminal-Version nutzen willst.
 
-2. **Das Programm installieren:** Das Repository klonen und Textual in einer virtuellen Umgebung installieren:
+2. **Das Programm herunterladen:** Ohne Git als ZIP-Datei von GitHub laden und entpacken:
+
+   ```bash
+   wget https://github.com/arved9926/rom-cleanup-workbench/archive/refs/heads/main.zip -O rom-cleanup-workbench.zip
+   unzip rom-cleanup-workbench.zip
+   mv rom-cleanup-workbench-main rom-cleanup-workbench
+   ```
+
+   Wer Git installiert hat (`sudo apt install git`), kann das Repository stattdessen klonen:
 
    ```bash
    git clone https://github.com/arved9926/rom-cleanup-workbench.git
+   ```
+
+3. **Textual installieren,** am besten in einer virtuellen Umgebung:
+
+   ```bash
    cd "rom-cleanup-workbench/Rom Cleanup Workbench"
    python3 -m venv ~/venvs/rom-cleanup-workbench
    ~/venvs/rom-cleanup-workbench/bin/pip install textual==8.2.8
