@@ -1,5 +1,5 @@
 # Rom Cleanup Workbench
-# Copyright (C) 2026 Arved Retrogamer
+# Copyright (C) 2026 M. Kärcher
 #
 # This program is free software: you can redistribute it and/or modify it under the terms of the
 # GNU General Public License as published by the Free Software Foundation, either version 3 of the
@@ -1590,13 +1590,13 @@ class ReviewWindowTests(RedundanzTestCase):
             window.show_credits()
         title, message = info.call_args.args[:2]
         self.assertEqual(title, "Credits")
-        self.assertTrue(message.startswith("Idea: Arved Retrogamer\nProgramming: Claude Code\n\n"))
-        self.assertIn("Copyright (C) 2026 Arved Retrogamer", message)
+        self.assertTrue(message.startswith("Idea: M. Kärcher\nProgramming: Claude Code\n\n"))
+        self.assertIn("Copyright (C) 2026 M. Kärcher", message)
         self.assertIn("GNU General Public License, version 3 or later", message)
         self.assertIn("no warranty", message)
         self.assertIn("on a copy of your own ROM collection", message)
         translations.set_language("de")
-        self.assertEqual(translations.tr("credits.text"), "Idee: Arved Retrogamer\nProgrammierung: Claude Code")
+        self.assertEqual(translations.tr("credits.text"), "Idee: M. Kärcher\nProgrammierung: Claude Code")
         self.assertIn("Kopie der eigenen ROM-Sammlung", translations.tr("credits.license"))
 
     def test_license_file_and_notices_are_there(self):
@@ -1606,7 +1606,7 @@ class ReviewWindowTests(RedundanzTestCase):
         self.assertIn("Version 3, 29 June 2007", license_text)
         for path in folder.glob("*.py"):
             head = path.read_text(encoding="utf-8")[:1500]
-            self.assertIn("Copyright (C) 2026 Arved Retrogamer", head, path.name)
+            self.assertIn("Copyright (C) 2026 M. Kärcher", head, path.name)
             self.assertIn("either version 3 of the", head, path.name)
         self.assertIn("GNU General Public License", " ".join(rf.build_parser().format_help().split()))  # wraps
 
@@ -5152,7 +5152,7 @@ class TerminalVersionTests(unittest.IsolatedAsyncioTestCase):
                 self.assertTrue(app.question_open(), key)
                 self.assertEqual(self.text(app.screen, "#question-title"), "Credits")
                 text = self.text(app.screen, "#question-text")
-                self.assertTrue(text.startswith("Idea: Arved Retrogamer\nProgramming: Claude Code\n\n"))
+                self.assertTrue(text.startswith("Idea: M. Kärcher\nProgramming: Claude Code\n\n"))
                 self.assertIn("GNU General Public License", text)
                 self.assertIn("copy of your own ROM collection", text)
                 self.assertEqual(self.buttons(app), ["OK"])

@@ -210,7 +210,7 @@ Textual がない場合、プログラムはそのことを伝え、何も削除
 
 ## ライセンスと免責事項
 
-Copyright (C) 2026 Arved Retrogamer
+Copyright (C) 2026 M. Kärcher
 
 Rom Cleanup Workbench はフリーソフトウェアです。Free Software Foundation が公表した GNU General Public License のバージョン 3、または (任意で) それ以降のバージョンの条件のもとで、再頒布および変更できます。全文は [LICENSE](<../LICENSE>) にあります。法的に有効なのはこの英語の原文のみです。
 
@@ -218,5 +218,5 @@ Rom Cleanup Workbench はフリーソフトウェアです。Free Software Found
 
 ## クレジット
 
-- アイデア: Arved Retrogamer
+- アイデア: M. Kärcher
 - プログラミング: Claude Code

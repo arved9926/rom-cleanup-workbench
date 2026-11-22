@@ -210,7 +210,7 @@ Ogni file ZIP viene letto per intero, anche se è l'unico file di un gioco. Il s
 
 ## Licenza ed esclusione di responsabilità
 
-Copyright (C) 2026 Arved Retrogamer
+Copyright (C) 2026 M. Kärcher
 
 Rom Cleanup Workbench è software libero: puoi ridistribuirlo e/o modificarlo secondo i termini della GNU General Public License pubblicata dalla Free Software Foundation, nella versione 3 della licenza o (a tua scelta) in qualsiasi versione successiva. Il testo completo si trova in [LICENSE](<../LICENSE>); ha valore legale solo questo testo originale inglese.
 
@@ -218,5 +218,5 @@ Rom Cleanup Workbench è software libero: puoi ridistribuirlo e/o modificarlo se
 
 ## Riconoscimenti
 
-- Idea: Arved Retrogamer
+- Idea: M. Kärcher
 - Programmazione: Claude Code
