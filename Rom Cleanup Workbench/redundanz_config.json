@@ -8,6 +8,6 @@
     "Japan": ["JP", "JPN"]
   },
   "delete_tags": [],
-  "low_priority_tags": ["Beta", "Proto"],
+  "low_priority_tags": ["Beta", "Proto", "Alpha"],
   "part_tags": ["Disc", "Disk", "CD", "Side", "Seite", "Part", "Teil", "Track"]
 }
