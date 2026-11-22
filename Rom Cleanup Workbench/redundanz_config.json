@@ -1,13 +1,12 @@
 {
   "language": "en",
-  "region_priority": ["Germany", "Europe", "USA", "none", "Japan"],
+  "region_priority": ["Germany", "Europe", "USA", "none", "Japan", "Beta"],
   "region_aliases": {
     "Germany": ["Deutschland", "DE", "GER"],
     "USA": ["US"],
     "Europe": ["Europa", "EU"],
     "Japan": ["JP", "JPN"]
   },
-  "delete_tags": [],
-  "low_priority_tags": ["Beta", "Proto", "Alpha"],
+  "delete_tags": ["Proto", "Alpha", "Prototype", "Hack", "Hacks"],
   "part_tags": ["Disc", "Disk", "CD", "Side", "Seite", "Part", "Teil", "Track"]
 }
