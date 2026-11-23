@@ -154,15 +154,16 @@ class GameKeyTests(unittest.TestCase):
         self.assert_same("Robocop vs Terminator", "Robocop vs. Terminator", "Robocop versus Terminator",
                          "Robocop VS Terminator", "Robocop Versus Terminator", "Robocop_vs._Terminator")
 
-    def test_roman_numerals_one_to_ten_equal_numbers(self):
-        for number, roman in enumerate(("I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X"), 1):
+    def test_roman_numerals_one_to_nine_equal_numbers(self):
+        for number, roman in enumerate(("I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX"), 1):
             self.assert_same(f"Final Fantasy {roman}", f"Final Fantasy {number}", f"final fantasy {roman.lower()}")
         self.assert_same("Street Fighter II - The World Warrior", "Street Fighter 2: The World Warrior".replace(":", ""))
         self.assert_same("Rocky IV (Part)", "Rocky 4 (Part)")
 
     def test_roman_numerals_only_as_whole_words(self):
         self.assert_different("Vivi", "5vi")
-        self.assert_different("Final Fantasy XI", "Final Fantasy 11")  # only I to X
+        self.assert_different("Mega Man X", "Mega Man 10")  # only I to IX
+        self.assert_different("Final Fantasy XI", "Final Fantasy 11")
         self.assert_different("Final Fantasy VII", "Final Fantasy 6")
         self.assert_different("Xevious", "10evious")
 
