@@ -502,6 +502,17 @@ class FolderTree(Tree):
             if node.allow_expand:  # A folder without subfolders stays closed.
                 node.expand()
 
+    def on_click(self, event) -> None:
+        """A double click chooses the folder; on the arrow it only opens or closes it."""
+        if getattr(event, "chain", 1) == 2 and not (event.style and event.style.meta.get("toggle")):
+            self.call_after_refresh(self._choose_cursor)
+
+    def _choose_cursor(self) -> None:
+        node = self.cursor_node
+        if node is not None and node.data is not None:
+            self.screen.query_one("#folder-path", Input).value = str(node.data["path"])
+            self.screen.action_choose()
+
     def action_close_folder(self) -> None:
         node = self.cursor_node
         if node is None:
@@ -1300,7 +1311,7 @@ class WorkbenchApp(App):
         """x and Ctrl+L delete the marked files after a question, as Proceed does in the window."""
         if self.review is None or self.deleting:
             return
-        if not any(result.marked for result in self.review.results):
+        if not self.review.has_work():
             self._confirm_save_files_only()
             return
         message = self.review.confirm_message(*scope_flags(self.scope, self.pattern))
@@ -1360,7 +1371,7 @@ class WorkbenchApp(App):
             self.show_message("warning", tr("window.partly_deleted_title"),
                               tr("window.partly_deleted", count=deleted, errors="\n".join(errors)))
         else:
-            self.show_message("info", tr("window.deleted_title"), tr("terminal.deleted", count=deleted))
+            self.show_message("info", tr("window.deleted_title"), review.done_message(deleted))
         if not_remembered:  # On top, so that it is read first.
             self.show_message("error", tr("window.saves_not_remembered"), not_remembered)
 

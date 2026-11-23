@@ -105,6 +105,7 @@ class FolderPanel:
         self.tree.bind("<<TreeviewOpen>>", lambda _event: self._load(self.tree.focus()))
         self.tree.bind("<<TreeviewSelect>>", lambda _event: self._show_selection())
         self.tree.bind("<Return>", lambda _event: self.choose())
+        self.tree.bind("<Double-Button-1>", self._choose_clicked)
         hint = ttk.Label(frame, text=tr("folder.hint"))
         hint.grid(row=3, column=0, columnspan=3, sticky="ew", pady=(8, 0))
         hint.bind("<Configure>", lambda event: hint.configure(wraplength=max(event.width, 1)))
@@ -170,6 +171,16 @@ class FolderPanel:
         selection = self.tree.selection()
         if selection and selection[0] in self.paths:
             self.path.set(str(self.paths[selection[0]]))
+
+    def _choose_clicked(self, event) -> str | None:
+        """A double click chooses the folder; on the arrow it only opens or closes it, as before."""
+        key = self.tree.identify_row(event.y)
+        if not key or key not in self.paths or "indicator" in self.tree.identify_element(event.x, event.y):
+            return None
+        self.tree.selection_set(key)
+        self.tree.focus(key)
+        self.path.set(str(self.paths[key]))
+        return self.choose()  # "break": the tree does not open the folder as well
 
     def choose(self) -> str:
         text = self.path.get().strip().strip('"')
@@ -1103,7 +1114,7 @@ class ReviewWindow:
     def confirm_delete(self) -> None:
         if self.review is None or self._list_locked():
             return
-        if not any(result.marked for result in self.review.results):
+        if not self.review.has_work():
             self._confirm_save_files_only()
             return
         message = self.review.confirm_message(*self._scope_flags())
@@ -1123,7 +1134,7 @@ class ReviewWindow:
                 parent=self.root,
             )
         else:
-            messagebox.showinfo(tr("window.deleted_title"), tr("terminal.deleted", count=deleted), parent=self.root)
+            messagebox.showinfo(tr("window.deleted_title"), self.review.done_message(deleted), parent=self.root)
         # The Review object has dropped the deleted files; the folder is not analyzed again.
         self.show_review(self.review)
 

@@ -121,9 +121,22 @@ def game_key(game: str) -> str:
     return key.replace(" ", "") or normalize(game)
 
 
+# The same number in the file name, with what separates it from the name: "073 ", "073 - ", "073_".
+_FILE_NUMBER_RE = re.compile(r"^\d+\.?[\s_-]+")
+# Files that name other files in their content: renaming those files would break them.
+_INDEX_SUFFIXES = {".cue", ".gdi", ".m3u", ".mds", ".toc", ".ccd"}
+
+
 def has_leading_number(game: str) -> bool:
     """True for "073 Batman": the number in front of the name that game_key ignores."""
     return bool(_LEADING_NUMBER_RE.match(normalize(_SEPARATOR_RE.sub(" ", game))))
+
+
+def game_title(entry: "Entry") -> str:
+    """The name shown for a game: without a number in front ("073 Batman" -> "Batman")."""
+    if has_leading_number(entry.game):
+        return _FILE_NUMBER_RE.sub("", entry.game, count=1)
+    return entry.game
 
 
 def parse_filename(filename: str) -> tuple[str, list[str]]:
@@ -663,7 +676,8 @@ def _suspected_save_files(entries: list[Entry], config: Config) -> list[Entry]:
     They are set aside before the selection, so that they neither get deleted nor push out
     the real ROM, for example a plain 1941.state the ZIP 1941.zip. A small plain file next to
     a large plain file of its own version, such as a .cue next to its .bin, is part of that
-    version and is not suspected; a ZIP has no such companions outside. Files with delete_tags
+    version and is not suspected; a ZIP has no such companions outside. Neither is a file of the
+    same type as the largest file (.nes next to .nes): it is a ROM. Files with delete_tags
     or a defective ZIP are not suspected: these rules always apply.
     """
     suspected = []
@@ -676,6 +690,9 @@ def _suspected_save_files(entries: list[Entry], config: Config) -> list[Entry]:
             continue
         largest = max(others, key=lambda other: other.content_size())
         if size * _SAVE_FILE_RATIO >= largest.content_size():
+            continue
+        # The same file type as the largest file (.nes next to .nes): a ROM, not a save file.
+        if entry.path.suffix.casefold() == largest.path.suffix.casefold():
             continue
         own_version = config.version_key(entry.tags)
         if any(
@@ -824,7 +841,7 @@ def analyze_group(entries: list[Entry], config: Config) -> GroupResult:
     keep.extend(unreadable)
     keep.extend(suspected)
     marked.sort(key=sort_key)
-    title = (keep or marked)[0].game
+    title = game_title((keep or marked)[0])
     return GroupResult(title, keep, marked, find_problems(keep, marked))
 
 
@@ -889,6 +906,33 @@ def marked_paths(results: list[GroupResult]) -> list[Path]:
     return [entry.path for result in results for entry in result.marked]
 
 
+def rename_plan(results: list[GroupResult]) -> tuple[list[tuple[Entry, Path]], list[Entry]]:
+    """Kept files with a number in front of the name and their new name without it.
+
+    Returns (renames, skipped). Skipped are files of a game with a .cue, .gdi or .m3u file
+    (it names the files in its content) and files whose name without number is taken by a file
+    that stays, or by another file of the plan.
+    """
+    marked = {os.path.normcase(os.path.abspath(entry.path)) for result in results for entry in result.marked}
+    renames, skipped, taken = [], [], set()
+    for result in results:
+        numbered = [entry for entry in result.keep if has_leading_number(entry.game)]
+        if not numbered:
+            continue
+        if any(entry.path.suffix.casefold() in _INDEX_SUFFIXES for entry in result.keep):
+            skipped.extend(numbered)
+            continue
+        for entry in numbered:
+            target = entry.path.with_name(_FILE_NUMBER_RE.sub("", entry.path.name, count=1))
+            key = os.path.normcase(os.path.abspath(target))
+            if key in taken or (target.exists() and key not in marked):
+                skipped.append(entry)
+                continue
+            taken.add(key)
+            renames.append((entry, target))
+    return renames, skipped
+
+
 def _total_size(paths: list[Path]) -> int:
     total = 0
     for path in paths:
@@ -929,9 +973,37 @@ class Review:
         )
 
     def delete(self, progress=None) -> tuple[int, list[str]]:
+        """Deletes the marked files, then removes the number in front of the kept names (rename_plan)."""
+        renames, _skipped = rename_plan(self.results)
         deleted, errors = delete_files(marked_paths(self.results), progress)
         self._forget_deleted_files()
+        self.renamed = 0
+        for entry, target in renames:
+            if target.exists():  # a marked file of that name could not be deleted
+                errors.append(tr("error.rename_exists", name=entry.path.name, new=target.name))
+                continue
+            try:
+                entry.path.rename(target)
+            except OSError as error:
+                errors.append(f"{entry.path.name}: {error}")
+                continue
+            entry.path = target
+            entry.game = _FILE_NUMBER_RE.sub("", entry.game, count=1)
+            self.renamed += 1
+        for result in self.results:
+            result.title = game_title((result.keep or result.marked)[0])
         return deleted, errors
+
+    def done_message(self, deleted: int) -> str:
+        """After Proceed: how many files were deleted and renamed."""
+        text = tr("terminal.deleted", count=deleted)
+        if getattr(self, "renamed", 0):
+            text += "\n" + tr("terminal.renamed", count=self.renamed)
+        return text
+
+    def has_work(self) -> bool:
+        """Something for Proceed: marked files or names to shorten."""
+        return any(result.marked for result in self.results) or bool(rename_plan(self.results)[0])
 
     def _forget_deleted_files(self) -> None:
         """Brings the state up to date without reading the folder again.
@@ -945,7 +1017,7 @@ class Review:
             for entry in result.keep:
                 entry.moved = False
             if result.keep or result.marked:
-                result.title = (result.keep or result.marked)[0].game
+                result.title = game_title((result.keep or result.marked)[0])
                 result.problems = find_problems(result.keep, result.marked)
                 remaining.append(result)
         self.results = remaining
@@ -1039,11 +1111,20 @@ class Review:
     def confirm_message(self, only_problems: bool, show_all: bool = False, pattern: str = "") -> str:
         """Before deleting, names everything the window may not be showing right now."""
         paths = marked_paths(self.results)
-        lines = [
-            tr("confirm.question", count=len(paths), size=f"{_total_size(paths) / 1024 / 1024:.1f}"),
-            # "Recycle Bin" is the Windows name; other systems call it the trash.
-            tr("confirm.no_recycle_bin" if os.name == "nt" else "confirm.no_trash"),
-        ]
+        renames, skipped = rename_plan(self.results)
+        example = f"{renames[0][0].path.name} \u2192 {renames[0][1].name}" if renames else ""
+        if paths:
+            lines = [
+                tr("confirm.question", count=len(paths), size=f"{_total_size(paths) / 1024 / 1024:.1f}"),
+                # "Recycle Bin" is the Windows name; other systems call it the trash.
+                tr("confirm.no_recycle_bin" if os.name == "nt" else "confirm.no_trash"),
+            ]
+            if renames:
+                lines.append(tr("confirm.rename", count=len(renames), example=example))
+        else:
+            lines = [tr("confirm.rename_only", count=len(renames), example=example)]
+        if skipped:
+            lines.append(tr("confirm.rename_skipped", count=len(skipped)))
         hidden = [result for result in self.results if not self.is_visible(result, only_problems, show_all, pattern)]
         hidden_count = len(marked_paths(hidden))
         if hidden_count:
@@ -1145,7 +1226,7 @@ def _run_in_terminal(args: argparse.Namespace, parser: argparse.ArgumentParser, 
         print()
 
     paths = marked_paths(review.results)
-    if not paths:
+    if not review.has_work():
         print(tr("terminal.no_duplicates"))
         return 0
     print(tr("terminal.summary", games=len(review.results), files=len(paths)))
@@ -1154,7 +1235,7 @@ def _run_in_terminal(args: argparse.Namespace, parser: argparse.ArgumentParser, 
         return 0
 
     deleted, errors = review.delete()
-    print(tr("terminal.deleted", count=deleted))
+    print(review.done_message(deleted))
     for error in errors:
         print(tr("terminal.error", error=error), file=sys.stderr)
     return 1 if errors else 0

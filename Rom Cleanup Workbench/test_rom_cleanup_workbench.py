@@ -672,7 +672,7 @@ class PreferZipTests(RedundanzTestCase):
         result = self.single()
         self.assertEqual(self.names(result.keep), ["Title (USA).zip"])
         self.assertEqual(self.names(result.marked), ["Title (USA).bin"])
-        self.assertEqual(result.marked[0].notes[-1], "WARNING: Content does not appear in the kept ZIP files")
+        self.assertEqual(result.marked[0].notes[-1], "Game content deviates from the kept ZIP file")
         self.assertIn("Content of a marked plain file is not kept", result.problems)
 
     def test_all_plain_files_of_the_version_give_way(self):
@@ -794,6 +794,148 @@ class NumberInFrontTests(RedundanzTestCase):
         self.assertFalse(rf.has_leading_number("Batman 2"))
 
 
+class RenameNumberTests(RedundanzTestCase):
+    """Proceed removes the number in front of the kept names: 073 Batman (USA).sfc -> Batman (USA).sfc."""
+
+    def review(self):
+        return rf.Review(self.scan(), self.config)
+
+    def files(self):
+        return sorted(path.name for path in self.dir.iterdir())
+
+    def test_proceed_deletes_then_renames_the_numbered_file(self):
+        self.write("073 Batman (USA).sfc", b"rom")
+        self.write("Batman (USA).sfc", b"rom")
+        review = self.review()
+        message = review.confirm_message(False)
+        self.assertIn("1 kept file(s) lose the number in front of the name, for example "
+                      "073 Batman (USA).sfc \u2192 Batman (USA).sfc.", message)
+        deleted, errors = review.delete()
+        self.assertEqual((deleted, errors), (1, []))
+        self.assertEqual(self.files(), ["Batman (USA).sfc"])
+        self.assertEqual((self.dir / "Batman (USA).sfc").read_bytes(), b"rom")
+        self.assertEqual(review.done_message(1), "1 file(s) deleted.\n1 file(s) renamed.")
+        self.assertEqual(self.names(review.results[0].keep), ["Batman (USA).sfc"])
+
+    def test_every_separator_after_the_number_goes(self):
+        for name in ("057 - Robocop (USA).md", "058. Contra (USA).nes", "059_Zelda (USA).sfc", "060 Tetris.gb"):
+            self.write(name)
+        self.review().delete()
+        self.assertEqual(self.files(), ["Contra (USA).nes", "Robocop (USA).md", "Tetris.gb", "Zelda (USA).sfc"])
+
+    def test_names_that_are_numbers_stay(self):
+        for name in ("1942 (Japan).bin", "4 in 1 Fun Pak (USA).gb", "2Fast (USA).gba"):
+            self.write(name)
+        review = self.review()
+        self.assertFalse(review.has_work())
+        review.delete()
+        self.assertEqual(self.files(), ["1942 (Japan).bin", "2Fast (USA).gba", "4 in 1 Fun Pak (USA).gb"])
+
+    def test_nothing_marked_still_proceeds_with_the_renames(self):
+        self.write("073 Batman (USA).sfc", b"rom")
+        review = self.review()
+        self.assertTrue(review.has_work())
+        self.assertTrue(review.confirm_message(False).startswith(
+            "Nothing is marked. Remove the number in front of the name of 1 file(s), for example "
+            "073 Batman (USA).sfc \u2192 Batman (USA).sfc?"))
+        self.assertEqual(review.delete(), (0, []))
+        self.assertEqual(self.files(), ["Batman (USA).sfc"])
+
+    def test_games_with_a_cue_file_keep_their_number(self):
+        self.write("073 Batman (USA).cue", b'FILE "073 Batman (USA).bin" BINARY')
+        self.write("073 Batman (USA).bin", b"b" * 100)
+        review = self.review()
+        self.assertFalse(review.has_work())
+        self.write("Other (USA).bin", b"o")
+        self.write("Other (Europe).bin", b"o")
+        review = self.review()
+        self.assertIn("2 file(s) keep their number", review.confirm_message(False))
+        review.delete()
+        self.assertIn("073 Batman (USA).cue", self.files())
+        self.assertIn("073 Batman (USA).bin", self.files())
+
+    def test_a_name_taken_by_a_kept_file_is_not_overwritten(self):
+        self.write("073 Batman (USA).sfc", b"one")
+        self.write("Batman (USA).sfc", b"two")
+        review = self.review()
+        result = review.results[0]
+        review.promote(result, result.marked[0])  # k: both stay
+        self.assertFalse(review.has_work())
+        self.assertEqual(review.delete(), (0, []))
+        self.assertEqual(self.files(), ["073 Batman (USA).sfc", "Batman (USA).sfc"])
+        self.assertEqual((self.dir / "Batman (USA).sfc").read_bytes(), b"two")
+
+    def test_two_numbers_for_the_same_name_rename_only_one(self):
+        self.write("073 Batman (USA).sfc", b"one")
+        self.write("112 Batman (USA).sfc", b"two")
+        review = self.review()
+        self.assertIn("1 file(s) keep their number", review.confirm_message(False))
+        review.delete()
+        self.assertEqual(self.files(), ["112 Batman (USA).sfc", "Batman (USA).sfc"])
+
+    def test_a_file_that_could_not_be_deleted_blocks_the_rename(self):
+        self.write("073 Batman (USA).sfc", b"rom")
+        self.write("Batman (USA).sfc", b"rom")
+        review = self.review()
+        with mock.patch.object(rf.Path, "unlink", side_effect=PermissionError("locked")):
+            deleted, errors = review.delete()
+        self.assertEqual(deleted, 0)
+        self.assertIn("073 Batman (USA).sfc: not renamed, Batman (USA).sfc already exists", errors)
+        self.assertEqual(self.files(), ["073 Batman (USA).sfc", "Batman (USA).sfc"])
+
+    def test_yes_mode_renames_too(self):
+        self.write("073 Batman (USA).sfc", b"rom")
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            code = rf.main([str(self.dir), "--yes", "--config", str(self.empty_config())])
+        self.assertEqual(code, 0)
+        self.assertIn("1 file(s) renamed.", output.getvalue())
+        self.assertEqual(self.files(), ["Batman (USA).sfc"])
+
+    def empty_config(self):
+        path = self.dir.parent / f"{self.dir.name}-config.json"
+        path.write_text("{}", encoding="utf-8")
+        self.addCleanup(path.unlink, missing_ok=True)
+        return path
+
+
+class SameTypeSmallFileTests(RedundanzTestCase):
+    """A small file of the same type as the largest file is a ROM, not a status or save file."""
+
+    def test_small_files_of_the_same_type_are_decided_by_the_rules(self):
+        self.write("Dynamite Bowl (J) [o2].nes", b"o" * 577 * 1024)
+        self.write("283 Dynamite Bowl.nes", b"a" * 65 * 1024)
+        self.write("Dynamite Bowl (J) [o1].nes", b"b" * 65 * 1024)
+        self.write("Dynamite Bowl (J) [p1][!].nes", b"c" * 65 * 1024)
+        self.write("Dynamite Bowl (J).nes", b"d" * 65 * 1024)
+        result = self.single()
+        self.assertEqual(result.title, "Dynamite Bowl")
+        self.assertEqual(self.names(result.keep), ["283 Dynamite Bowl.nes"])
+        self.assertEqual(len(result.marked), 4)
+        self.assertIn("Dynamite Bowl (J) [o2].nes", self.names(result.marked))
+        notes = [note for entry in result.keep + result.marked for note in entry.notes]
+        self.assertFalse(any(getattr(note, "kind", "") == "save_suspected" for note in notes))
+
+    def test_a_small_file_of_another_type_is_still_suspected(self):
+        self.write_zip("1941.zip", {"1941.bin": b"r" * 64 * 1024})
+        self.write("1941.state", b"s" * 1024)
+        result = self.single()
+        self.assertEqual(sorted(self.names(result.keep)), ["1941.state", "1941.zip"])
+        state = next(entry for entry in result.keep if entry.path.name == "1941.state")
+        self.assertTrue(any(getattr(note, "kind", "") == "save_suspected" for note in state.notes))
+
+
+class GameTitleTests(RedundanzTestCase):
+    def test_the_title_leaves_out_the_number_in_front(self):
+        self.write("073 Batman (USA).sfc", b"rom")
+        self.write("Batman (Japan).sfc", b"jap")
+        self.assertEqual(self.single().title, "Batman")
+
+    def test_names_that_are_numbers_keep_their_title(self):
+        self.write("1942 (Japan).bin")
+        self.assertEqual(self.single().title, "1942")
+
+
 class ZipTests(RedundanzTestCase):
     def test_zip_with_same_tags_and_same_content_is_redundant(self):
         self.write("Title (USA).bin", b"rom")
@@ -809,7 +951,7 @@ class ZipTests(RedundanzTestCase):
         self.assertEqual(self.names(result.keep), ["Title (USA).bin"])
         self.assertEqual(self.names(result.marked), ["Title (USA).zip"])
         self.assertIn("Plain file preferred", result.marked[0].notes)
-        self.assertIn("WARNING", result.marked[0].notes[-1])
+        self.assertEqual(result.marked[0].notes[-1], "Game content deviates from the kept version")
 
     def test_all_zips_next_to_plain_file_are_marked(self):
         self.write("Title (USA).bin", b"rom")
@@ -818,7 +960,7 @@ class ZipTests(RedundanzTestCase):
         result = self.single()
         self.assertEqual(self.names(result.keep), ["Title (USA).bin"])
         for entry in result.marked:
-            self.assertIn("WARNING", entry.notes[-1])
+            self.assertEqual(entry.notes[-1], "Game content deviates from the kept version")
 
     def test_zip_with_better_region_stays_without_plain_file_of_same_version(self):
         self.write("Title (Japan).bin", b"jap")
@@ -832,7 +974,7 @@ class ZipTests(RedundanzTestCase):
         self.write_zip("Title (USA) (Disc 1).zip", {"a.bin": b"one"})
         result = self.single()
         self.assertEqual(self.names(result.keep), ["Title (USA) (Disc 2).bin"])
-        self.assertIn("WARNING", result.marked[0].notes[-1])
+        self.assertEqual(result.marked[0].notes[-1], "Game content deviates from the kept version")
 
     def test_zips_of_all_discs_stay_without_plain_file(self):
         self.write_zip("Title (USA) (Disc 1).zip", {"a.bin": b"one"})
@@ -851,7 +993,7 @@ class ZipTests(RedundanzTestCase):
         self.write("Title (USA).bin", b"rom")
         self.write_zip("Title (Europe).zip", {"a.bin": b"unique"})
         marked = self.single().marked[0]
-        self.assertIn("WARNING", marked.notes[0])
+        self.assertEqual(marked.notes[0], "Game content deviates from the kept version")
 
     def test_two_identical_zips_leave_one(self):
         self.write_zip("Title (USA).zip", {"a.bin": b"rom"})
@@ -3128,6 +3270,38 @@ class ReviewWindowTests(RedundanzTestCase):
             analysis.assert_called_once()
             self.assertEqual(window.directory, Path(other))
 
+    def test_double_click_chooses_the_folder(self):
+        self.no_system_popups()
+        (self.dir / "More").mkdir()
+        window = self.open_window()
+        window.choose_directory()
+        panel = window.folder_panel
+        key = panel._key(self.dir / "More")
+        panel.tree.see(key)
+        for _ in range(100):  # until the tree is drawn (under WSLg this takes a moment)
+            window.root.update()
+            if panel.tree.bbox(key):
+                break
+            time.sleep(0.02)
+        else:
+            self.skipTest("The folder tree was not drawn")
+        x, y, width, height = panel.tree.bbox(key)
+        event = mock.Mock(x=x + width - 5, y=y + height // 2)
+        with mock.patch.object(window, "start_analysis") as analysis:
+            self.assertEqual(panel._choose_clicked(event), "break")
+        analysis.assert_called_once()
+        self.assertEqual(window.directory, self.dir / "More")
+        self.assertIsNone(window.folder_panel)
+
+    def test_double_click_on_empty_space_chooses_nothing(self):
+        window = self.open_window()
+        window.choose_directory()
+        panel = window.folder_panel
+        with mock.patch.object(window, "start_analysis") as analysis:
+            self.assertIsNone(panel._choose_clicked(mock.Mock(x=5, y=10000)))
+        analysis.assert_not_called()
+        self.assertIs(window.folder_panel, panel)
+
     def test_folders_are_read_only_when_opened(self):
         (self.dir / "Outer").mkdir()
         (self.dir / "Outer" / "Inner").mkdir()
@@ -4417,6 +4591,39 @@ class TerminalVersionTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(self.titles(app), ["Other"])
             self.assertIn("More", self.text(app, "#folder"))
             self.assertIs(app.focused, app.query_one("#games"))
+
+    async def test_double_click_chooses_the_folder(self):
+        app = self.app_for(self.TWO_GAMES)
+        (app.directory / "More").mkdir()
+        (app.directory / "More" / "Other (USA).bin").write_bytes(b"a")
+        (app.directory / "More" / "Other (Japan).bin").write_bytes(b"b")
+        more_folder = app.directory / "More"
+        async with app.run_test(size=(100, 30)) as pilot:
+            await self.analyzed(app, pilot)
+            tree, path = await self.open_folder_choice(app, pilot)
+            await pilot.press("right")  # the cursor on More
+            await pilot.pause()
+            more = tree.cursor_node
+            self.assertEqual(str(more.label), "More")
+            row = more.line - tree.scroll_offset.y
+            await pilot.click(tree, offset=(12, row), times=2)
+            await self.analyzed(app, pilot)
+            self.assertFalse(app.folder_open())
+            self.assertTrue(self.same_folder(app.directory, more_folder))
+            self.assertEqual(self.titles(app), ["Other"])
+
+    async def test_single_click_only_highlights_the_folder(self):
+        app = self.app_for(self.TWO_GAMES)
+        (app.directory / "More").mkdir()
+        async with app.run_test(size=(100, 30)) as pilot:
+            await self.analyzed(app, pilot)
+            tree, path = await self.open_folder_choice(app, pilot)
+            await pilot.press("right")
+            await pilot.pause()
+            row = tree.cursor_node.line - tree.scroll_offset.y
+            await pilot.click(tree, offset=(12, row))
+            await pilot.pause()
+            self.assertTrue(app.folder_open())
 
     async def test_typed_path_is_taken_and_a_missing_one_is_refused(self):
         app = self.app_for(self.TWO_GAMES)
