@@ -10,7 +10,7 @@ Finds duplicate ROM files in a directory by game name and deletes them on reques
 Requires Python 3.10 or newer. The window needs no additional packages; the terminal version for Linux needs Textual (see [Terminal version (Linux)](#terminal-version-linux)).
 The program speaks English, German, Italian, Spanish, French and Japanese (see [Language](#language)).
 
-**Important:** Do not use this program on your original ROM files. Make a copy of your ROM repository and use the program to clean up only that copy.
+**Important:** Do not use this program on your original ROM files. Make a copy of your ROM repository and use the program to clean up only that copy. This is still between alpha and beta. Best use it in an isolated and dedicated environment with a copy of your rom collection.
 
 ## Installation
 
