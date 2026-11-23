@@ -1,8 +1,8 @@
 # Rom Cleanup Workbench
 
-Finds duplicate ROM files in a folder by game name, shows the decision for every game and deletes the duplicates only after your confirmation. A window for Windows, a terminal version for Linux, in English, German, Italian, Spanish, French and Japanese.
+Finds duplicate ROM files in a folder by game name, shows the decision for every game and deletes the duplicates only after your confirmation. A window for Windows, a terminal version for Linux, a UI in English, German, Italian, Spanish, French and Japanese.
 
-**Important:** Do not use this program on your original ROM files. Make a copy of your ROM repository and use the program to clean up only that copy.
+**Important:** Do not use this program on your original ROM files. Make a copy of your ROM repository and use the program to clean up only that copied repository.
 
 The documentation is the user guide (PDF): [English](<Rom Cleanup Workbench/docs/Rom Cleanup Workbench - User Guide.pdf>) · [Deutsch](<Rom Cleanup Workbench/docs/Rom Cleanup Workbench - Benutzerhandbuch.pdf>) · [Italiano](<Rom Cleanup Workbench/docs/Rom Cleanup Workbench - Guida utente.pdf>) · [Español](<Rom Cleanup Workbench/docs/Rom Cleanup Workbench - Guía del usuario.pdf>) · [Français](<Rom Cleanup Workbench/docs/Rom Cleanup Workbench - Guide utilisateur.pdf>) · [日本語](<Rom Cleanup Workbench/docs/Rom Cleanup Workbench - ユーザーガイド.pdf>)
 
