@@ -8,11 +8,97 @@ Trouve les fichiers ROM en double dans un dossier d'après le nom du jeu et les 
 Nécessite Python 3.10 ou plus récent. La fenêtre n'a besoin d'aucun paquet supplémentaire ; la version terminal pour Linux nécessite Textual (voir [Version terminal (Linux)](#version-terminal-linux)).
 Le programme parle anglais, allemand, italien, espagnol, français et japonais (voir [Langue](#langue)).
 
+**Important :** n'utilisez pas ce programme sur vos fichiers ROM originaux. Faites une copie de votre dépôt de ROM et utilisez le programme pour nettoyer uniquement cette copie.
+
+## Installation
+
+### Windows
+
+1. **Installer Python :** téléchargez Python 3.10 ou plus récent sur [python.org/downloads](https://www.python.org/downloads/) et installez-le. Si l'installateur propose « Add python.exe to PATH », cochez cette option. `tkinter` pour la fenêtre est inclus. Vérifiez ensuite dans un nouveau terminal :
+
+   ```powershell
+   python --version
+   ```
+
+2. **Télécharger le programme :** sans Git, le plus simple est un fichier ZIP. Dans le navigateur : sur la [page GitHub](https://github.com/arved9926/rom-cleanup-workbench), choisissez le bouton vert **Code** puis **Download ZIP**, faites un clic droit sur le fichier `rom-cleanup-workbench-main.zip` dans l'Explorateur, choisissez **Extraire tout...** et renommez le dossier extrait `rom-cleanup-workbench-main` en `rom-cleanup-workbench`. Ou la même chose dans PowerShell :
+
+   ```powershell
+   Invoke-WebRequest https://github.com/arved9926/rom-cleanup-workbench/archive/refs/heads/main.zip -OutFile rom-cleanup-workbench.zip
+   Expand-Archive rom-cleanup-workbench.zip -DestinationPath .
+   Rename-Item rom-cleanup-workbench-main rom-cleanup-workbench
+   cd "rom-cleanup-workbench\Rom Cleanup Workbench"
+   ```
+
+   Si Git est installé, vous pouvez plutôt cloner le dépôt :
+
+   ```powershell
+   git clone https://github.com/arved9926/rom-cleanup-workbench.git
+   cd "rom-cleanup-workbench\Rom Cleanup Workbench"
+   ```
+
+   Le programme se trouve dans le dossier `Rom Cleanup Workbench`. La fenêtre n'a besoin d'aucun autre paquet. Seuls ceux qui veulent utiliser la version terminal sous Windows installent aussi Textual :
+
+   ```powershell
+   python -m pip install textual==8.2.8
+   ```
+
+### Linux
+
+1. **Installer Python :** Python 3 est généralement déjà présent (`python3 --version`). Sinon, sous Debian ou Ubuntu :
+
+   ```bash
+   sudo apt install python3 python3-venv wget unzip
+   ```
+
+   Le paquet `python3-tk` n'est nécessaire que si vous voulez utiliser la fenêtre plutôt que la version terminal sous Linux avec un affichage graphique.
+
+2. **Télécharger le programme :** sans Git, téléchargez-le depuis GitHub sous forme de fichier ZIP et décompressez-le :
+
+   ```bash
+   wget https://github.com/arved9926/rom-cleanup-workbench/archive/refs/heads/main.zip -O rom-cleanup-workbench.zip
+   unzip rom-cleanup-workbench.zip
+   mv rom-cleanup-workbench-main rom-cleanup-workbench
+   ```
+
+   Si Git est installé (`sudo apt install git`), vous pouvez plutôt cloner le dépôt :
+
+   ```bash
+   git clone https://github.com/arved9926/rom-cleanup-workbench.git
+   ```
+
+3. **Installer Textual dans un environnement virtuel :**
+
+   ```bash
+   cd "rom-cleanup-workbench/Rom Cleanup Workbench"
+   python3 -m venv ~/venvs/rom-cleanup-workbench
+   ~/venvs/rom-cleanup-workbench/bin/pip install textual==8.2.8
+   ```
+
 ## Utilisation
 
-```bash
+### Windows
+
+Ouvrez un terminal (par exemple PowerShell) dans le dossier `Rom Cleanup Workbench` et lancez le programme avec le dossier de vos jeux :
+
+```powershell
+cd "rom-cleanup-workbench\Rom Cleanup Workbench"
 python rom_cleanup_workbench.py "D:\Games"
 ```
+
+Sans dossier, la fenêtre le demande. Pour la version terminal, ajoutez `--tui`.
+
+### Linux
+
+Placez-vous dans le dossier `Rom Cleanup Workbench` et lancez le programme avec le Python de l'environnement virtuel et le dossier de vos jeux :
+
+```bash
+cd "rom-cleanup-workbench/Rom Cleanup Workbench"
+~/venvs/rom-cleanup-workbench/bin/python rom_cleanup_workbench.py ~/roms
+```
+
+Sans affichage graphique, par exemple via SSH, la version terminal démarre d'elle-même. Avec un affichage graphique, la fenêtre s'ouvre (il faut `python3-tk`) ; avec `--tui`, la version terminal démarre quand même. Plus d'informations dans [Version terminal (Linux)](#version-terminal-linux).
+
+### Ce qui se passe ensuite
 
 Le programme ouvre la fenêtre d'analyse et y affiche tout ; il n'écrit rien dans le terminal et n'y demande rien. Les questions, les messages et le choix du dossier apparaissent aussi dans la fenêtre, dans la langue du programme, jamais comme fenêtres surgissantes de Windows ; Entrée choisit le bouton présélectionné et Échap répond Non. Sans dossier, la fenêtre demande le dossier. Les fichiers ne sont supprimés qu'après la confirmation dans la fenêtre. **Les fichiers supprimés ne vont pas dans la Corbeille.**
 
@@ -31,10 +117,11 @@ Le programme ouvre la fenêtre d'analyse et y affiche tout ; il n'écrit rien d
 
 Les options de la ligne de commande et leur aide (`--help`) sont toujours en anglais.
 
-Dans VS Code : ouvrez le dossier `Rom Cleanup Workbench`, démarrez avec F5 et saisissez le dossier.
-Les tests se lancent depuis la vue des tests ou avec `python -m unittest`.
+Les tests se lancent avec `python -m unittest`.
 
 ## Fenêtre d'analyse
+
+Comme les fichiers ZIP doivent être décompressés pour obtenir la taille, la somme SHA-256 et le nom de leur contenu, il peut falloir un moment après le choix d'un dossier avant que les résultats s'affichent.
 
 La ligne verte du haut affiche `Rom Cleanup Workbench` à gauche et le dossier à droite ; en dessous, la fenêtre indique la priorité en vigueur et sa source. L'avant-dernière ligne verte montre l'état, pendant l'analyse par exemple `Analyse : 120 sur 2007 fichiers`. Pendant ce temps, une barre de progression apparaît aussi au milieu. La fenêtre affiche aussi les erreurs, par exemple dans la configuration, et tant que l'analyse échoue, rien ne peut être supprimé. Pendant la suppression, la barre de progression apparaît au milieu et la ligne verte affiche par exemple `Suppression : 120 sur 500 fichiers` ; la fenêtre n'accepte aucune saisie avant la fin de la suppression. Ensuite elle indique le résultat et retire de la liste les fichiers supprimés sans analyser à nouveau le dossier ; les fichiers qui n'ont pas pu être supprimés restent marqués. `F5` analyse à nouveau le dossier quand vous le souhaitez.
 
@@ -44,7 +131,7 @@ Les trois boutons radio déterminent ce que montre la liste :
 
 - `Marquages problématiques` : seulement les jeux avec un fichier marqué qui sont considérés comme problématiques (par défaut au premier démarrage)
 - `Tous les marquages` : tous les jeux avec un fichier marqué
-- `Tous les fichiers ROM` : tous les jeux. Leurs fichiers peuvent alors aussi être marqués avec `D`, et les cas problématiques sans fichier marqué, comme un ZIP illisible, apparaissent aussi.
+- `Tous les fichiers ROM` : tous les jeux. Leurs fichiers peuvent alors aussi être marqués avec `x`, et les cas problématiques sans fichier marqué, comme un ZIP illisible, apparaissent aussi.
 
 La fenêtre retient la dernière vue choisie et les fichiers d'état ou de sauvegarde confirmés (règle 9) dans `rom_cleanup_workbench_settings.json` à côté du programme.
 
@@ -52,16 +139,17 @@ La fenêtre retient la dernière vue choisie et les fichiers d'état ou de sauve
 | --- | --- |
 | Flèches | choisit une ligne, avec Maj plusieurs (par exemple tous les disques d'un jeu) |
 | `Tab` / `Maj+Tab` | va au jeu suivant / précédent ; le premier fichier du jeu est choisi |
-| `D` (Demote) | marque le fichier pour suppression ; il passe à la fin de son jeu |
-| `P` (Promote) | garde le fichier ; il passe à la place que lui donnent les règles |
+| `x` | marque le fichier pour suppression ; il passe à la fin de son jeu |
+| `k` | garde le fichier ; il passe à la place que lui donnent les règles |
+| `1` `2` `3` | les vues `Marquages problématiques`, `Tous les marquages`, `Tous les fichiers ROM` |
 | `Ctrl` + molette de la souris | agrandit ou réduit le texte (de 8 à 32 pt, jusqu'à la fermeture de la fenêtre) |
-| `Ctrl+E` | comme le bouton `Paramètres...` : affiche ou masque les paramètres de langue, de priorité et de mots à supprimer (voir [Paramètres](#paramètres)) |
-| `Ctrl+F` | va au champ de filtre |
-| `Ctrl+L` | comme le bouton `Exécuter...` : supprime après une confirmation et confirme les fichiers d'état ou de sauvegarde présumés (règle 9) |
-| `Ctrl+O` | choisit un autre dossier, dans la fenêtre à la place de la liste : ouvrez les dossiers par un double-clic ou avec la flèche, ou saisissez un chemin dans `Chemin :`, puis `Sélectionner` ou `Entrée` ; `Annuler` ou `Échap` gardent le dossier actuel |
-| `F5` | analyse à nouveau, relit aussi la configuration |
-| `F1` | affiche les crédits |
-| `Échap` | ferme sans rien supprimer |
+| `s` | comme le bouton `Paramètres...` : affiche ou masque les paramètres de langue, de priorité et de mots à supprimer (voir [Paramètres](#paramètres)) |
+| `/` | va au champ de filtre |
+| `Enter` | comme le bouton `Exécuter...` : supprime après une confirmation et confirme les fichiers d'état ou de sauvegarde présumés (règle 9) |
+| `f` | choisit un autre dossier, dans la fenêtre à la place de la liste : ouvrez les dossiers par un double-clic ou avec la flèche, ou saisissez un chemin dans `Chemin :`, puis `Sélectionner` ou `Entrée` ; `Annuler` ou `Échap` gardent le dossier actuel |
+| `r` ou `F5` | analyse à nouveau, relit aussi la configuration |
+| `c` ou `F1` | affiche les crédits |
+| `q` ou `Échap` | ferme sans rien supprimer ; après des modifications à la main, le programme demande d'abord |
 
 Des lignes horizontales séparent les jeux, et un jeu sur deux a un fond gris foncé. La colonne `Taille` montre la taille de chaque fichier en Ko, arrondie au supérieur comme dans l'Explorateur Windows (`1 234 Ko`) ; `?` signifie que la taille n'a pas pu être lue. La taille est lue pendant l'analyse. Les fichiers conservés sont affichés en gras sous `Garder :`, ceux à supprimer en caractères normaux sous `Marqué pour suppression`. La fenêtre affiche du texte blanc en Lucida Sans Typewriter 11 pt sur fond noir. Si la police n'est pas installée, Windows choisit discrètement une police de substitution. Les fichiers déplacés à la main ont un fond marron et portent la remarque `À la main` ; tant que la ligne est choisie, elle apparaît en bleu. Les remarques du programme restent inchangées, même si elles concernent un fichier que vous avez déplacé.
 
@@ -74,18 +162,18 @@ Le champ de filtre à gauche de la ligne du bas restreint la vue actuelle aux je
 - `*` remplace un nombre quelconque de caractères, `?` exactement un. Tous les autres caractères, y compris `[` et `]`, comptent littéralement, et les majuscules et minuscules ne comptent pas.
 - Le motif peut apparaître n'importe où dans le nom : `Beta`, `*Beta*` et `Mario?2` trouvent tous aussi `Super Mario 2 (Beta).nes`. Par conséquent, `S*` trouve tout nom contenant un `S`, pas seulement les noms qui commencent par lui.
 - `Entrée`, `Tab` et la flèche vers le bas reviennent à la liste ; `Échap` vide le filtre et revient à la liste.
-- Tant que le curseur est dans le champ, les touches n'écrivent que là : `D`, `P`, `Ctrl+L`, `Ctrl+O`, `F5` et `Échap` n'exécutent pas leurs fonctions de liste.
+- Tant que le curseur est dans le champ, les touches n'écrivent que là : `x`, `k`, `Enter`, `f`, `r`, `F5` et `Échap` n'exécutent pas leurs fonctions de liste.
 - Le filtre reste actif après `F5`, après la suppression et après le choix d'un autre dossier. Il n'est pas enregistré.
 
 **Le filtre ne change que l'affichage. Les fichiers marqués masqués par le filtre sont quand même supprimés lorsque vous supprimez** ; la confirmation indique leur nombre.
 
 ### Paramètres
 
-Le bouton `Paramètres...` de la ligne du bas, ou `Ctrl+E`, montre les modifications les plus fréquentes de `redundanz_config.json` dans la fenêtre principale, à la place de la liste des fichiers. `Enregistrer` ou `Annuler`, `Échap`, un second `Ctrl+E` ou un nouveau clic sur `Paramètres...` ramènent la liste. Pendant ce temps, le filtre, les vues, `Exécuter...`, `Analyser à nouveau` et `Dossier...` sont bloqués, et `D`, `P` et `Ctrl+L` ne font rien, afin que rien ne puisse changer dans la liste cachée.
+Le bouton `Paramètres...` de la ligne du bas, ou `s`, montre les modifications les plus fréquentes de `redundanz_config.json` dans la fenêtre principale, à la place de la liste des fichiers. `Enregistrer` ou `Annuler`, `Échap`, `Ctrl+E` ou un nouveau clic sur `Paramètres...` ramènent la liste. Pendant ce temps, le filtre, les vues, `Exécuter...`, `Analyser à nouveau` et `Dossier...` sont bloqués, et `x`, `k` et `Enter` ne font rien, afin que rien ne puisse changer dans la liste cachée.
 
-- **Langue :** choisissez parmi les six langues. Une nouvelle langue s'applique au prochain démarrage du programme.
-- **Priorité :** la meilleure région en haut ; les infos supplémentaires comme `Beta` ou `Proto` se placent après `none`, pour que ces fichiers viennent en dernier (règle 6). Choisissez une entrée et déplacez-la avec `Monter` et `Descendre`, retirez-la avec `Retirer` ou la touche `Suppr`, et ajoutez-en une nouvelle avec le champ sous la liste et `Ajouter` (ou `Entrée`).
-- **Mots à supprimer :** séparés par des virgules, par exemple `Hack, Hacks`. Les fichiers qui les contiennent sont marqués pour suppression (règle 2).
+- **Langue :** Définit la langue de l'interface. Choisissez parmi les six langues. Une nouvelle langue s'applique au prochain démarrage du programme.
+- **Priorité :** Définit quelles versions régionales ont la priorité sur les autres. La meilleure région en haut ; les infos supplémentaires comme `Beta` ou `Proto` se placent après `none`, pour que ces fichiers viennent en dernier (règle 6). Choisissez une entrée et déplacez-la avec `Monter` et `Descendre`, retirez-la avec `Retirer` ou la touche `Suppr`, et ajoutez-en une nouvelle avec le champ sous la liste et `Ajouter` (ou `Entrée`).
+- **Mots à supprimer :** Définissent quelles versions d'un jeu sont toujours supprimées. Séparés par des virgules, par exemple `Hack, Hacks`. Les fichiers qui les contiennent sont marqués pour suppression (règle 2).
 
 `Enregistrer` écrit le fichier et analyse à nouveau le dossier si la priorité ou les mots ont changé ; si vous avez modifié des marquages à la main, le programme demande d'abord, car ces modifications sont perdues. Toutes les autres entrées du fichier restent telles quelles. Les valeurs erronées, comme une liste de régions vide ou deux fois la même région, sont signalées, rien n'est écrit et les paramètres restent ouverts. Si le fichier ne peut pas être lu, les paramètres ne s'ouvrent pas, afin qu'ils ne puissent pas écraser des entrées qu'ils ne connaissent pas. Avec `--config`, les paramètres modifient ce fichier ; avec `--priority`, la priorité qui y est indiquée reste valable pour cette exécution.
 
@@ -102,23 +190,21 @@ Un jeu est considéré comme problématique si
 
 La fenêtre utilise `tkinter`, qui fait partie de l'installation habituelle de Python sous Windows. S'il manque, le programme le signale et ne supprime rien.
 
+## Après le nettoyage automatique
+
+Même après le nettoyage automatique, des versions redondantes d'un jeu peuvent rester. Le plus simple pour les trouver est le filtre (touche `/` puis le nom du jeu). Vous pouvez ensuite marquer les fichiers qui restent à supprimer.
+
 ## Version terminal (Linux)
 
 Le même programme fonctionne aussi dans un terminal texte, par exemple via SSH (PuTTY, MobaXterm), dans `tmux` ou sur la console Linux. Il montre la même liste, applique les mêmes règles et partage avec la fenêtre `redundanz_config.json`, `rom_cleanup_workbench_settings.json` et `translations.py`.
 
 Sous Linux, elle démarre d'elle-même lorsqu'il n'y a pas d'affichage graphique (ni `DISPLAY` ni `WAYLAND_DISPLAY` ne sont définies, comme via SSH). `--tui` la démarre partout ailleurs, aussi sous Windows ; utilisez-le là où un affichage graphique existe mais où vous voulez le terminal, par exemple dans MobaXterm ou sous WSL.
 
-Elle nécessite [Textual](https://textual.textualize.io/) (testé avec 8.2.8), de préférence dans un environnement virtuel :
-
-```bash
-python3 -m venv ~/venvs/rom-cleanup-workbench
-~/venvs/rom-cleanup-workbench/bin/pip install textual==8.2.8
-~/venvs/rom-cleanup-workbench/bin/python rom_cleanup_workbench.py --tui ~/roms
-```
+Elle nécessite [Textual](https://textual.textualize.io/) (testé avec 8.2.8). L'installation et le lancement du programme sont décrits dans [Installation](#installation) et [Utilisation](#utilisation).
 
 Sans Textual, le programme le dit et ne supprime rien. L'écran a les lignes de la fenêtre de haut en bas : la ligne de titre verte avec le dossier, une ligne d'aide, la priorité, la liste, le champ de filtre, les trois vues et la ligne d'état verte. Dans la liste, chaque jeu commence par son nom en gras, suivi de tirets jusqu'au bord droit ; une remarque comme `Orthographes différentes du nom` figure sur cette ligne. Dans un terminal étroit, comme les 80 colonnes de PuTTY, les noms de fichier et les remarques longs passent à la ligne dans leur colonne au lieu de sortir de l'écran. `Rien à faire.` clignote avec le clignotement propre au terminal ; dans PuTTY, il faut parfois d'abord activer le texte clignotant. Les questions et les messages apparaissent dans un cadre au-dessus de la liste, avec des boutons dans la langue du programme ; `Non` est présélectionné.
 
-La ligne d'aide montre les touches sous la forme `touche:action`, par exemple `x:supprimer  k:garder`. La version terminal a ses propres touches ; la fenêtre garde `D`, `P` et les touches `Ctrl`.
+La ligne d'aide montre les touches sous la forme `touche:action`, par exemple `x:supprimer  k:garder`. La fenêtre et la version terminal ont les mêmes touches.
 
 | Touche | Effet |
 | --- | --- |
@@ -126,12 +212,12 @@ La ligne d'aide montre les touches sous la forme `touche:action`, par exemple `x
 | `Tab` / `Maj+Tab` | jeu suivant / précédent ; son premier fichier est choisi |
 | `x` / `k` | marque les fichiers choisis pour suppression / les garde |
 | `1` `2` `3` | les vues `Marquages problématiques`, `Tous les marquages`, `Tous les fichiers ROM` |
-| `/` | va au champ de filtre (`Entrée`, `Tab` ou la flèche vers le bas reviennent, `Échap` le vide) |
+| `/` | va au champ de filtre |
 | `Entrée` | exécuter : supprime après une confirmation (comme `Exécuter...`) |
-| `f` | choisit un autre dossier : `Droite` ou `Espace` ouvre un dossier, `Gauche` le ferme, `Entrée` choisit ; on peut aussi saisir un chemin |
+| `f` | choisit un autre dossier, dans la fenêtre à la place de la liste : ouvrez les dossiers par un double-clic ou avec la flèche, ou saisissez un chemin dans `Chemin :`, puis `Sélectionner` ou `Entrée` ; `Annuler` ou `Échap` gardent le dossier actuel |
 | `s` | paramètres : `Maj+Haut`/`Maj+Bas` déplacent une région, `Suppr` la retire, `Ctrl+S` enregistre, `Échap` annule |
-| `r` ou `F5` | analyse à nouveau |
-| `c` ou `F1` | affiche les crédits (aussi `c`, car certains terminaux réservent `F1` à leur propre aide) |
+| `r` ou `F5` | analyse à nouveau, relit aussi la configuration |
+| `c` ou `F1` | affiche les crédits |
 | `q` ou `Échap` | ferme sans rien supprimer ; après des modifications à la main, le programme demande d'abord |
 | Dans une question | `Gauche`/`Droite` choisissent un bouton, `Entrée` l'actionne, `Échap` répond `Non` |
 
@@ -146,16 +232,16 @@ Différences avec la fenêtre : pas de zoom du texte, car la police appartient 
 Le fichier se trouve à côté du programme et est relu à chaque analyse. La langue, la priorité et les mots à supprimer se modifient le plus facilement dans la fenêtre avec `Paramètres...` (voir [Paramètres](#paramètres)). Dans le fichier lui-même, il suffit de changer l'ordre dans `region_priority` et d'enregistrer le fichier :
 
 ```json
-"region_priority": ["Germany", "Europe", "USA", "none", "Japan", "Beta", "Proto"],
-"delete_tags": ["Hack", "Hacks"],
+"region_priority": ["USA", "Europe", "none", "Japan", "Beta"],
+"delete_tags": [],
 ```
 
-Si le fichier contient une erreur, comme une entrée mal orthographiée, aucune analyse n'a lieu et rien n'est supprimé. Si le fichier ou une entrée manque, les valeurs par défaut du programme s'appliquent ; la priorité y est USA, Europe, Japan, none, Beta, les mots à supprimer sont Hack et Hacks, et la langue est l'anglais.
+Si le fichier contient une erreur, par exemple une entrée mal écrite, aucune analyse n'a lieu et rien n'est supprimé. Voici le fichier fourni : la langue est l'anglais, la priorité USA, Europe, none, Japan, Beta, et il n'y a pas de mots à supprimer. Les fichiers sans région passent donc avant les fichiers japonais. Si le fichier ou une entrée manque, les mêmes valeurs par défaut s'appliquent.
 
 - `language` : la langue de la fenêtre, des remarques et de la sortie dans le terminal (voir ci-dessous).
 - `region_priority` : régions et infos supplémentaires, la meilleure d'abord. `none` désigne les fichiers sans région connue ; les mots des autres langues (`keine`, `nessuna`, `ninguna`, `aucune`, `なし`) fonctionnent aussi. Une info supplémentaire comme `Beta` après `none` place ces fichiers en dernier (règle 6) ; `Beta` correspond aussi à `Beta 2`.
 - `region_aliases` : autres orthographes d'une région, par exemple `Europa` pour `Europe`.
-- `delete_tags` : les mots à supprimer, infos supplémentaires qui mènent toujours à la suppression (règle 2). `Hack` correspond aussi à `Hack 2` et `Hack by Someone`, mais pas à `Hacks` ni à `Hackers`, d'où `Hack` et `Hacks`.
+- `delete_tags` : les mots à supprimer, infos supplémentaires qui mènent toujours à la suppression (règle 2). Par défaut, la liste est vide. `Hack` correspond aussi à `Hack 2` et `Hack by Someone`, mais pas à `Hacks` ni à `Hackers` ; pour supprimer les hacks, saisissez donc `Hack` et `Hacks`.
 - `part_tags` : parties d'une version, par exemple `Disc 1`.
 
 Les anciens fichiers peuvent encore contenir `low_priority_tags`, des infos supplémentaires avec la priorité la plus basse. Le programme lit ses entrées comme si elles se trouvaient à la fin de `region_priority`, après `none` ; les paramètres les y déplacent lors de l'enregistrement, et l'entrée disparaît.
@@ -187,14 +273,14 @@ Le programme ignore complètement certains fichiers : ils n'apparaissent nulle 
 - Les fichiers cachés : noms commençant par un point, comme `.xxx` ou `.DS_Store`, et fichiers avec l'attribut Windows « caché ».
 
 1. Les fichiers vont ensemble si le texte avant la première parenthèse est identique. Les majuscules, espaces, tirets et tirets bas ne comptent pas, donc `Pac-Man` = `Pac Man` = `Pac_Man` = `PacMan`. Cela donne aussi `Title 1-2` = `Title 12`. De plus, `und` = `and` = `&` ainsi que `The Title` = `Title The` = `Title, The` = `Title` comptent comme égaux. Un `The` au milieu du nom compte en revanche.
-2. Les fichiers avec un mot à supprimer (`delete_tags`, par défaut `Hack` et `Hacks`) sont toujours marqués, même s'il s'agit du seul fichier du jeu. `P` garde quand même un tel fichier.
+2. Les fichiers avec un mot à supprimer (`delete_tags`, aucun par défaut, par exemple `Hack` et `Hacks`) sont toujours marqués, même s'ils sont le seul fichier du jeu. `k` garde quand même un tel fichier.
 3. Parmi les fichiers restants, celui qui a la meilleure entrée dans `region_priority` est conservé. Dans une même parenthèse, la meilleure entrée compte : avec `(USA, Japan)`, la meilleure des deux. D'une parenthèse à l'autre, la moins bonne compte : `(USA) (Beta)` compte comme `Beta` (règle 6).
 4. Tous les fichiers d'une même version sont conservés ensemble, par exemple `(Disc 1)` et `(Disc 2)` ou `.cue` et `.bin`. Tout le reste est marqué.
 5. Une région absente de `region_priority` compte comme `none`. Cela vaut aussi pour des indications comme `(Rev 1)`.
 6. Les infos supplémentaires comme `Beta`, `Proto` ou `Alpha` s'écrivent dans `region_priority` après `none`. Les fichiers qui les portent viennent après tous les autres, même après les fichiers sans région, et dans l'ordre de la liste : avec `none, Beta, Proto`, une Beta vient avant un Proto. Ils ne sont conservés que s'il n'y a pas de meilleur fichier du jeu. Entre eux, la région compte de nouveau, puis la version de la règle 7, puis le numéro après l'info supplémentaire : `Beta 2` l'emporte sur `Beta 1`, et `Beta 1` sur `Beta` sans numéro. Les numéros sont comparés numériquement (`Beta 10` avant `Beta 9`). Le fichier perdant reçoit la remarque `Bêta plus ancienne`.
 7. À priorité égale, le numéro de version le plus élevé l'emporte, comparé numériquement (`v1.10` avant `v1.9`). Sont reconnus entre parenthèses `v1.1`, `Ver 1.1`, `Version 1.1`, `Rev 1` et `Rev A` ; dans le nom du jeu seulement la forme `Title v1.1`, aussi avec `-` ou `_` à la place de l'espace. Un fichier sans version perd face à un fichier avec version. La région compte avant la version.
 8. Ensuite le fichier avec le moins d'informations supplémentaires l'emporte, puis un fichier sans ZIP, puis l'ordre alphabétique. Le rapport affiche alors `Égalité`.
-9. Un fichier plus petit que 1/4 du plus grand fichier du jeu est mis de côté avant les règles 3 à 8 et conservé : il peut s'agir d'un fichier d'état ou de sauvegarde. Il ne peut donc être ni supprimé ni évincer la vraie ROM, par exemple `1941.state` le fichier `1941.zip`. La colonne des remarques indique alors `Fichier d'état ou de sauvegarde présumé`, et le jeu est considéré comme problématique. Un tel jeu apparaît dans les trois vues, même si aucun de ses fichiers n'est marqué. Lorsque vous supprimez, le programme confirme comme légitimes tous les fichiers présumés restants : ils restent où ils sont, ne sont toujours jamais supprimés et n'apparaissent plus dans `Marquages problématiques` ni dans `Tous les marquages`, même après `F5` ou un nouveau démarrage. La confirmation indique leur nombre. Le programme les mémorise avec leur chemin et leur taille dans `rom_cleanup_workbench_settings.json` ; si la taille change, le fichier redevient suspect. Si rien n'est marqué, `Ctrl+L` propose de les confirmer sans rien supprimer. Les ZIP comptent avec leur taille décompressée. Cela ne vaut pas pour un petit fichier normal à côté d'un grand fichier normal de sa propre version, comme un `.cue` à côté de son `.bin`, ni pour les fichiers marqués à cause de `delete_tags` ou d'un ZIP endommagé. Avec `D`, vous pouvez quand même marquer le fichier à la main.
+9. Un fichier plus petit que 1/4 du plus grand fichier du jeu est mis de côté avant les règles 3 à 8 et conservé : il peut s'agir d'un fichier d'état ou de sauvegarde. Il ne peut donc être ni supprimé ni évincer la vraie ROM, par exemple `1941.state` le fichier `1941.zip`. La colonne des remarques indique alors `Fichier d'état ou de sauvegarde présumé`, et le jeu est considéré comme problématique. Un tel jeu apparaît dans les trois vues, même si aucun de ses fichiers n'est marqué. Lorsque vous supprimez, le programme confirme comme légitimes tous les fichiers présumés restants : ils restent où ils sont, ne sont toujours jamais supprimés et n'apparaissent plus dans `Marquages problématiques` ni dans `Tous les marquages`, même après `F5` ou un nouveau démarrage. La confirmation indique leur nombre. Le programme les mémorise avec leur chemin et leur taille dans `rom_cleanup_workbench_settings.json` ; si la taille change, le fichier redevient suspect. Si rien n'est marqué, `Enter` propose de les confirmer sans rien supprimer. Les ZIP comptent avec leur taille décompressée. Cela ne vaut pas pour un petit fichier normal à côté d'un grand fichier normal de sa propre version, comme un `.cue` à côté de son `.bin`, ni pour les fichiers marqués à cause de `delete_tags` ou d'un ZIP endommagé. Avec `x`, vous pouvez quand même marquer le fichier à la main.
 
 ## Fichiers ZIP
 
@@ -208,13 +294,41 @@ Chaque fichier ZIP est lu entièrement, même s'il est le seul fichier d'un jeu.
 - **ZIP endommagé ou chiffré :** le fichier est toujours marqué, même s'il est le seul fichier du jeu. Le contenu d'un ZIP chiffré n'est pas vérifié.
 - **ZIP verrouillé ou méthode inconnue (par exemple Deflate64) :** cela ne dit rien de l'état du fichier. Sans fichier normal du jeu, il est conservé et signalé dans le rapport.
 
+## Faire évoluer le programme avec Claude Code
+
+Le programme est un logiciel libre : vous pouvez cloner le dépôt et le faire évoluer avec [Claude Code](https://claude.com/claude-code), sans programmer vous-même. C'est aussi ainsi qu'il a été écrit.
+
+1. Installez Claude Code. Il faut un abonnement Claude ou un compte pour l'API Claude. Sous Windows, dans PowerShell :
+
+   ```powershell
+   irm https://claude.ai/install.ps1 | iex
+   ```
+
+   Sous Linux :
+
+   ```bash
+   curl -fsSL https://claude.ai/install.sh | bash
+   ```
+
+2. Clonez le dépôt et lancez Claude Code dedans :
+
+   ```bash
+   git clone https://github.com/arved9926/rom-cleanup-workbench.git
+   cd rom-cleanup-workbench
+   claude
+   ```
+
+3. Décrivez avec vos propres mots ce qui doit changer, par exemple « Ajoute une option qui n'affiche que les fichiers ZIP ». Claude Code lit le code, propose des modifications et demande avant de modifier des fichiers ou d'exécuter des commandes. Faites-lui ensuite lancer les tests (`python -m unittest` dans le dossier `Rom Cleanup Workbench`) et essayez la modification sur une copie de votre collection.
+
+Les plans des modifications précédentes se trouvent dans `docs/`. Si vous diffusez vos modifications, vous devez aussi les publier sous la GPL.
+
 ## Licence et clause de non-responsabilité
 
 Copyright (C) 2026 M. Kärcher
 
 Rom Cleanup Workbench est un logiciel libre : vous pouvez le redistribuer et/ou le modifier selon les termes de la GNU General Public License publiée par la Free Software Foundation, soit la version 3 de la licence, soit (à votre choix) toute version ultérieure. Le texte complet se trouve dans [LICENSE](<../LICENSE>) ; seul ce texte original anglais fait foi juridiquement.
 
-**Utilisation à vos propres risques.** Le programme supprime des fichiers et aucune garantie d'aucune sorte n'est fournie ; quiconque l'utilise assume tous les risques qui en découlent. Nous recommandons de l'utiliser d'abord sur une copie de votre propre collection de ROM.
+**Utilisation à vos propres risques.** Le programme supprime des fichiers et aucune garantie n'est fournie ; celui qui l'utilise en assume tous les risques. Nous recommandons vivement de l'utiliser uniquement sur une copie de votre propre collection de ROM.
 
 ## Crédits
 

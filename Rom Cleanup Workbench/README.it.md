@@ -8,11 +8,97 @@ Trova i file ROM duplicati in una cartella in base al nome del gioco e li elimin
 Richiede Python 3.10 o successivo. La finestra non ha bisogno di pacchetti aggiuntivi; la versione per terminale per Linux richiede Textual (vedi [Versione per terminale (Linux)](#versione-per-terminale-linux)).
 Il programma parla inglese, tedesco, italiano, spagnolo, francese e giapponese (vedi [Lingua](#lingua)).
 
+**Importante:** non usare questo programma sui tuoi file ROM originali. Crea una copia del tuo archivio di ROM e usa il programma per fare la pulizia solo sulla copia.
+
+## Installazione
+
+### Windows
+
+1. **Installare Python:** scarica Python 3.10 o successivo da [python.org/downloads](https://www.python.org/downloads/) e installalo. Se il programma di installazione offre "Add python.exe to PATH", spunta questa opzione. `tkinter` per la finestra è incluso. Poi controlla in un nuovo terminale:
+
+   ```powershell
+   python --version
+   ```
+
+2. **Scaricare il programma:** senza Git, il modo più semplice è un file ZIP. Nel browser: sulla [pagina GitHub](https://github.com/arved9926/rom-cleanup-workbench) scegli il pulsante verde **Code** e poi **Download ZIP**, fai clic con il tasto destro sul file `rom-cleanup-workbench-main.zip` in Esplora file, scegli **Estrai tutto...** e rinomina la cartella estratta `rom-cleanup-workbench-main` in `rom-cleanup-workbench`. Oppure lo stesso in PowerShell:
+
+   ```powershell
+   Invoke-WebRequest https://github.com/arved9926/rom-cleanup-workbench/archive/refs/heads/main.zip -OutFile rom-cleanup-workbench.zip
+   Expand-Archive rom-cleanup-workbench.zip -DestinationPath .
+   Rename-Item rom-cleanup-workbench-main rom-cleanup-workbench
+   cd "rom-cleanup-workbench\Rom Cleanup Workbench"
+   ```
+
+   Chi ha installato Git può invece clonare il repository:
+
+   ```powershell
+   git clone https://github.com/arved9926/rom-cleanup-workbench.git
+   cd "rom-cleanup-workbench\Rom Cleanup Workbench"
+   ```
+
+   Il programma si trova nella cartella `Rom Cleanup Workbench`. La finestra non ha bisogno di altri pacchetti. Solo chi vuole usare la versione per terminale su Windows installa anche Textual:
+
+   ```powershell
+   python -m pip install textual==8.2.8
+   ```
+
+### Linux
+
+1. **Installare Python:** di solito Python 3 c'è già (`python3 --version`). Altrimenti, su Debian o Ubuntu:
+
+   ```bash
+   sudo apt install python3 python3-venv wget unzip
+   ```
+
+   Il pacchetto `python3-tk` serve solo se su Linux con un display grafico vuoi usare la finestra invece della versione per terminale.
+
+2. **Scaricare il programma:** senza Git, scaricalo da GitHub come file ZIP ed estrailo:
+
+   ```bash
+   wget https://github.com/arved9926/rom-cleanup-workbench/archive/refs/heads/main.zip -O rom-cleanup-workbench.zip
+   unzip rom-cleanup-workbench.zip
+   mv rom-cleanup-workbench-main rom-cleanup-workbench
+   ```
+
+   Chi ha installato Git (`sudo apt install git`) può invece clonare il repository:
+
+   ```bash
+   git clone https://github.com/arved9926/rom-cleanup-workbench.git
+   ```
+
+3. **Installare Textual in un ambiente virtuale:**
+
+   ```bash
+   cd "rom-cleanup-workbench/Rom Cleanup Workbench"
+   python3 -m venv ~/venvs/rom-cleanup-workbench
+   ~/venvs/rom-cleanup-workbench/bin/pip install textual==8.2.8
+   ```
+
 ## Uso
 
-```bash
+### Windows
+
+Apri un terminale (per esempio PowerShell) nella cartella `Rom Cleanup Workbench` e avvia il programma con la cartella dei tuoi giochi:
+
+```powershell
+cd "rom-cleanup-workbench\Rom Cleanup Workbench"
 python rom_cleanup_workbench.py "D:\Games"
 ```
+
+Senza cartella, la finestra la chiede. Chi vuole la versione per terminale aggiunge `--tui`.
+
+### Linux
+
+Entra nella cartella `Rom Cleanup Workbench` e avvia il programma con il Python dell'ambiente virtuale e la cartella dei tuoi giochi:
+
+```bash
+cd "rom-cleanup-workbench/Rom Cleanup Workbench"
+~/venvs/rom-cleanup-workbench/bin/python rom_cleanup_workbench.py ~/roms
+```
+
+Senza display grafico, per esempio tramite SSH, la versione per terminale parte da sola. Con un display grafico si apre la finestra (serve `python3-tk`); con `--tui` parte comunque la versione per terminale. Altro in [Versione per terminale (Linux)](#versione-per-terminale-linux).
+
+### Che cosa succede poi
 
 Il programma apre la finestra di analisi e mostra tutto lì; nel terminale non stampa nulla e non chiede nulla. Anche domande, messaggi e la scelta della cartella compaiono dentro la finestra, nella lingua del programma, mai come popup di Windows; Invio sceglie il pulsante preselezionato ed Esc risponde No. Senza una cartella, la finestra chiede la cartella. I file vengono eliminati solo dopo la conferma nella finestra. **I file eliminati non finiscono nel Cestino.**
 
@@ -31,10 +117,11 @@ Il programma apre la finestra di analisi e mostra tutto lì; nel terminale non s
 
 Le opzioni della riga di comando e il loro aiuto (`--help`) sono sempre in inglese.
 
-In VS Code: apri la cartella `Rom Cleanup Workbench`, avvia con F5 e inserisci la cartella.
-I test si eseguono dalla vista dei test o con `python -m unittest`.
+I test si eseguono con `python -m unittest`.
 
 ## Finestra di analisi
+
+Poiché i file ZIP devono essere estratti per ottenere dimensione, checksum SHA-256 e nome del loro contenuto, dopo la scelta di una cartella può passare un momento prima che compaiano i risultati.
 
 La riga verde in alto mostra `Rom Cleanup Workbench` a sinistra e la cartella a destra; sotto, la finestra indica la priorità in uso con la sua provenienza. La penultima riga verde mostra lo stato, durante l'analisi per esempio `Analisi: 120 di 2007 file`. In quel momento compare anche una barra di avanzamento al centro. La finestra mostra anche gli errori, per esempio nella configurazione, e finché l'analisi non riesce non si può eliminare nulla. Durante l'eliminazione la barra di avanzamento compare al centro e la riga verde mostra per esempio `Eliminazione: 120 di 500 file`; la finestra non accetta input finché l'eliminazione non è terminata. Al termine comunica il risultato e toglie dall'elenco i file eliminati senza analizzare di nuovo la cartella; i file che non è stato possibile eliminare restano marcati. `F5` analizza di nuovo la cartella quando lo desideri.
 
@@ -44,7 +131,7 @@ I tre pulsanti di opzione decidono cosa mostra l'elenco:
 
 - `Marcature problematiche`: solo i giochi con un file marcato che sono considerati problematici (predefinita al primo avvio)
 - `Tutte le marcature`: tutti i giochi con un file marcato
-- `Tutti i file ROM`: tutti i giochi. I loro file si possono allora marcare anche con `D`, e compaiono anche i casi problematici senza file marcato, come uno ZIP non leggibile.
+- `Tutti i file ROM`: tutti i giochi. I loro file si possono allora marcare anche con `x`, e compaiono anche i casi problematici senza file marcato, come uno ZIP non leggibile.
 
 La finestra ricorda l'ultima vista scelta e i file di stato o salvataggio confermati (regola 9) in `rom_cleanup_workbench_settings.json` accanto al programma.
 
@@ -52,16 +139,17 @@ La finestra ricorda l'ultima vista scelta e i file di stato o salvataggio confer
 | --- | --- |
 | Frecce | seleziona una riga, con Maiusc più righe (per esempio tutti i dischi di un gioco) |
 | `Tab` / `Maiusc+Tab` | va al gioco successivo / precedente; viene selezionato il primo file del gioco |
-| `D` (Demote) | marca il file per l'eliminazione; si sposta alla fine del suo gioco |
-| `P` (Promote) | mantiene il file; si sposta nella posizione che gli danno le regole |
+| `x` | marca il file per l'eliminazione; si sposta alla fine del suo gioco |
+| `k` | mantiene il file; si sposta nella posizione che gli danno le regole |
+| `1` `2` `3` | le viste `Marcature problematiche`, `Tutte le marcature`, `Tutti i file ROM` |
 | `Ctrl` + rotellina del mouse | ingrandisce o rimpicciolisce il testo (da 8 a 32 pt, vale finché la finestra resta aperta) |
-| `Ctrl+E` | come il pulsante `Impostazioni...`: mostra o nasconde le impostazioni per lingua, priorità e parole da eliminare (vedi [Impostazioni](#impostazioni)) |
-| `Ctrl+F` | va al campo del filtro |
-| `Ctrl+L` | come il pulsante `Esegui...`: elimina dopo una conferma e conferma i possibili file di stato o salvataggio (regola 9) |
-| `Ctrl+O` | sceglie un'altra cartella, dentro la finestra al posto dell'elenco: apri le cartelle con un doppio clic o con la freccia, oppure scrivi un percorso in `Percorso:`, poi `Seleziona` o `Invio`; `Annulla` o `Esc` mantengono la cartella attuale |
-| `F5` | analizza di nuovo, rilegge anche la configurazione |
-| `F1` | mostra i riconoscimenti |
-| `Esc` | chiude senza eliminare nulla |
+| `s` | come il pulsante `Impostazioni...`: mostra o nasconde le impostazioni per lingua, priorità e parole da eliminare (vedi [Impostazioni](#impostazioni)) |
+| `/` | va al campo del filtro |
+| `Enter` | come il pulsante `Esegui...`: elimina dopo una conferma e conferma i possibili file di stato o salvataggio (regola 9) |
+| `f` | sceglie un'altra cartella, dentro la finestra al posto dell'elenco: apri le cartelle con un doppio clic o con la freccia, oppure scrivi un percorso in `Percorso:`, poi `Seleziona` o `Invio`; `Annulla` o `Esc` mantengono la cartella attuale |
+| `r` o `F5` | analizza di nuovo, rilegge anche la configurazione |
+| `c` o `F1` | mostra i riconoscimenti |
+| `q` o `Esc` | chiude senza eliminare nulla; dopo modifiche a mano il programma chiede prima |
 
 Linee orizzontali separano i giochi, e un gioco su due ha lo sfondo grigio scuro. La colonna `Dimensione` mostra la dimensione di ogni file in KB, arrotondata per eccesso come in Esplora file di Windows (`1.234 KB`); `?` significa che non è stato possibile leggere la dimensione. La dimensione viene letta durante l'analisi. I file mantenuti sono mostrati in grassetto sotto `Mantieni:`, quelli da eliminare in carattere normale sotto `Da eliminare`. La finestra mostra testo bianco in Lucida Sans Typewriter 11 pt su sfondo nero. Se il font non è installato, Windows sceglie in silenzio un sostituto. I file spostati a mano hanno lo sfondo marrone e portano la nota `A mano`; mentre la riga è selezionata, appare blu. Le note del programma restano invariate, anche se si riferiscono a un file che hai spostato.
 
@@ -74,18 +162,18 @@ Il campo del filtro a sinistra nella riga in basso restringe la vista attuale ai
 - `*` sta per un numero qualsiasi di caratteri, `?` per esattamente uno. Tutti gli altri caratteri, compresi `[` e `]`, valgono alla lettera, e maiuscole e minuscole non contano.
 - Il modello può comparire in qualsiasi punto del nome: `Beta`, `*Beta*` e `Mario?2` trovano tutti anche `Super Mario 2 (Beta).nes`. Di conseguenza `S*` trova ogni nome che contiene una `S`, non solo i nomi che iniziano con essa.
 - `Invio`, `Tab` e la freccia giù tornano all'elenco; `Esc` svuota il filtro e torna all'elenco.
-- Finché il cursore è nel campo, i tasti scrivono solo lì: `D`, `P`, `Ctrl+L`, `Ctrl+O`, `F5` ed `Esc` non eseguono le loro funzioni dell'elenco.
+- Finché il cursore è nel campo, i tasti scrivono solo lì: `x`, `k`, `Enter`, `f`, `r`, `F5` ed `Esc` non eseguono le loro funzioni dell'elenco.
 - Il filtro resta attivo dopo `F5`, dopo l'eliminazione e dopo la scelta di un'altra cartella. Non viene salvato.
 
 **Il filtro cambia solo la visualizzazione. I file marcati nascosti dal filtro vengono comunque eliminati quando elimini**; la conferma ne indica il numero.
 
 ### Impostazioni
 
-Il pulsante `Impostazioni...` nella riga in basso, o `Ctrl+E`, mostra le modifiche più frequenti a `redundanz_config.json` nella finestra principale, al posto dell'elenco dei file. `Salva` o `Annulla`, `Esc`, un secondo `Ctrl+E` o un altro clic su `Impostazioni...` riportano l'elenco. Nel frattempo il filtro, le viste, `Esegui...`, `Analizza di nuovo` e `Cartella...` sono bloccati, e `D`, `P` e `Ctrl+L` non fanno nulla, così che nell'elenco nascosto non possa cambiare niente.
+Il pulsante `Impostazioni...` nella riga in basso, o `s`, mostra le modifiche più frequenti a `redundanz_config.json` nella finestra principale, al posto dell'elenco dei file. `Salva` o `Annulla`, `Esc`, `Ctrl+E` o un altro clic su `Impostazioni...` riportano l'elenco. Nel frattempo il filtro, le viste, `Esegui...`, `Analizza di nuovo` e `Cartella...` sono bloccati, e `x`, `k` e `Enter` non fanno nulla, così che nell'elenco nascosto non possa cambiare niente.
 
-- **Lingua:** scegli tra le sei lingue. Una nuova lingua vale dal prossimo avvio del programma.
-- **Priorità:** la regione migliore in alto; le info aggiuntive come `Beta` o `Proto` vanno dopo `none`, così questi file vengono per ultimi (regola 6). Seleziona una voce e spostala con `Su` e `Giù`, rimuovila con `Rimuovi` o con il tasto `Canc`, e aggiungine una nuova con il campo sotto l'elenco e `Aggiungi` (o `Invio`).
-- **Parole da eliminare:** separate da virgole, per esempio `Hack, Hacks`. I file che le contengono vengono marcati per l'eliminazione (regola 2).
+- **Lingua:** Stabilisce la lingua dell'interfaccia. Scegli tra le sei lingue. Una nuova lingua vale dal prossimo avvio del programma.
+- **Priorità:** Stabilisce quali versioni regionali hanno la precedenza sulle altre. La regione migliore in alto; le info aggiuntive come `Beta` o `Proto` vanno dopo `none`, così questi file vengono per ultimi (regola 6). Seleziona una voce e spostala con `Su` e `Giù`, rimuovila con `Rimuovi` o con il tasto `Canc`, e aggiungine una nuova con il campo sotto l'elenco e `Aggiungi` (o `Invio`).
+- **Parole da eliminare:** Stabiliscono quali versioni di un gioco vengono eliminate in ogni caso. Separate da virgole, per esempio `Hack, Hacks`. I file che le contengono vengono marcati per l'eliminazione (regola 2).
 
 `Salva` scrive il file e analizza di nuovo la cartella se la priorità o le parole sono cambiate; se hai modificato marcature a mano, il programma chiede prima, perché queste modifiche vanno perse. Tutte le altre voci del file restano come sono. I valori errati, come un elenco di regioni vuoto o la stessa regione due volte, vengono segnalati, non viene scritto nulla e le impostazioni restano aperte. Se il file non si può leggere, le impostazioni non si aprono, così da non poter sovrascrivere voci che non conoscono. Con `--config` le impostazioni modificano quel file; con `--priority` per questa esecuzione resta valida la priorità indicata lì.
 
@@ -102,23 +190,21 @@ Un gioco è considerato problematico se
 
 La finestra usa `tkinter`, che fa parte della normale installazione di Python su Windows. Se manca, il programma lo segnala e non elimina nulla.
 
+## Dopo la pulizia automatica
+
+Anche dopo la pulizia automatica possono restare versioni ridondanti di un gioco. Il modo più semplice per trovarle è il filtro (tasto `/` e poi il nome del gioco). Dopo puoi marcare i file che vanno ancora eliminati.
+
 ## Versione per terminale (Linux)
 
 Lo stesso programma funziona anche in un terminale di testo, per esempio tramite SSH (PuTTY, MobaXterm), in `tmux` o sulla console di Linux. Mostra lo stesso elenco, applica le stesse regole e condivide con la finestra `redundanz_config.json`, `rom_cleanup_workbench_settings.json` e `translations.py`.
 
 Su Linux si avvia da sola quando non c'è un display grafico (né `DISPLAY` né `WAYLAND_DISPLAY` sono impostate, come tramite SSH). `--tui` la avvia ovunque altrove, anche su Windows; usalo dove esiste un display grafico ma vuoi il terminale, per esempio in MobaXterm o sotto WSL.
 
-Richiede [Textual](https://textual.textualize.io/) (testato con 8.2.8), meglio in un ambiente virtuale:
-
-```bash
-python3 -m venv ~/venvs/rom-cleanup-workbench
-~/venvs/rom-cleanup-workbench/bin/pip install textual==8.2.8
-~/venvs/rom-cleanup-workbench/bin/python rom_cleanup_workbench.py --tui ~/roms
-```
+Richiede [Textual](https://textual.textualize.io/) (testato con 8.2.8). Come installarlo e avviare il programma è descritto in [Installazione](#installazione) e [Uso](#uso).
 
 Senza Textual il programma lo dice e non elimina nulla. Lo schermo ha le righe della finestra dall'alto in basso: la riga del titolo verde con la cartella, una riga di aiuto, la priorità, l'elenco, il campo del filtro, le tre viste e la riga di stato verde. Nell'elenco ogni gioco inizia con il suo nome in grassetto, seguito da trattini fino al bordo destro; una nota come `Grafie diverse del nome` si trova su quella riga. In un terminale stretto, come le 80 colonne di PuTTY, i nomi di file e le note lunghe vanno a capo nella loro colonna invece di uscire dallo schermo. `Niente da fare.` lampeggia con il lampeggio proprio del terminale; in PuTTY può essere necessario attivare prima il testo lampeggiante. Domande e messaggi compaiono in una cornice sopra l'elenco, con pulsanti nella lingua del programma; `No` è preselezionato.
 
-La riga di aiuto mostra i tasti come `tasto:azione`, per esempio `x:elimina  k:mantieni`. La versione per terminale ha tasti propri; la finestra mantiene `D`, `P` e i tasti `Ctrl`.
+La riga di aiuto mostra i tasti come `tasto:azione`, per esempio `x:elimina  k:mantieni`. La finestra e la versione per terminale hanno gli stessi tasti.
 
 | Tasto | Effetto |
 | --- | --- |
@@ -126,12 +212,12 @@ La riga di aiuto mostra i tasti come `tasto:azione`, per esempio `x:elimina  k:m
 | `Tab` / `Maiusc+Tab` | gioco successivo / precedente; viene selezionato il suo primo file |
 | `x` / `k` | marca i file selezionati per l'eliminazione / li mantiene |
 | `1` `2` `3` | le viste `Marcature problematiche`, `Tutte le marcature`, `Tutti i file ROM` |
-| `/` | va al campo del filtro (`Invio`, `Tab` o la freccia giù tornano indietro, `Esc` lo svuota) |
+| `/` | va al campo del filtro |
 | `Invio` | esegue: elimina dopo una conferma (come `Esegui...`) |
-| `f` | sceglie un'altra cartella: `Destra` o `Spazio` apre una cartella, `Sinistra` la chiude, `Invio` sceglie; si può anche scrivere un percorso |
+| `f` | sceglie un'altra cartella, dentro la finestra al posto dell'elenco: apri le cartelle con un doppio clic o con la freccia, oppure scrivi un percorso in `Percorso:`, poi `Seleziona` o `Invio`; `Annulla` o `Esc` mantengono la cartella attuale |
 | `s` | impostazioni: `Maiusc+Su`/`Maiusc+Giù` spostano una regione, `Canc` la rimuove, `Ctrl+S` salva, `Esc` annulla |
-| `r` o `F5` | analizza di nuovo |
-| `c` o `F1` | mostra i riconoscimenti (anche `c`, perché alcuni terminali riservano `F1` al proprio aiuto) |
+| `r` o `F5` | analizza di nuovo, rilegge anche la configurazione |
+| `c` o `F1` | mostra i riconoscimenti |
 | `q` o `Esc` | chiude senza eliminare nulla; dopo modifiche a mano il programma chiede prima |
 | In una domanda | `Sinistra`/`Destra` scelgono un pulsante, `Invio` lo preme, `Esc` risponde `No` |
 
@@ -146,16 +232,16 @@ Differenze rispetto alla finestra: niente zoom del testo, perché il font appart
 Il file si trova accanto al programma e viene riletto a ogni analisi. Lingua, priorità e parole da eliminare si cambiano più facilmente nella finestra con `Impostazioni...` (vedi [Impostazioni](#impostazioni)). Nel file stesso basta cambiare l'ordine in `region_priority` e salvare il file:
 
 ```json
-"region_priority": ["Germany", "Europe", "USA", "none", "Japan", "Beta", "Proto"],
-"delete_tags": ["Hack", "Hacks"],
+"region_priority": ["USA", "Europe", "none", "Japan", "Beta"],
+"delete_tags": [],
 ```
 
-Se il file contiene un errore, come una voce scritta male, non avviene alcuna analisi e non viene eliminato nulla. Se mancano il file o una voce, valgono i valori predefiniti del programma; lì la priorità è USA, Europe, Japan, none, Beta, le parole da eliminare sono Hack e Hacks e la lingua è l'inglese.
+Se il file contiene un errore, per esempio una voce scritta male, non avviene nessuna analisi e non viene eliminato nulla. Il file fornito è così: la lingua è l'inglese, la priorità USA, Europe, none, Japan, Beta, e non ci sono parole da eliminare. I file senza regione vengono quindi prima di quelli giapponesi. Se manca il file o una voce, valgono gli stessi valori predefiniti.
 
 - `language`: la lingua della finestra, delle note e dell'output nel terminale (vedi sotto).
 - `region_priority`: regioni e info aggiuntive, la migliore per prima. `none` sta per i file senza una regione nota; funzionano anche le parole delle altre lingue (`keine`, `nessuna`, `ninguna`, `aucune`, `なし`). Info aggiuntive come `Beta` dopo `none` mettono questi file per ultimi (regola 6); `Beta` vale anche per `Beta 2`.
 - `region_aliases`: altre grafie di una regione, per esempio `Europa` per `Europe`.
-- `delete_tags`: le parole da eliminare, info aggiuntive che portano sempre all'eliminazione (regola 2). `Hack` vale anche per `Hack 2` e `Hack by Someone`, ma non per `Hacks` o `Hackers`, per questo ci sono sia `Hack` sia `Hacks`.
+- `delete_tags`: le parole da eliminare, info aggiuntive che portano sempre all'eliminazione (regola 2). Per impostazione predefinita l'elenco è vuoto. `Hack` corrisponde anche a `Hack 2` e `Hack by Someone`, ma non a `Hacks` o `Hackers`; chi vuole eliminare gli hack inserisce quindi sia `Hack` sia `Hacks`.
 - `part_tags`: parti di una versione, per esempio `Disc 1`.
 
 I file più vecchi possono contenere ancora `low_priority_tags`, info aggiuntive con la priorità più bassa. Il programma legge le sue voci come se stessero alla fine di `region_priority`, dopo `none`; le impostazioni le spostano lì quando salvano, e la voce scompare.
@@ -187,14 +273,14 @@ Il programma ignora del tutto alcuni file: non compaiono da nessuna parte e non 
 - I file nascosti: nomi che iniziano con un punto, come `.xxx` o `.DS_Store`, e file con l'attributo di Windows «nascosto».
 
 1. I file vanno insieme se il testo prima della prima parentesi è uguale. Maiuscole, spazi, trattini e trattini bassi non contano, quindi `Pac-Man` = `Pac Man` = `Pac_Man` = `PacMan`. Ne segue anche `Title 1-2` = `Title 12`. Inoltre valgono come uguali `und` = `and` = `&` e `The Title` = `Title The` = `Title, The` = `Title`. Un `The` in mezzo al nome invece conta.
-2. I file con una parola da eliminare (`delete_tags`, per impostazione predefinita `Hack` e `Hacks`) vengono sempre marcati, anche se è l'unico file del gioco. `P` mantiene comunque un file del genere.
+2. I file con una parola da eliminare (`delete_tags`, nessuna per impostazione predefinita, per esempio `Hack` e `Hacks`) vengono sempre marcati, anche se sono l'unico file del gioco. `k` mantiene comunque un file del genere.
 3. Tra i file rimanenti viene mantenuto quello con la voce migliore in `region_priority`. All'interno di una parentesi conta la voce migliore: con `(USA, Japan)` la migliore delle due. Tra parentesi diverse conta la peggiore: `(USA) (Beta)` vale come `Beta` (regola 6).
 4. Tutti i file della stessa versione vengono mantenuti insieme, per esempio `(Disc 1)` e `(Disc 2)` oppure `.cue` e `.bin`. Tutto il resto viene marcato.
 5. Una regione che non è in `region_priority` vale come `none`. Questo vale anche per indicazioni come `(Rev 1)`.
 6. Le info aggiuntive come `Beta`, `Proto` o `Alpha` si scrivono in `region_priority` dopo `none`. I file che le contengono vengono dopo tutti gli altri, anche dopo i file senza regione, e nell'ordine dell'elenco: con `none, Beta, Proto` una Beta viene prima di un Proto. Vengono mantenuti solo se non c'è un file migliore del gioco. Tra di loro conta di nuovo la regione, poi la versione della regola 7, poi il numero dopo l'info aggiuntiva: `Beta 2` vince su `Beta 1`, e `Beta 1` su `Beta` senza numero. I numeri sono confrontati numericamente (`Beta 10` prima di `Beta 9`). Il file che perde riceve la nota `Beta precedente`.
 7. A parità di priorità vince il numero di versione più alto, confrontato numericamente (`v1.10` prima di `v1.9`). Tra parentesi sono riconosciuti `v1.1`, `Ver 1.1`, `Version 1.1`, `Rev 1` e `Rev A`; nel nome del gioco solo la forma `Title v1.1`, anche con `-` o `_` al posto dello spazio. Un file senza versione perde contro uno con versione. La regione conta prima della versione.
 8. Dopo di che vince il file con meno informazioni aggiuntive, poi un file senza ZIP, poi l'ordine alfabetico. Il rapporto mostra allora `Parità`.
-9. Un file più piccolo di 1/4 del file più grande del gioco viene messo da parte prima delle regole da 3 a 8 e mantenuto: potrebbe essere un file di stato o salvataggio. Non può quindi essere eliminato né scalzare la vera ROM, per esempio `1941.state` il file `1941.zip`. La colonna delle note dice allora `Possibile file di stato o salvataggio`, e il gioco è considerato problematico. Un gioco del genere compare in tutte e tre le viste, anche se nessuno dei suoi file è marcato. Quando elimini, il programma conferma come legittimi tutti i possibili file rimanenti: restano dove sono, continuano a non essere mai eliminati e non compaiono più in `Marcature problematiche` e `Tutte le marcature`, anche dopo `F5` o un nuovo avvio. La conferma ne indica il numero. Il programma li memorizza con percorso e dimensione in `rom_cleanup_workbench_settings.json`; se la dimensione cambia, il file torna sospetto. Se non è marcato nulla, `Ctrl+L` propone di confermarli senza eliminare nulla. Gli ZIP contano con la loro dimensione decompressa. Questo non vale per un file normale piccolo accanto a un file normale grande della sua stessa versione, come un `.cue` accanto al suo `.bin`, né per i file marcati a causa di `delete_tags` o di uno ZIP danneggiato. Con `D` puoi comunque marcare il file a mano.
+9. Un file più piccolo di 1/4 del file più grande del gioco viene messo da parte prima delle regole da 3 a 8 e mantenuto: potrebbe essere un file di stato o salvataggio. Non può quindi essere eliminato né scalzare la vera ROM, per esempio `1941.state` il file `1941.zip`. La colonna delle note dice allora `Possibile file di stato o salvataggio`, e il gioco è considerato problematico. Un gioco del genere compare in tutte e tre le viste, anche se nessuno dei suoi file è marcato. Quando elimini, il programma conferma come legittimi tutti i possibili file rimanenti: restano dove sono, continuano a non essere mai eliminati e non compaiono più in `Marcature problematiche` e `Tutte le marcature`, anche dopo `F5` o un nuovo avvio. La conferma ne indica il numero. Il programma li memorizza con percorso e dimensione in `rom_cleanup_workbench_settings.json`; se la dimensione cambia, il file torna sospetto. Se non è marcato nulla, `Enter` propone di confermarli senza eliminare nulla. Gli ZIP contano con la loro dimensione decompressa. Questo non vale per un file normale piccolo accanto a un file normale grande della sua stessa versione, come un `.cue` accanto al suo `.bin`, né per i file marcati a causa di `delete_tags` o di uno ZIP danneggiato. Con `x` puoi comunque marcare il file a mano.
 
 ## File ZIP
 
@@ -208,13 +294,41 @@ Ogni file ZIP viene letto per intero, anche se è l'unico file di un gioco. Il s
 - **ZIP danneggiato o cifrato:** il file viene sempre marcato, anche se è l'unico file del gioco. Il contenuto di uno ZIP cifrato non viene verificato.
 - **ZIP bloccato o metodo sconosciuto (per esempio Deflate64):** questo non dice nulla sullo stato del file. Senza un file normale del gioco viene mantenuto e indicato nel rapporto.
 
+## Sviluppare il programma con Claude Code
+
+Il programma è software libero: puoi clonare il repository e svilupparlo ulteriormente con [Claude Code](https://claude.com/claude-code), senza programmare di persona. È anche così che è stato scritto.
+
+1. Installa Claude Code. Serve un abbonamento a Claude o un account per l'API di Claude. Su Windows in PowerShell:
+
+   ```powershell
+   irm https://claude.ai/install.ps1 | iex
+   ```
+
+   Su Linux:
+
+   ```bash
+   curl -fsSL https://claude.ai/install.sh | bash
+   ```
+
+2. Clona il repository e avvia Claude Code al suo interno:
+
+   ```bash
+   git clone https://github.com/arved9926/rom-cleanup-workbench.git
+   cd rom-cleanup-workbench
+   claude
+   ```
+
+3. Descrivi con parole tue che cosa deve cambiare, per esempio "Aggiungi un'opzione che mostra solo i file ZIP". Claude Code legge il codice, propone modifiche e chiede prima di cambiare file o eseguire comandi. Poi fagli eseguire i test (`python -m unittest` nella cartella `Rom Cleanup Workbench`) e prova la modifica su una copia della tua raccolta.
+
+I piani delle modifiche precedenti si trovano in `docs/`. Chi distribuisce le proprie modifiche deve pubblicarle anch'esse sotto la GPL.
+
 ## Licenza ed esclusione di responsabilità
 
 Copyright (C) 2026 M. Kärcher
 
 Rom Cleanup Workbench è software libero: puoi ridistribuirlo e/o modificarlo secondo i termini della GNU General Public License pubblicata dalla Free Software Foundation, nella versione 3 della licenza o (a tua scelta) in qualsiasi versione successiva. Il testo completo si trova in [LICENSE](<../LICENSE>); ha valore legale solo questo testo originale inglese.
 
-**Uso a proprio rischio.** Il programma elimina file e non è prevista alcuna garanzia; chi lo usa si assume tutti i rischi che ne derivano. Consigliamo di usarlo prima su una copia della propria collezione di ROM.
+**Uso a proprio rischio.** Il programma elimina file e non è prevista alcuna garanzia; chi lo usa si assume tutti i rischi che ne derivano. Consigliamo vivamente di usarlo solo su una copia della propria raccolta di ROM.
 
 ## Riconoscimenti
 
