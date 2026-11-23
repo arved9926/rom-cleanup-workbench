@@ -245,7 +245,7 @@ Enthält die Datei einen Fehler, etwa einen falsch geschriebenen Eintrag, findet
 - `language`: die Sprache des Fensters, der Hinweise und der Terminalausgabe (siehe unten).
 - `region_priority`: Regionen und Zusatzinfos, die besten zuerst. `none` steht für Dateien ohne bekannte Region; die Wörter der anderen Sprachen (`keine`, `nessuna`, `ninguna`, `aucune`, `なし`) gehen ebenso. Zusatzinfos wie `Beta` hinter `none` setzen solche Dateien ans Ende (Regel 6); `Beta` passt auch zu `Beta 2`.
 - `region_aliases`: andere Schreibweisen einer Region, zum Beispiel `Europa` für `Europe`. Mitgeliefert sind auch die Kurzformen `U`, `E` und `J` aus GoodTools-Namen wie `Title (J) [o1].nes`.
-- `delete_tags`: die Löschwörter, Zusatzinfos, die immer zum Löschen führen (Regel 2). Als Vorgabe ist die Liste leer. `Hack` passt auch zu `Hack 2` und `Hack by Someone`, aber nicht zu `Hacks` oder `Hackers`; wer Hacks löschen will, trägt deshalb `Hack` und `Hacks` ein.
+- `delete_tags`: die Löschwörter, Zusatzinfos, die immer zum Löschen führen (Regel 2). Als Vorgabe ist die Liste leer. Ein Löschwort zählt als ganzes Wort irgendwo in einer Klammer: `Hack` passt zu `(Hack)`, `(Hack 2)`, `(Hack by Someone)` und `(Micks Hack)`, aber nicht zu `(Hacks)` oder `(Hackers)` und nicht zu einem Wort außerhalb der Klammern wie in `Hack Attack (USA)`; wer Hacks löschen will, trägt deshalb `Hack` und `Hacks` ein.
 - `part_tags`: Teile einer Version, zum Beispiel `Disc 1`.
 - `prefer_zip`: `false` (Vorgabe) behält die normale Datei, wenn es ein Spiel als normale Datei und als ZIP-Datei derselben Version gibt, `true` behält die ZIP-Datei.
 

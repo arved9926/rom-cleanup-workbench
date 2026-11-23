@@ -190,6 +190,20 @@ def _matches_tag(tag: str, names: list[str]) -> bool:
     return False
 
 
+def _contains_word(tag: str, name: str) -> bool:
+    """The word anywhere in the bracket part: "Micks Hack" and "Hack 2" contain "Hack", "Hackers" does not."""
+    tag, name = normalize(tag), normalize(name)
+    if not name:
+        return False
+    start = tag.find(name)
+    while start >= 0:
+        end = start + len(name)
+        if not tag[start - 1:start].isalpha() and not tag[end:end + 1].isalpha():
+            return True
+        start = tag.find(name, start + 1)
+    return False
+
+
 def version_number(tags: list[str]) -> tuple[int, ...]:
     """Returns the highest version number: v1.10 > v1.9 and v1.0 = v1; without a version ()."""
     best: tuple[int, ...] = ()
@@ -370,8 +384,9 @@ class Config:
         return best
 
     def delete_reason(self, tags: list[str]) -> str | None:
+        """The first delete keyword found as a whole word anywhere in a bracket."""
         for name in self.delete_tags:
-            if any(_matches_tag(tag, [name]) for tag in tags):
+            if any(_contains_word(tag, name) for tag in tags):
                 return name
         return None
 

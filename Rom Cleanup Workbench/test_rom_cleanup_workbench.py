@@ -907,6 +907,33 @@ class RenameNumberTests(RedundanzTestCase):
         return path
 
 
+class DeleteKeywordAnywhereTests(RedundanzTestCase):
+    """A delete keyword counts as a whole word anywhere inside a bracket."""
+
+    def test_keyword_inside_the_bracket_marks_the_file(self):
+        self.write("Title (USA).nes", b"u")
+        for name in ("Title (Micks Hack).nes", "Title (USA) [Super Hack 2].nes", "Title (Hack by Mick).nes",
+                     "Title (Mick's HACK).nes"):
+            self.write(name, name.encode())
+        result = self.single()
+        self.assertEqual(self.names(result.keep), ["Title (USA).nes"])
+        self.assertEqual(len(result.marked), 4)
+        for entry in result.marked:
+            self.assertIn("Extra info: Hack", entry.notes)
+
+    def test_only_the_whole_word_counts(self):
+        self.write("Title (USA).nes", b"u")
+        self.write("Title (Hackers Edition).nes", b"h")
+        self.write("Title (Shack).nes", b"s")
+        result = self.single()
+        notes = [note for entry in result.keep + result.marked for note in entry.notes]
+        self.assertFalse(any(note.startswith("Extra info") for note in notes))
+
+    def test_outside_brackets_nothing_counts(self):
+        self.write("Hack Attack (USA).nes", b"h")
+        self.assertEqual(self.single().marked, [])
+
+
 class ShortRegionTests(RedundanzTestCase):
     """(U), (E) and (J): the short forms of GoodTools names."""
 
