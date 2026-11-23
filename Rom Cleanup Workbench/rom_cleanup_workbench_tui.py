@@ -1156,9 +1156,11 @@ class WorkbenchApp(App):
             problems = "; ".join(result.problems)
             rows.append(((DashLine(f" {result.title} "), DashLine(), DashLine(f" {problems} " if problems else "")),
                          f"g{game_index}"))
-            entries = [("k", "window.section.keep", "+", "bold", "window.by_hand_keep", result.keep),
-                       ("h", "window.section.marked", "-", "", "window.by_hand_delete", result.marked)]
-            for suffix, label, sign, style, moved_note, group in entries:
+            # Kept files green, marked files red, as in the window; with 16 colors the ANSI ones.
+            keep_color, marked_color = ("#00aa00", "#ff5555") if self.colors16 else ("#3fb950", "#ff6b6b")
+            entries = [("k", "window.section.keep", "+", f"bold {keep_color}", "window.by_hand_keep", result.keep),
+                       ("h", "window.section.marked", "-", marked_color, "window.by_hand_delete", result.marked)]
+            for suffix, label, sign, color_style, moved_note, group in entries:
                 if not group:
                     continue
                 rows.append(((_cell("  " + tr(label)), "", ""), f"g{game_index}{suffix}"))
@@ -1168,6 +1170,10 @@ class WorkbenchApp(App):
                     if entry.moved:
                         moved.add(key)
                     notes = ([tr(moved_note)] if entry.moved else []) + list(entry.notes)
+                    # With 16 colors a moved row is black on brown (yellow in PuTTY): no green or red there.
+                    style = color_style
+                    if entry.moved and self.colors16:
+                        style = "bold" if color_style.startswith("bold") else ""
                     rows.append(((
                         _cell(f"    {sign} {entry.path.name}", style=style),
                         _cell(format_kb(entry.size()), justify="right", style=style),

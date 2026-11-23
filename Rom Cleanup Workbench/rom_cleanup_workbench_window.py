@@ -51,6 +51,9 @@ _SELECTED = "#0a4a8a"
 _MOVED = "#5c4400"
 _GREEN = "#1a7f37"
 _RED = "#e5383b"
+# The text of the file rows: kept files green, marked files red; light enough on black.
+_KEEP_TEXT = "#3fb950"
+_MARKED_TEXT = "#ff6b6b"
 _HIGHLIGHT_STYLE = "Highlight.TLabel"
 _HIGHLIGHT_FRAME_STYLE = "Highlight.TFrame"
 _APP_NAME = "Rom Cleanup Workbench"
@@ -801,7 +804,8 @@ class ReviewWindow:
         self.tree.tag_configure("striped", background=_DARK_GRAY)
         self.tree.tag_configure("game", font=self.bold_font)
         self.tree.tag_configure("problem", font=self.bold_font)
-        self.tree.tag_configure("keep", font=self.bold_font)
+        self.tree.tag_configure("keep", font=self.bold_font, foreground=_KEEP_TEXT)
+        self.tree.tag_configure("marked", foreground=_MARKED_TEXT)
         self.tree.tag_configure("separator", foreground=_LINE_COLOR)
 
         # On the window instead of the list, so that the keys also work after clicking a radio button.

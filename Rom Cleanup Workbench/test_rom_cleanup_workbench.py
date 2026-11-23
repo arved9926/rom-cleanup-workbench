@@ -154,17 +154,17 @@ class GameKeyTests(unittest.TestCase):
         self.assert_same("Robocop vs Terminator", "Robocop vs. Terminator", "Robocop versus Terminator",
                          "Robocop VS Terminator", "Robocop Versus Terminator", "Robocop_vs._Terminator")
 
-    def test_roman_numerals_one_to_seven_equal_numbers(self):
-        for number, roman in enumerate(("I", "II", "III", "IV", "V", "VI", "VII"), 1):
+    def test_roman_numerals_one_to_ten_equal_numbers(self):
+        for number, roman in enumerate(("I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X"), 1):
             self.assert_same(f"Final Fantasy {roman}", f"Final Fantasy {number}", f"final fantasy {roman.lower()}")
         self.assert_same("Street Fighter II - The World Warrior", "Street Fighter 2: The World Warrior".replace(":", ""))
         self.assert_same("Rocky IV (Part)", "Rocky 4 (Part)")
 
     def test_roman_numerals_only_as_whole_words(self):
         self.assert_different("Vivi", "5vi")
-        self.assert_different("Mega Man X", "Mega Man 10")
-        self.assert_different("Final Fantasy VIII", "Final Fantasy 8")  # only I to VII
+        self.assert_different("Final Fantasy XI", "Final Fantasy 11")  # only I to X
         self.assert_different("Final Fantasy VII", "Final Fantasy 6")
+        self.assert_different("Xevious", "10evious")
 
     def test_roman_i_in_front_is_no_number(self):
         self.assert_different("I Robot", "Robot")
@@ -3369,6 +3369,19 @@ class ReviewWindowTests(RedundanzTestCase):
             analysis.assert_called_once()
             self.assertEqual(window.directory, Path(other))
 
+    def test_kept_files_are_green_and_marked_files_red(self):
+        import rom_cleanup_workbench_window as window_module
+        self.write("Title (USA).bin", b"usa")
+        self.write("Title (Japan).bin", b"jap")
+        window = self.open_window()
+        self.assertEqual(str(window.tree.tag_configure("keep", "foreground")), window_module._KEEP_TEXT)
+        self.assertEqual(str(window.tree.tag_configure("marked", "foreground")), window_module._MARKED_TEXT)
+        rows = [row for row in window._file_ids.values() if window.tree.exists(row)]
+        self.assertTrue(rows)
+        for row in rows:
+            tags = window.tree.item(row, "tags")
+            self.assertTrue("keep" in tags or "marked" in tags, tags)
+
     def test_double_click_chooses_the_folder(self):
         self.no_system_popups()
         (self.dir / "More").mkdir()
@@ -5408,6 +5421,17 @@ class TerminalVersionTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(colors, {0})
             self.assertEqual(background_of(cursor), 4)
             self.assertIn(background_of("Filter"), (0, None))  # the label; the field itself is light gray
+
+    async def test_kept_files_are_green_and_marked_files_red(self):
+        for colors16, green, red in ((False, "#3fb950", "#ff6b6b"), (True, "#00aa00", "#ff5555")):
+            app = self.colored_app(colors16=colors16)
+            async with app.run_test(size=(110, 32)) as pilot:
+                await self.analyzed(app, pilot)
+                table = app.query_one("#games")
+                for key, (result, entry) in app.files.items():
+                    cell = table.get_row(key)[0]
+                    wanted = green if entry in result.keep else red
+                    self.assertIn(wanted, str(cell.style), (colors16, entry.path.name))
 
     async def test_ascii_mode_draws_only_ascii_on_every_screen(self):
         app = self.colored_app(ascii=True, colors16=True)

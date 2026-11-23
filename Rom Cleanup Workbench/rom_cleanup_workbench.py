@@ -64,9 +64,10 @@ _SEPARATOR_RE = re.compile(r"[-_]")
 _AND_RE = re.compile(r"\b(?:und|and)\b")
 # Apostrophes do not count: Sullivan's = Sullivan`s = Sullivan´s = Sullivan’s = Sullivans.
 _APOSTROPHE_RE = re.compile("['`\u00b4\u2019]")
-# Roman numerals I to VII as whole words count as numbers: "Final Fantasy VII" = "Final Fantasy 7".
-_ROMAN = {"i": "1", "ii": "2", "iii": "3", "iv": "4", "v": "5", "vi": "6", "vii": "7"}
-_ROMAN_RE = re.compile(r"\b(?:vii|vi|iv|v|iii|ii|i)\b")
+# Roman numerals I to X as whole words count as numbers: "Final Fantasy VII" = "Final Fantasy 7".
+_ROMAN = {"i": "1", "ii": "2", "iii": "3", "iv": "4", "v": "5", "vi": "6", "vii": "7", "viii": "8", "ix": "9",
+          "x": "10"}
+_ROMAN_RE = re.compile(r"\b(?:viii|vii|vi|iv|ix|x|v|iii|ii|i)\b")
 _AMPERSANDS_RE = re.compile("&+")  # "&&" = "&"
 _VERSUS_RE = re.compile(r"\b(?:versus|vs)\b\.?")
 # A number in front of the name, such as the "057" of a numbered collection, is no part of it:
@@ -115,7 +116,7 @@ def normalize(text: str) -> str:
 
 def game_key(game: str) -> str:
     """Comparison key: "&" = "&&" = "und" = "and", "vs" = "vs." = "versus", "Sullivan's" = "Sullivans",
-    "The X" = "X The" = "X, The" = "X", "057 X" = "X", "X VII" = "X 7" (I to VII) and
+    "The X" = "X The" = "X, The" = "X", "057 X" = "X", "X VII" = "X 7" (I to X) and
     "Pac-Man" = "Pac Man" = "Pac_Man" = "PacMan".
 
     "und" becomes "&" so that "H & M" does not turn into "Hund M" once the spaces are removed.
