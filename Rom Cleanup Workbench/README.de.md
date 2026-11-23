@@ -85,7 +85,7 @@ cd "rom-cleanup-workbench\Rom Cleanup Workbench"
 python rom_cleanup_workbench.py "D:\Games"
 ```
 
-Ohne Ordner fragt das Fenster danach. In VS Code: den Ordner `Rom Cleanup Workbench` öffnen, mit F5 starten und das Verzeichnis eingeben. Wer die Terminal-Version will, hängt `--tui` an.
+Ohne Ordner fragt das Fenster danach. Wer die Terminal-Version will, hängt `--tui` an.
 
 ### Linux
 
@@ -117,7 +117,7 @@ Das Programm öffnet das Analysefenster und zeigt dort alles an; im Terminal gib
 
 Die Optionen der Befehlszeile und ihre Hilfe (`--help`) sind immer auf Englisch.
 
-Die Tests laufen über die Testansicht oder mit `python -m unittest`.
+Die Tests laufen mit `python -m unittest`.
 
 ## Analysefenster
 
