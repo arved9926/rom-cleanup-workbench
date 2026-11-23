@@ -18,9 +18,9 @@ The rules are in the Review object from rom_cleanup_workbench.py, the shared sta
 Like the window, this module does not import the program, because it would otherwise be loaded a
 second time when started as a script.
 
-Done so far (see docs/tui-plan.md): start, title row, the read-only list with background analysis,
-moving the cursor and selecting several rows, D and P, the three views, the filter, questions
-and messages inside the terminal, deleting (Proceed) and choosing the folder.
+It has what the window has: the list with background analysis, selecting several rows, the three
+views, the filter, the settings, questions and messages inside the terminal, deleting and choosing
+the folder, with the same keys as the window.
 """
 
 from __future__ import annotations

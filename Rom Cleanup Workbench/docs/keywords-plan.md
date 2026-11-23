@@ -15,7 +15,7 @@ Status: **all 5 steps done.** Concerns the rules, the window and the terminal ve
 
 ## How to work
 
-As in `tui-plan.md`: one step at a time; a step is done when all tests pass on Windows and in the WSL Ubuntu (`python -m unittest`) and it is committed locally; upload only when the user asks. Texts in all six languages (`translations.py`). Never run the program on a real game folder.
+Working rules: one step at a time; a step is done when all tests pass on Windows and in the WSL Ubuntu (`python -m unittest`) and it is committed locally; upload only when the user asks. Texts in all six languages (`translations.py`). Never run the program on a real game folder.
 
 ## Steps
 

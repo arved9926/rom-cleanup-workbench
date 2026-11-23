@@ -6,7 +6,7 @@ Goal (user, 2026-11-22): "Generiere für alle unterstützten Sprachen die Dokume
 
 - **README** of the program folder (about 3,700 words): one file per language, `README.de.md`, `README.it.md`, `README.es.md`, `README.fr.md`, `README.ja.md`, next to `README.md`. Each starts with a line of links to all six. The root `README.md` gets the same line.
 - **User guide** (Word and PDF, 17 pages, about 3,600 words): one pair per language in `docs/`, for example `Rom Cleanup Workbench - Benutzerhandbuch.docx/.pdf`. Same layout, styles, tables and page breaks as the English guide.
-- **Not translated:** the plan logs (`tui-plan.md`, `keywords-plan.md`, this file), the LICENSE (the GPL is only legally valid in English; the READMEs say so), code comments, the `--help` output of the command line.
+- **Not translated:** the plan logs (`keywords-plan.md`, this file), the LICENSE (the GPL is only legally valid in English; the READMEs say so), code comments, the `--help` output of the command line.
 - **Screenshots** stay English in every language; each guide says so once under the first picture ("The pictures show the English version; with `language` set, the program shows the same texts in <language>.").
 
 ## Rules for the translations
