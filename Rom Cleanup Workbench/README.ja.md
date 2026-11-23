@@ -4,6 +4,8 @@
 
 **画面写真付きユーザーガイド:** [PDF](<docs/Rom Cleanup Workbench - ユーザーガイド.pdf>) · [Word](<docs/Rom Cleanup Workbench - ユーザーガイド.docx>)
 
+**動画:** [プログラムの使い方 (YouTube)](https://youtu.be/D1yXZQXg-iM)
+
 フォルダー内の重複した ROM ファイルをゲーム名で見つけ、指示に応じて削除します。
 Python 3.10 以降が必要です。ウィンドウに追加のパッケージは不要です。Linux 用のターミナル版には Textual が必要です ([ターミナル版 (Linux)](#ターミナル版-linux) を参照)。
 プログラムは英語、ドイツ語、イタリア語、スペイン語、フランス語、日本語に対応しています ([言語](#言語) を参照)。

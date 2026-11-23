@@ -4,6 +4,8 @@
 
 **Guide de l'utilisateur avec captures d'écran :** [PDF](<docs/Rom Cleanup Workbench - Guide utilisateur.pdf>) · [Word](<docs/Rom Cleanup Workbench - Guide utilisateur.docx>)
 
+**Vidéo:** [comment fonctionne le programme (YouTube)](https://youtu.be/D1yXZQXg-iM)
+
 Trouve les fichiers ROM en double dans un dossier d'après le nom du jeu et les supprime sur demande.
 Nécessite Python 3.10 ou plus récent. La fenêtre n'a besoin d'aucun paquet supplémentaire ; la version terminal pour Linux nécessite Textual (voir [Version terminal (Linux)](#version-terminal-linux)).
 Le programme parle anglais, allemand, italien, espagnol, français et japonais (voir [Langue](#langue)).
