@@ -150,6 +150,34 @@ class GameKeyTests(unittest.TestCase):
         self.assert_same("Tom_and_Jerry", "Tom-und-Jerry", "Tom & Jerry", "Tom&Jerry")
         self.assert_same("The_Game", "The-Game", "Game-The", "Game_The", "Game")
 
+    def test_vs_equals_versus_and_vs_with_dot(self):
+        self.assert_same("Robocop vs Terminator", "Robocop vs. Terminator", "Robocop versus Terminator",
+                         "Robocop VS Terminator", "Robocop Versus Terminator", "Robocop_vs._Terminator")
+
+    def test_vs_only_as_whole_word(self):
+        self.assert_different("Canvas Hero", "Canvs Hero")
+        self.assert_different("Vsat", "Versusat")
+
+    def test_number_in_front_of_the_name_is_ignored(self):
+        self.assert_same("057 Robocop vs Terminator", "Robocop vs Terminator", "057 - Robocop versus Terminator",
+                         "057. Robocop vs. Terminator", "1 Robocop vs Terminator", "057_Robocop_vs_Terminator")
+
+    def test_number_rule_works_with_the(self):
+        self.assert_same("057 The Game", "Game, The", "Game")
+
+    def test_a_name_of_only_a_number_stays(self):
+        self.assertEqual(rf.game_key("1942"), "1942")
+        self.assert_different("1942", "1943")
+        self.assert_different("057", "Robocop")
+
+    def test_number_inside_or_attached_stays(self):
+        self.assert_different("Robocop 3", "Robocop")
+        self.assert_different("2Fast Racer", "Fast Racer")
+
+    def test_n_in_1_collections_stay_apart(self):
+        self.assert_different("4 in 1 Fun Pak", "3 in 1 Fun Pak")
+        self.assert_different("4-in-1 Fun Pak", "3-in-1 Fun Pak")
+
     def test_name_of_only_separators_stays_own_title(self):
         self.assert_different("---", "___")
 
@@ -686,6 +714,16 @@ class PreferZipTests(RedundanzTestCase):
         path.write_text('{"prefer_zip": "yes"}', encoding="utf-8")
         with self.assertRaises(ValueError):
             rf.Config.load(path)
+
+
+class EquivalenceTests(RedundanzTestCase):
+    def test_numbered_and_vs_spellings_are_one_game(self):
+        self.write("057 Robocop vs Terminator (USA).md", b"usa")
+        self.write("Robocop versus Terminator (Europe).md", b"eur")
+        result = self.single()
+        self.assertEqual(self.names(result.keep), ["057 Robocop vs Terminator (USA).md"])
+        self.assertEqual(self.names(result.marked), ["Robocop versus Terminator (Europe).md"])
+        self.assertIn("Different spellings of the name", result.problems)
 
 
 class ZipTests(RedundanzTestCase):

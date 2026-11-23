@@ -61,6 +61,10 @@ _TAG_RE = re.compile(r"\(([^()]*)\)|\[([^\[\]]*)\]")
 _EXT_RE = re.compile(r"\.[A-Za-z0-9]+$")
 _SEPARATOR_RE = re.compile(r"[-_]")
 _AND_RE = re.compile(r"\b(?:und|and)\b")
+_VERSUS_RE = re.compile(r"\b(?:versus|vs)\b\.?")
+# A number in front of the name, such as the "057" of a numbered collection, is no part of it:
+# "057 Robocop", "057 - Robocop", "057. Robocop" = "Robocop". Not in "4 in 1", which names the game.
+_LEADING_NUMBER_RE = re.compile(r"^\d+\.?\s+(?!in\s*\d)(?=\S)")
 _THE_RE = re.compile(r"^the\s+|(?:,\s*|\s+)the,?$")
 # In the game name only the form v1.1 counts, so that "Title V2" stays a title of its own.
 _NAME_VERSION_RE = re.compile(r"[\s_-]+(v\d+(?:\.\d+)+)$", re.IGNORECASE)
@@ -103,13 +107,15 @@ def normalize(text: str) -> str:
 
 
 def game_key(game: str) -> str:
-    """Comparison key: "&" = "und" = "and", "The X" = "X The" = "X, The" = "X" and
-    "Pac-Man" = "Pac Man" = "Pac_Man" = "PacMan".
+    """Comparison key: "&" = "und" = "and", "vs" = "vs." = "versus", "The X" = "X The" = "X, The" = "X",
+    "057 X" = "X" and "Pac-Man" = "Pac Man" = "Pac_Man" = "PacMan".
 
     "und" becomes "&" so that "H & M" does not turn into "Hund M" once the spaces are removed.
     """
     text = normalize(_SEPARATOR_RE.sub(" ", game.replace("&", " & ")))
-    key = _AND_RE.sub("&", text)
+    text = _LEADING_NUMBER_RE.sub("", text)
+    key = _VERSUS_RE.sub("vs", text)
+    key = _AND_RE.sub("&", key)
     key = _THE_RE.sub("", key) or key
     # Names made only of separators stay titles of their own instead of collapsing into an empty name.
     return key.replace(" ", "") or normalize(game)
