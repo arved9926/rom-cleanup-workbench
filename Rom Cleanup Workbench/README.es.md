@@ -145,7 +145,7 @@ La ventana recuerda la última vista elegida y los archivos de estado o partidas
 | `k` | conserva el archivo; pasa al lugar que le dan las reglas |
 | `1` `2` `3` | las vistas `Marcas problemáticas`, `Todas las marcas`, `Todos los archivos ROM` |
 | `Ctrl` + rueda del ratón | agranda o reduce la letra (de 8 a 32 pt, vale hasta cerrar la ventana) |
-| `s` | como el botón `Ajustes...`: muestra u oculta los ajustes de idioma, prioridad y palabras para eliminar (consulta [Ajustes](#ajustes)) |
+| `s` | como el botón `Ajustes...`: muestra u oculta los ajustes de idioma, prioridad, palabras para eliminar y ZIP o archivo normal (consulta [Ajustes](#ajustes)) |
 | `/` | va al campo de filtro |
 | `Enter` | como el botón `Ejecutar...`: elimina tras una confirmación y confirma los posibles archivos de estado o partidas guardadas (regla 9) |
 | `f` | elige otra carpeta, dentro de la ventana en lugar de la lista: abre carpetas con doble clic o con la flecha, o escribe una ruta en `Ruta:`, y luego `Seleccionar` o `Intro`; `Cancelar` o `Esc` conservan la carpeta actual |
@@ -176,8 +176,9 @@ El botón `Ajustes...` de la fila inferior, o `s`, muestra los cambios más frec
 - **Idioma:** Establece el idioma de la interfaz. Elige entre los seis idiomas. Un idioma nuevo se aplica a partir del próximo inicio del programa.
 - **Prioridad:** Establece qué versiones regionales tienen preferencia sobre las demás. La mejor región arriba; la información adicional como `Beta` o `Proto` va tras `none`, para que esos archivos queden al final (regla 6). Elige una entrada y muévela con `Subir` y `Bajar`, quítala con `Quitar` o con la tecla `Supr`, y añade una nueva con el campo bajo la lista y `Añadir` (o `Intro`).
 - **Palabras para eliminar:** Establecen qué versiones de un juego se eliminan siempre. Separadas por comas, por ejemplo `Hack, Hacks`. Los archivos que las contienen se marcan para eliminar (regla 2).
+- **El mismo juego como archivo normal y como archivo ZIP:** Establece cuál de los dos se conserva cuando ambos son de la misma versión. `Conservar el archivo normal` (predeterminado) marca el archivo ZIP, `Conservar el archivo ZIP` marca los archivos normales (consulta [Archivos ZIP](#archivos-zip)).
 
-`Guardar` escribe el archivo y vuelve a analizar la carpeta si la prioridad o las palabras han cambiado; si has cambiado marcas a mano, el programa pregunta antes, porque esos cambios se pierden. Todas las demás entradas del archivo se quedan como están. Los valores incorrectos, como una lista de regiones vacía o la misma región dos veces, se notifican, no se escribe nada y los ajustes siguen abiertos. Si el archivo no se puede leer, los ajustes no se abren, para que no puedan sobrescribir entradas que no conocen. Con `--config`, los ajustes editan ese archivo; con `--priority`, para esta ejecución sigue valiendo la prioridad indicada allí.
+`Guardar` escribe el archivo y vuelve a analizar la carpeta si la prioridad, las palabras o la elección entre archivo normal y archivo ZIP han cambiado; si has cambiado marcas a mano, el programa pregunta antes, porque esos cambios se pierden. Todas las demás entradas del archivo se quedan como están. Los valores incorrectos, como una lista de regiones vacía o la misma región dos veces, se notifican, no se escribe nada y los ajustes siguen abiertos. Si el archivo no se puede leer, los ajustes no se abren, para que no puedan sobrescribir entradas que no conocen. Con `--config`, los ajustes editan ese archivo; con `--priority`, para esta ejecución sigue valiendo la prioridad indicada allí.
 
 Un juego se considera problemático si
 
@@ -231,20 +232,22 @@ Diferencias con la ventana: no hay zoom de letra, porque la fuente pertenece al 
 
 ## Configuración: `redundanz_config.json`
 
-El archivo está junto al programa y se vuelve a leer en cada análisis. Idioma, prioridad y palabras para eliminar se cambian más fácilmente en la ventana con `Ajustes...` (consulta [Ajustes](#ajustes)). En el propio archivo basta con cambiar el orden en `region_priority` y guardar el archivo:
+El archivo está junto al programa y se vuelve a leer en cada análisis. Idioma, prioridad, palabras para eliminar y la elección entre archivo normal y archivo ZIP se cambian más fácilmente en la ventana con `Ajustes...` (consulta [Ajustes](#ajustes)). En el propio archivo basta con cambiar el orden en `region_priority` y guardar el archivo:
 
 ```json
 "region_priority": ["USA", "Europe", "none", "Japan", "Beta"],
 "delete_tags": [],
+"prefer_zip": false,
 ```
 
-Si el archivo contiene un error, por ejemplo una entrada mal escrita, no se realiza ningún análisis y no se elimina nada. Así es el archivo incluido: el idioma es el inglés, la prioridad USA, Europe, none, Japan, Beta, y no hay palabras para eliminar. Por tanto, los archivos sin región van antes que los japoneses. Si falta el archivo o una entrada, se aplican los mismos valores predeterminados.
+Si el archivo contiene un error, por ejemplo una entrada mal escrita, no se realiza ningún análisis y no se elimina nada. Así es el archivo incluido: el idioma es el inglés, la prioridad USA, Europe, none, Japan, Beta, no hay palabras para eliminar y junto a un archivo ZIP se conserva el archivo normal. Por tanto, los archivos sin región van antes que los japoneses. Si falta el archivo o una entrada, se aplican los mismos valores predeterminados.
 
 - `language`: el idioma de la ventana, de las notas y de la salida en el terminal (ver abajo).
 - `region_priority`: regiones e información adicional, la mejor primero. `none` representa los archivos sin región conocida; las palabras de los otros idiomas (`keine`, `nessuna`, `ninguna`, `aucune`, `なし`) también sirven. La información adicional como `Beta` tras `none` deja esos archivos al final (regla 6); `Beta` también coincide con `Beta 2`.
 - `region_aliases`: otras grafías de una región, por ejemplo `Europa` para `Europe`.
 - `delete_tags`: las palabras para eliminar, información adicional que siempre lleva a eliminar (regla 2). De forma predeterminada la lista está vacía. `Hack` también coincide con `Hack 2` y `Hack by Someone`, pero no con `Hacks` ni `Hackers`; quien quiera eliminar los hacks introduce por tanto `Hack` y `Hacks`.
 - `part_tags`: partes de una versión, por ejemplo `Disc 1`.
+- `prefer_zip`: `false` (predeterminado) conserva el archivo normal cuando un juego existe como archivo normal y como archivo ZIP de la misma versión, `true` conserva el archivo ZIP.
 
 Los archivos antiguos pueden contener todavía `low_priority_tags`, información adicional con la prioridad más baja. El programa lee sus entradas como si estuvieran al final de `region_priority`, tras `none`; los ajustes las mueven allí al guardar, y la entrada desaparece.
 
@@ -281,7 +284,7 @@ El programa ignora por completo algunos archivos: no aparecen en ningún sitio y
 5. Una región que no está en `region_priority` cuenta como `none`. Esto vale también para indicaciones como `(Rev 1)`.
 6. La información adicional como `Beta`, `Proto` o `Alpha` se escribe en `region_priority` tras `none`. Los archivos que la llevan van después de todos los demás, incluso después de los archivos sin región, y en el orden de la lista: con `none, Beta, Proto`, una Beta va antes que un Proto. Solo se conservan si no hay un archivo mejor del juego. Entre ellos cuenta de nuevo la región, luego la versión de la regla 7 y luego el número tras la información adicional: `Beta 2` gana a `Beta 1`, y `Beta 1` a `Beta` sin número. Los números se comparan numéricamente (`Beta 10` antes que `Beta 9`). El archivo que pierde recibe la nota `Beta anterior`.
 7. Con la misma prioridad gana el número de versión más alto, comparado numéricamente (`v1.10` antes que `v1.9`). Entre paréntesis se reconocen `v1.1`, `Ver 1.1`, `Version 1.1`, `Rev 1` y `Rev A`; en el nombre del juego solo la forma `Title v1.1`, también con `-` o `_` en lugar del espacio. Un archivo sin versión pierde frente a uno con versión. La región cuenta antes que la versión.
-8. Después gana el archivo con menos información adicional, luego un archivo sin ZIP y luego el orden alfabético. El informe muestra entonces `Empate`.
+8. Después gana el archivo con menos información adicional, luego un archivo sin ZIP (con `prefer_zip`: un archivo ZIP) y luego el orden alfabético. El informe muestra entonces `Empate`.
 9. Un archivo más pequeño que 1/4 del archivo más grande del juego se aparta antes de las reglas 3 a 8 y se conserva: puede ser un archivo de estado o una partida guardada. Por eso no puede eliminarse ni desplazar la ROM real, por ejemplo `1941.state` al archivo `1941.zip`. La columna de notas dice entonces `Posible archivo de estado o partida guardada`, y el juego se considera problemático. Un juego así aparece en las tres vistas, aunque ninguno de sus archivos esté marcado. Al eliminar, el programa confirma como legítimos todos los posibles archivos que quedan: se quedan donde están, siguen sin eliminarse nunca y ya no aparecen en `Marcas problemáticas` ni en `Todas las marcas`, tampoco después de `F5` o de un nuevo inicio. La confirmación indica su número. El programa los recuerda con ruta y tamaño en `rom_cleanup_workbench_settings.json`; si el tamaño cambia, el archivo vuelve a ser sospechoso. Si no hay nada marcado, `Enter` ofrece confirmarlos sin eliminar nada. Los ZIP cuentan con su tamaño descomprimido. Esto no vale para un archivo normal pequeño junto a un archivo normal grande de su misma versión, como un `.cue` junto a su `.bin`, ni para los archivos marcados por `delete_tags` o por un ZIP dañado. Con `x` puedes marcar el archivo a mano de todos modos.
 
 ## Archivos ZIP
@@ -290,6 +293,7 @@ Cada archivo ZIP se lee completo, aunque sea el único archivo de un juego. Su c
 
 - **Mismo contenido que un archivo conservado:** el archivo ZIP se marca y el informe indica el archivo con el mismo contenido.
 - **Si tras la selección quedan un ZIP y un archivo normal:** el ZIP siempre se marca, incluso con contenido distinto, si es el único archivo que contiene una parte como `(Disc 1)` o si no es legible.
+- **Con `Conservar el archivo ZIP` (`prefer_zip`):** Es al revés: junto a un archivo ZIP legible de la misma versión se marcan los archivos normales (`Se prefiere el archivo ZIP`). Si el contenido de un archivo así no aparece en ningún ZIP conservado, el informe muestra `AVISO` y el juego se considera problemático (`El contenido de un archivo normal marcado no se conserva`). Un ZIP no legible no desplaza ningún archivo normal. La prioridad sigue yendo primero: un archivo normal `(USA)` gana a un ZIP `(Japan)`.
 - **Varios ZIP de la misma versión con contenido distinto:** se conservan todos y el informe lo indica.
 - **Marcado, pero el contenido no aparece en ningún archivo conservado:** el informe muestra `AVISO`. El archivo sigue marcado.
 - **Sin región ni versión en el nombre del ZIP:** el dato se toma de los archivos del ZIP, siempre que tengan el mismo nombre de juego.

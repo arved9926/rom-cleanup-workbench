@@ -145,7 +145,7 @@ La fenêtre retient la dernière vue choisie et les fichiers d'état ou de sauve
 | `k` | garde le fichier ; il passe à la place que lui donnent les règles |
 | `1` `2` `3` | les vues `Marquages problématiques`, `Tous les marquages`, `Tous les fichiers ROM` |
 | `Ctrl` + molette de la souris | agrandit ou réduit le texte (de 8 à 32 pt, jusqu'à la fermeture de la fenêtre) |
-| `s` | comme le bouton `Paramètres...` : affiche ou masque les paramètres de langue, de priorité et de mots à supprimer (voir [Paramètres](#paramètres)) |
+| `s` | comme le bouton `Paramètres...` : affiche ou masque les paramètres de langue, de priorité, de mots à supprimer et de ZIP ou fichier normal (voir [Paramètres](#paramètres)) |
 | `/` | va au champ de filtre |
 | `Enter` | comme le bouton `Exécuter...` : supprime après une confirmation et confirme les fichiers d'état ou de sauvegarde présumés (règle 9) |
 | `f` | choisit un autre dossier, dans la fenêtre à la place de la liste : ouvrez les dossiers par un double-clic ou avec la flèche, ou saisissez un chemin dans `Chemin :`, puis `Sélectionner` ou `Entrée` ; `Annuler` ou `Échap` gardent le dossier actuel |
@@ -176,8 +176,9 @@ Le bouton `Paramètres...` de la ligne du bas, ou `s`, montre les modifications 
 - **Langue :** Définit la langue de l'interface. Choisissez parmi les six langues. Une nouvelle langue s'applique au prochain démarrage du programme.
 - **Priorité :** Définit quelles versions régionales ont la priorité sur les autres. La meilleure région en haut ; les infos supplémentaires comme `Beta` ou `Proto` se placent après `none`, pour que ces fichiers viennent en dernier (règle 6). Choisissez une entrée et déplacez-la avec `Monter` et `Descendre`, retirez-la avec `Retirer` ou la touche `Suppr`, et ajoutez-en une nouvelle avec le champ sous la liste et `Ajouter` (ou `Entrée`).
 - **Mots à supprimer :** Définissent quelles versions d'un jeu sont toujours supprimées. Séparés par des virgules, par exemple `Hack, Hacks`. Les fichiers qui les contiennent sont marqués pour suppression (règle 2).
+- **Même jeu en fichier normal et en fichier ZIP :** Définit lequel des deux est conservé quand les deux sont de la même version. `Garder le fichier normal` (par défaut) marque le fichier ZIP, `Garder le fichier ZIP` marque les fichiers normaux (voir [Fichiers ZIP](#fichiers-zip)).
 
-`Enregistrer` écrit le fichier et analyse à nouveau le dossier si la priorité ou les mots ont changé ; si vous avez modifié des marquages à la main, le programme demande d'abord, car ces modifications sont perdues. Toutes les autres entrées du fichier restent telles quelles. Les valeurs erronées, comme une liste de régions vide ou deux fois la même région, sont signalées, rien n'est écrit et les paramètres restent ouverts. Si le fichier ne peut pas être lu, les paramètres ne s'ouvrent pas, afin qu'ils ne puissent pas écraser des entrées qu'ils ne connaissent pas. Avec `--config`, les paramètres modifient ce fichier ; avec `--priority`, la priorité qui y est indiquée reste valable pour cette exécution.
+`Enregistrer` écrit le fichier et analyse à nouveau le dossier si la priorité, les mots ou le choix entre fichier normal et fichier ZIP ont changé ; si vous avez modifié des marquages à la main, le programme demande d'abord, car ces modifications sont perdues. Toutes les autres entrées du fichier restent telles quelles. Les valeurs erronées, comme une liste de régions vide ou deux fois la même région, sont signalées, rien n'est écrit et les paramètres restent ouverts. Si le fichier ne peut pas être lu, les paramètres ne s'ouvrent pas, afin qu'ils ne puissent pas écraser des entrées qu'ils ne connaissent pas. Avec `--config`, les paramètres modifient ce fichier ; avec `--priority`, la priorité qui y est indiquée reste valable pour cette exécution.
 
 Un jeu est considéré comme problématique si
 
@@ -231,20 +232,22 @@ Différences avec la fenêtre : pas de zoom du texte, car la police appartient 
 
 ## Configuration : `redundanz_config.json`
 
-Le fichier se trouve à côté du programme et est relu à chaque analyse. La langue, la priorité et les mots à supprimer se modifient le plus facilement dans la fenêtre avec `Paramètres...` (voir [Paramètres](#paramètres)). Dans le fichier lui-même, il suffit de changer l'ordre dans `region_priority` et d'enregistrer le fichier :
+Le fichier se trouve à côté du programme et est relu à chaque analyse. La langue, la priorité, les mots à supprimer et le choix entre fichier normal et fichier ZIP se modifient le plus facilement dans la fenêtre avec `Paramètres...` (voir [Paramètres](#paramètres)). Dans le fichier lui-même, il suffit de changer l'ordre dans `region_priority` et d'enregistrer le fichier :
 
 ```json
 "region_priority": ["USA", "Europe", "none", "Japan", "Beta"],
 "delete_tags": [],
+"prefer_zip": false,
 ```
 
-Si le fichier contient une erreur, par exemple une entrée mal écrite, aucune analyse n'a lieu et rien n'est supprimé. Voici le fichier fourni : la langue est l'anglais, la priorité USA, Europe, none, Japan, Beta, et il n'y a pas de mots à supprimer. Les fichiers sans région passent donc avant les fichiers japonais. Si le fichier ou une entrée manque, les mêmes valeurs par défaut s'appliquent.
+Si le fichier contient une erreur, par exemple une entrée mal écrite, aucune analyse n'a lieu et rien n'est supprimé. Voici le fichier fourni : la langue est l'anglais, la priorité USA, Europe, none, Japan, Beta, il n'y a pas de mots à supprimer, et à côté d'un fichier ZIP le fichier normal est conservé. Les fichiers sans région passent donc avant les fichiers japonais. Si le fichier ou une entrée manque, les mêmes valeurs par défaut s'appliquent.
 
 - `language` : la langue de la fenêtre, des remarques et de la sortie dans le terminal (voir ci-dessous).
 - `region_priority` : régions et infos supplémentaires, la meilleure d'abord. `none` désigne les fichiers sans région connue ; les mots des autres langues (`keine`, `nessuna`, `ninguna`, `aucune`, `なし`) fonctionnent aussi. Une info supplémentaire comme `Beta` après `none` place ces fichiers en dernier (règle 6) ; `Beta` correspond aussi à `Beta 2`.
 - `region_aliases` : autres orthographes d'une région, par exemple `Europa` pour `Europe`.
 - `delete_tags` : les mots à supprimer, infos supplémentaires qui mènent toujours à la suppression (règle 2). Par défaut, la liste est vide. `Hack` correspond aussi à `Hack 2` et `Hack by Someone`, mais pas à `Hacks` ni à `Hackers` ; pour supprimer les hacks, saisissez donc `Hack` et `Hacks`.
 - `part_tags` : parties d'une version, par exemple `Disc 1`.
+- `prefer_zip` : `false` (par défaut) conserve le fichier normal quand un jeu existe en fichier normal et en fichier ZIP de la même version, `true` conserve le fichier ZIP.
 
 Les anciens fichiers peuvent encore contenir `low_priority_tags`, des infos supplémentaires avec la priorité la plus basse. Le programme lit ses entrées comme si elles se trouvaient à la fin de `region_priority`, après `none` ; les paramètres les y déplacent lors de l'enregistrement, et l'entrée disparaît.
 
@@ -281,7 +284,7 @@ Le programme ignore complètement certains fichiers : ils n'apparaissent nulle 
 5. Une région absente de `region_priority` compte comme `none`. Cela vaut aussi pour des indications comme `(Rev 1)`.
 6. Les infos supplémentaires comme `Beta`, `Proto` ou `Alpha` s'écrivent dans `region_priority` après `none`. Les fichiers qui les portent viennent après tous les autres, même après les fichiers sans région, et dans l'ordre de la liste : avec `none, Beta, Proto`, une Beta vient avant un Proto. Ils ne sont conservés que s'il n'y a pas de meilleur fichier du jeu. Entre eux, la région compte de nouveau, puis la version de la règle 7, puis le numéro après l'info supplémentaire : `Beta 2` l'emporte sur `Beta 1`, et `Beta 1` sur `Beta` sans numéro. Les numéros sont comparés numériquement (`Beta 10` avant `Beta 9`). Le fichier perdant reçoit la remarque `Bêta plus ancienne`.
 7. À priorité égale, le numéro de version le plus élevé l'emporte, comparé numériquement (`v1.10` avant `v1.9`). Sont reconnus entre parenthèses `v1.1`, `Ver 1.1`, `Version 1.1`, `Rev 1` et `Rev A` ; dans le nom du jeu seulement la forme `Title v1.1`, aussi avec `-` ou `_` à la place de l'espace. Un fichier sans version perd face à un fichier avec version. La région compte avant la version.
-8. Ensuite le fichier avec le moins d'informations supplémentaires l'emporte, puis un fichier sans ZIP, puis l'ordre alphabétique. Le rapport affiche alors `Égalité`.
+8. Ensuite le fichier avec le moins d'informations supplémentaires l'emporte, puis un fichier sans ZIP (avec `prefer_zip` : un fichier ZIP), puis l'ordre alphabétique. Le rapport affiche alors `Égalité`.
 9. Un fichier plus petit que 1/4 du plus grand fichier du jeu est mis de côté avant les règles 3 à 8 et conservé : il peut s'agir d'un fichier d'état ou de sauvegarde. Il ne peut donc être ni supprimé ni évincer la vraie ROM, par exemple `1941.state` le fichier `1941.zip`. La colonne des remarques indique alors `Fichier d'état ou de sauvegarde présumé`, et le jeu est considéré comme problématique. Un tel jeu apparaît dans les trois vues, même si aucun de ses fichiers n'est marqué. Lorsque vous supprimez, le programme confirme comme légitimes tous les fichiers présumés restants : ils restent où ils sont, ne sont toujours jamais supprimés et n'apparaissent plus dans `Marquages problématiques` ni dans `Tous les marquages`, même après `F5` ou un nouveau démarrage. La confirmation indique leur nombre. Le programme les mémorise avec leur chemin et leur taille dans `rom_cleanup_workbench_settings.json` ; si la taille change, le fichier redevient suspect. Si rien n'est marqué, `Enter` propose de les confirmer sans rien supprimer. Les ZIP comptent avec leur taille décompressée. Cela ne vaut pas pour un petit fichier normal à côté d'un grand fichier normal de sa propre version, comme un `.cue` à côté de son `.bin`, ni pour les fichiers marqués à cause de `delete_tags` ou d'un ZIP endommagé. Avec `x`, vous pouvez quand même marquer le fichier à la main.
 
 ## Fichiers ZIP
@@ -290,6 +293,7 @@ Chaque fichier ZIP est lu entièrement, même s'il est le seul fichier d'un jeu.
 
 - **Même contenu qu'un fichier conservé :** le fichier ZIP est marqué et le rapport nomme le fichier au même contenu.
 - **S'il reste un ZIP et un fichier normal après la sélection :** le ZIP est toujours marqué, même avec un contenu différent, s'il est le seul fichier contenant une partie comme `(Disc 1)` ou s'il est illisible.
+- **Avec `Garder le fichier ZIP` (`prefer_zip`) :** C'est l'inverse : à côté d'un fichier ZIP lisible de la même version, les fichiers normaux sont marqués (`Fichier ZIP préféré`). Si le contenu d'un tel fichier n'apparaît dans aucun ZIP conservé, le rapport affiche `ATTENTION` et le jeu est considéré comme problématique (`Le contenu d'un fichier normal marqué n'est pas conservé`). Un ZIP illisible n'évince aucun fichier normal. La priorité passe toujours en premier : un fichier normal `(USA)` l'emporte sur un ZIP `(Japan)`.
 - **Plusieurs ZIP de la même version au contenu différent :** tous sont conservés et le rapport le signale.
 - **Marqué, mais le contenu n'apparaît dans aucun fichier conservé :** le rapport affiche `ATTENTION`. Le fichier reste marqué.
 - **Pas de région ni de version dans le nom du ZIP :** l'information est tirée des fichiers du ZIP, à condition qu'ils aient le même nom de jeu.

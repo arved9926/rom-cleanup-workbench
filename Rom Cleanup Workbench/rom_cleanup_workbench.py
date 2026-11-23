@@ -53,6 +53,8 @@ DEFAULT_CONFIG = {
     "delete_tags": [],
     "part_tags": ["Disc", "Disk", "CD", "Side", "Seite", "Part", "Teil", "Track"],
     "language": DEFAULT_LANGUAGE,
+    # The same game as a plain file and as a ZIP file: false keeps the plain file, true the ZIP.
+    "prefer_zip": False,
 }
 
 _TAG_RE = re.compile(r"\(([^()]*)\)|\[([^\[\]]*)\]")
@@ -216,6 +218,7 @@ class Config:
     part_tags: list[str]
     low_priority_tags: list[str] = field(default_factory=list)
     language: str = DEFAULT_LANGUAGE
+    prefer_zip: bool = False
     _canonical: dict[str, str] = field(init=False, repr=False)
 
     def __post_init__(self):
@@ -350,7 +353,7 @@ class Config:
 
 
 # The entries the settings may change; all others stay as they are.
-EDITABLE_CONFIG_KEYS = ("language", "region_priority", "delete_tags")
+EDITABLE_CONFIG_KEYS = ("language", "region_priority", "delete_tags", "prefer_zip")
 
 
 def _format_json(value, indent: int = 0) -> str:
@@ -394,10 +397,12 @@ class ConfigFile:
             values["region_priority"] = with_old_low_priority(values["region_priority"], old)
         return values
 
-    def write(self, language: str, region_priority: list[str], delete_tags: list[str]) -> None:
+    def write(self, language: str, region_priority: list[str], delete_tags: list[str],
+              prefer_zip: bool | None = None) -> None:
         """Checks the values and saves them; the file stays unchanged if anything is wrong.
 
         An old entry low_priority_tags is dropped: read() has put its tags into the priority list.
+        prefer_zip None leaves that entry as it is.
         """
         regions = _clean_names(region_priority)
         if not regions:
@@ -406,6 +411,8 @@ class ConfigFile:
         raw = self._load_raw()
         raw.pop("low_priority_tags", None)
         raw.update({"language": language, "region_priority": regions, "delete_tags": tags})
+        if prefer_zip is not None:
+            raw["prefer_zip"] = bool(prefer_zip)
         # The same checks as when loading, before anything is written.
         temporary = self.path.with_name(self.path.name + ".tmp")
         temporary.write_text(_format_json(raw) + "\n", encoding="utf-8")
@@ -596,7 +603,7 @@ def _sort_key(entry: Entry, config: Config):
         # Like a version: The higher number wins, a Beta without a number loses to Beta 1.
         tuple(-part for part in config.keyword_number(entry.tags)) + (1,),
         len(config.version_key(entry.tags)),
-        entry.is_zip,
+        entry.is_zip != config.prefer_zip,  # the preferred form first (prefer_zip)
         entry.path.name.casefold(),
     )
 
@@ -610,6 +617,8 @@ def find_problems(keep: list[Entry], marked: list[Entry]) -> list[str]:
         problems.append(tr("problem.nothing_kept"))
     if _has_note(notes, "warning"):
         problems.append(tr("problem.zip_not_kept"))
+    if _has_note(notes, "warning_plain"):
+        problems.append(tr("problem.plain_not_kept"))
     if any(entry.zip_defective for entry in entries):
         problems.append(tr("problem.zip_defective"))
     if any(entry.zip_error and not entry.zip_defective for entry in entries):
@@ -739,10 +748,21 @@ def analyze_group(entries: list[Entry], config: Config) -> GroupResult:
                         entry.notes.append(Note("tie"))
                 marked.append(entry)
 
-    # Next to a plain file a ZIP file never remains, not even with different content.
+    zip_files = [entry for entry in keep if entry.is_zip]
     plain_files = [entry for entry in keep if not entry.is_zip]
-    if plain_files:
-        for entry in [e for e in keep if e.is_zip] + unreadable:
+    replaced_plain: list[Entry] = []
+    if config.prefer_zip:
+        # Next to a readable ZIP file a plain file of the same version does not remain.
+        # An unreadable ZIP pushes out nothing: it stays, and so does the plain file.
+        if zip_files and plain_files:
+            for entry in plain_files:
+                entry.notes.append(Note("zip_preferred"))
+                marked.append(entry)
+                replaced_plain.append(entry)
+            keep = zip_files
+    elif plain_files:
+        # Next to a plain file a ZIP file never remains, not even with different content.
+        for entry in zip_files + unreadable:
             entry.notes.append(Note("plain_preferred"))
             marked.append(entry)
         keep = plain_files
@@ -769,6 +789,16 @@ def analyze_group(entries: list[Entry], config: Config) -> GroupResult:
             entry.notes.append(Note("identical", names=_names(covering)))
         else:
             entry.notes.append(Note("warning"))
+
+    # A plain file that gave way to a ZIP: is its content in a kept ZIP?
+    for entry in replaced_plain:
+        size, digest = entry.size(), entry.sha256()
+        content = ZipMember(entry.path.name, size, digest) if size is not None and digest else None
+        covering = [other for other in keep if content and other.contains(content)]
+        if covering:
+            entry.notes.append(Note("identical", names=_names(covering[:1])))
+        else:
+            entry.notes.append(Note("warning_plain"))
 
     keep.extend(unreadable)
     keep.extend(suspected)

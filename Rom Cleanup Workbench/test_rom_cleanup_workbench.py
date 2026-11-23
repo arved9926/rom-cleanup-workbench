@@ -25,6 +25,7 @@ import threading
 import time
 import unittest
 import zipfile
+from dataclasses import replace
 from pathlib import Path
 from unittest import mock
 
@@ -615,6 +616,78 @@ class AnalyzeTests(RedundanzTestCase):
         self.assertEqual(self.names(self.single().marked), ["Title (Beta).bin"])
 
 
+class PreferZipTests(RedundanzTestCase):
+    """prefer_zip: the same game as a plain file and as a ZIP file, the ZIP file remains."""
+
+    def setUp(self):
+        super().setUp()
+        self.config = replace(self.config, prefer_zip=True)
+
+    def test_default_keeps_the_plain_file(self):
+        self.assertFalse(rf.DEFAULT_CONFIG["prefer_zip"])
+        self.assertFalse(rf.Config.load(None).prefer_zip)
+
+    def test_zip_with_the_same_content_remains_and_the_plain_file_is_marked(self):
+        self.write("Title (USA).bin", b"rom")
+        self.write_zip("Title (USA).zip", {"Title (USA).bin": b"rom"})
+        result = self.single()
+        self.assertEqual(self.names(result.keep), ["Title (USA).zip"])
+        self.assertEqual(self.names(result.marked), ["Title (USA).bin"])
+        notes = result.marked[0].notes
+        self.assertIn("ZIP file preferred", notes)
+        self.assertIn("Content identical to Title (USA).zip", notes)
+        self.assertEqual(result.problems, [])
+
+    def test_plain_file_with_other_content_gets_a_warning_and_a_problem(self):
+        self.write("Title (USA).bin", b"rom")
+        self.write_zip("Title (USA).zip", {"Title (USA).bin": b"different"})
+        result = self.single()
+        self.assertEqual(self.names(result.keep), ["Title (USA).zip"])
+        self.assertEqual(self.names(result.marked), ["Title (USA).bin"])
+        self.assertEqual(result.marked[0].notes[-1], "WARNING: Content does not appear in the kept ZIP files")
+        self.assertIn("Content of a marked plain file is not kept", result.problems)
+
+    def test_all_plain_files_of_the_version_give_way(self):
+        self.write("Title (USA).cue", b"cue" * 10)
+        self.write("Title (USA).bin", b"bin" * 10)
+        self.write_zip("Title (USA).zip", {"Title (USA).cue": b"cue" * 10, "Title (USA).bin": b"bin" * 10})
+        result = self.single()
+        self.assertEqual(self.names(result.keep), ["Title (USA).zip"])
+        self.assertEqual(sorted(self.names(result.marked)), ["Title (USA).bin", "Title (USA).cue"])
+        self.assertEqual(result.problems, [])
+
+    def test_the_priority_still_comes_first(self):
+        self.write("Title (USA).bin", b"usa")
+        self.write_zip("Title (Japan).zip", {"a.bin": b"jap"})
+        result = self.single()
+        self.assertEqual(self.names(result.keep), ["Title (USA).bin"])
+        self.assertEqual(self.names(result.marked), ["Title (Japan).zip"])
+
+    def test_an_unreadable_zip_pushes_out_no_plain_file(self):
+        self.write("Title (USA).bin", b"rom")
+        self.write("Title (USA).zip", b"not a zip")
+        result = self.single()
+        self.assertIn("Title (USA).bin", self.names(result.keep))
+        self.assertNotIn("Title (USA).bin", self.names(result.marked))
+
+    def test_off_the_plain_file_remains_as_before(self):
+        self.config = replace(self.config, prefer_zip=False)
+        self.write("Title (USA).bin", b"rom")
+        self.write_zip("Title (USA).zip", {"Title (USA).bin": b"rom"})
+        result = self.single()
+        self.assertEqual(self.names(result.keep), ["Title (USA).bin"])
+        self.assertIn("Plain file preferred", result.marked[0].notes)
+
+    def test_the_configuration_file_switches_it(self):
+        path = self.dir.parent / f"{self.dir.name}-config.json"
+        self.addCleanup(path.unlink, missing_ok=True)
+        path.write_text('{"prefer_zip": true}', encoding="utf-8")
+        self.assertTrue(rf.Config.load(path).prefer_zip)
+        path.write_text('{"prefer_zip": "yes"}', encoding="utf-8")
+        with self.assertRaises(ValueError):
+            rf.Config.load(path)
+
+
 class ZipTests(RedundanzTestCase):
     def test_zip_with_same_tags_and_same_content_is_redundant(self):
         self.write("Title (USA).bin", b"rom")
@@ -1151,7 +1224,7 @@ class ConfigFileTests(RedundanzTestCase):
         values = self.config_file().read()
         self.assertEqual(values, {
             "language": "en", "region_priority": ["USA", "Europe", "none", "Japan", "Beta"],
-            "delete_tags": [],
+            "delete_tags": [], "prefer_zip": False,
         })
 
     def test_write_keeps_other_entries_and_their_order(self):
@@ -1168,6 +1241,15 @@ class ConfigFileTests(RedundanzTestCase):
         loaded = rf.Config.load(config.path)
         self.assertEqual(loaded.region_aliases, {"Germany": ["DE"]})
         self.assertEqual(config.read()["region_priority"], ["Germany", "Europe", "none"])
+
+    def test_write_saves_prefer_zip_and_none_leaves_it(self):
+        config = self.config_file('{"prefer_zip": true}')
+        self.assertTrue(config.read()["prefer_zip"])
+        config.write("en", ["USA"], [])
+        self.assertTrue(rf.Config.load(config.path).prefer_zip)
+        config.write("en", ["USA"], [], False)
+        self.assertFalse(rf.Config.load(config.path).prefer_zip)
+        self.assertFalse(config.read()["prefer_zip"])
 
     def test_write_creates_a_missing_file(self):
         config = self.config_file()
@@ -1727,6 +1809,24 @@ class ReviewWindowTests(RedundanzTestCase):
             window.save_settings(dialog)
         analysis.assert_called_once()  # a new delete keyword changes the rules: analyze again
         self.assertEqual(rf.Config.load(window.config_file.path).delete_tags, ["Hack", "Hacks"])
+
+    def test_settings_switch_between_plain_file_and_zip_file(self):
+        window = self.window_with_settings()
+        window.open_settings()
+        dialog = window.settings_panel
+        self.assertFalse(dialog.prefers_zip())
+        texts = [widget.cget("text") for widget in self._descendants(dialog.frame)
+                 if widget.winfo_class() in ("TLabel", "TRadiobutton")]
+        for text in ("Same game as a plain file and as a ZIP file:", "Keep the plain file", "Keep the ZIP file"):
+            self.assertIn(text, texts)
+        dialog.prefer_buttons[1].invoke()
+        self.assertTrue(dialog.prefers_zip())
+        with mock.patch.object(window, "start_analysis") as analysis:
+            window.save_settings(dialog)
+        analysis.assert_called_once()  # the switch changes the rules: analyze again
+        self.assertTrue(rf.Config.load(window.config_file.path).prefer_zip)
+        window.open_settings()
+        self.assertTrue(window.settings_panel.prefers_zip())
 
     def test_label_of_the_priority_list_wraps_instead_of_being_cut(self):
         window = self.window_with_settings()
@@ -4497,6 +4597,25 @@ class TerminalVersionTests(unittest.IsolatedAsyncioTestCase):
             self.assertIsNot(app.review, before)  # a new delete keyword analyzes again
             self.assertEqual(rf.Config.load(app.config_file.path).delete_tags, ["Hack", "Hacks"])
 
+    async def test_settings_switch_between_plain_file_and_zip_file(self):
+        app = self.app_with_settings()
+        async with app.run_test(size=(110, 40)) as pilot:
+            await self.analyzed(app, pilot)
+            before = app.review
+            screen = await self.open_settings(app, pilot)
+            self.assertEqual(self.text(screen, "#prefer-label"), "Same game as a plain file and as a ZIP file:")
+            self.assertTrue(screen.query_one("#prefer-false").value)
+            self.assertFalse(screen.prefers_zip())
+            screen.query_one("#prefer-true").value = True
+            await pilot.pause()
+            self.assertTrue(screen.prefers_zip())
+            self.assertEqual(screen.language_code(), "en")  # the other radio set leaves the language alone
+            await pilot.press("ctrl+s")
+            await self.analyzed(app, pilot)
+            self.assertFalse(app.settings_open())
+            self.assertIsNot(app.review, before)
+            self.assertTrue(rf.Config.load(app.config_file.path).prefer_zip)
+
     async def test_settings_of_an_old_file_show_its_low_priority_tags_and_saving_drops_them(self):
         app = self.app_with_settings('{"language": "en", "region_priority": ["Germany", "USA", "none", "Japan"], '
                                      '"delete_tags": [], "low_priority_tags": ["Beta", "Proto"]}')
@@ -4748,7 +4867,10 @@ class TerminalVersionTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual([str(button.label) for button in screen.query(Button)],
                              ["Speichern", "Abbrechen", "Hoch", "Runter", "Entfernen", "Hinzufügen"])
             self.assertEqual([str(button.label) for button in screen.query(RadioButton)],
-                             ["English", "Deutsch", "Italiano", "Español", "Français", "日本語"])
+                             ["English", "Deutsch", "Italiano", "Español", "Français", "日本語",
+                              "Normale Datei behalten", "ZIP-Datei behalten"])
+            self.assertEqual(self.text(screen, "#prefer-label"),
+                             "Gleiches Spiel als normale Datei und als ZIP-Datei:")
             self.assertTrue(screen.query_one("#language-de").value)
             self.assertTrue(self.text(screen, "#settings-hint").startswith("Umschalt+Hoch/Runter"))
 

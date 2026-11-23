@@ -145,7 +145,7 @@ Das Fenster merkt sich die zuletzt gewählte Ansicht und die bestätigten Status
 | `k` | die Datei behalten; sie rückt an die Stelle, die die Regeln ihr geben |
 | `1` `2` `3` | die Ansichten `Problematische Löschmarkierungen`, `Alle Löschmarkierungen`, `Alle Romdateien` |
 | `Strg` + Mausrad | Schrift vergrößern oder verkleinern (8 bis 32 pt, gilt bis das Fenster geschlossen wird) |
-| `s` | wie die Schaltfläche `Einstellungen...`: die Einstellungen für Sprache, Priorität und Löschwörter zeigen oder ausblenden (siehe [Einstellungen](#einstellungen)) |
+| `s` | wie die Schaltfläche `Einstellungen...`: die Einstellungen für Sprache, Priorität, Löschwörter und ZIP oder normale Datei zeigen oder ausblenden (siehe [Einstellungen](#einstellungen)) |
 | `/` | ins Filterfeld wechseln |
 | `Enter` | wie die Schaltfläche `Ausführen...`: nach einer Bestätigung löschen und die vermuteten Status- oder Spielstanddateien bestätigen (Regel 9) |
 | `f` | einen anderen Ordner wählen, im Fenster an der Stelle der Liste: Ordner mit Doppelklick oder dem Pfeil öffnen oder einen Pfad in `Pfad:` tippen, dann `Auswählen` oder `Enter`; `Abbrechen` oder `Esc` behalten den aktuellen Ordner |
@@ -176,8 +176,9 @@ Die Schaltfläche `Einstellungen...` in der unteren Zeile oder `s` zeigt die hä
 - **Sprache:** Legt fest, welche Sprache das UI nutzt. Eine der sechs Sprachen wählen. Eine neue Sprache gilt ab dem nächsten Start des Programms.
 - **Priorität:** Legt fest, welche Länderversionen Vorrang vor anderen haben. Die beste Region oben; Zusatzinfos wie `Beta` oder `Proto` gehören hinter `none`, damit solche Dateien zuletzt kommen (Regel 6). Einen Eintrag wählen und mit `Hoch` und `Runter` verschieben, mit `Entfernen` oder der Taste `Entf` entfernen, einen neuen mit dem Feld unter der Liste und `Hinzufügen` (oder `Enter`) hinzufügen.
 - **Löschwörter:** Legt fest, welche Versionen eines Programms in jedem Fall gelöscht werden. Durch Kommas getrennt, zum Beispiel `Hack, Hacks`. Dateien damit werden zum Löschen markiert (Regel 2).
+- **Gleiches Spiel als normale Datei und als ZIP-Datei:** Legt fest, welche der beiden erhalten bleibt, wenn beide dieselbe Version sind. `Normale Datei behalten` (Vorgabe) markiert die ZIP-Datei, `ZIP-Datei behalten` markiert die normalen Dateien (siehe [ZIP-Dateien](#zip-dateien)).
 
-`Speichern` schreibt die Datei und analysiert den Ordner neu, wenn sich die Priorität oder die Löschwörter geändert haben; hast du Markierungen von Hand geändert, fragt das Programm vorher, weil diese Änderungen verloren gehen. Alle anderen Einträge der Datei bleiben, wie sie sind. Falsche Werte, etwa eine leere Regionsliste oder dieselbe Region zweimal, werden gemeldet, es wird nichts geschrieben, und die Einstellungen bleiben offen. Lässt sich die Datei nicht lesen, öffnen sich die Einstellungen nicht, damit sie keine Einträge überschreiben können, die sie nicht kennen. Mit `--config` bearbeiten die Einstellungen diese Datei; mit `--priority` gilt für diesen Lauf weiter die dort angegebene Priorität.
+`Speichern` schreibt die Datei und analysiert den Ordner neu, wenn sich die Priorität, die Löschwörter oder die Wahl zwischen normaler Datei und ZIP-Datei geändert haben; hast du Markierungen von Hand geändert, fragt das Programm vorher, weil diese Änderungen verloren gehen. Alle anderen Einträge der Datei bleiben, wie sie sind. Falsche Werte, etwa eine leere Regionsliste oder dieselbe Region zweimal, werden gemeldet, es wird nichts geschrieben, und die Einstellungen bleiben offen. Lässt sich die Datei nicht lesen, öffnen sich die Einstellungen nicht, damit sie keine Einträge überschreiben können, die sie nicht kennen. Mit `--config` bearbeiten die Einstellungen diese Datei; mit `--priority` gilt für diesen Lauf weiter die dort angegebene Priorität.
 
 Ein Spiel gilt als problematisch, wenn
 
@@ -231,20 +232,22 @@ Unterschiede zum Fenster: kein Schriftzoom, weil die Schrift dem Terminal gehör
 
 ## Konfiguration: `redundanz_config.json`
 
-Die Datei liegt neben dem Programm und wird bei jeder Analyse neu gelesen. Sprache, Priorität und Löschwörter änderst du am einfachsten im Fenster mit `Einstellungen...` (siehe [Einstellungen](#einstellungen)). In der Datei selbst genügt es, die Reihenfolge in `region_priority` umzustellen und die Datei zu speichern:
+Die Datei liegt neben dem Programm und wird bei jeder Analyse neu gelesen. Sprache, Priorität, Löschwörter und die Wahl zwischen normaler Datei und ZIP-Datei änderst du am einfachsten im Fenster mit `Einstellungen...` (siehe [Einstellungen](#einstellungen)). In der Datei selbst genügt es, die Reihenfolge in `region_priority` umzustellen und die Datei zu speichern:
 
 ```json
 "region_priority": ["USA", "Europe", "none", "Japan", "Beta"],
 "delete_tags": [],
+"prefer_zip": false,
 ```
 
-Enthält die Datei einen Fehler, etwa einen falsch geschriebenen Eintrag, findet keine Analyse statt, und es wird nichts gelöscht. So sieht die mitgelieferte Datei aus: Die Sprache ist Englisch, die Priorität USA, Europe, none, Japan, Beta, und es gibt keine Löschwörter. Dateien ohne Region kommen also vor japanischen. Fehlt die Datei oder ein Eintrag, gelten dieselben Vorgaben.
+Enthält die Datei einen Fehler, etwa einen falsch geschriebenen Eintrag, findet keine Analyse statt, und es wird nichts gelöscht. So sieht die mitgelieferte Datei aus: Die Sprache ist Englisch, die Priorität USA, Europe, none, Japan, Beta, es gibt keine Löschwörter, und neben einer ZIP-Datei bleibt die normale Datei erhalten. Dateien ohne Region kommen also vor japanischen. Fehlt die Datei oder ein Eintrag, gelten dieselben Vorgaben.
 
 - `language`: die Sprache des Fensters, der Hinweise und der Terminalausgabe (siehe unten).
 - `region_priority`: Regionen und Zusatzinfos, die besten zuerst. `none` steht für Dateien ohne bekannte Region; die Wörter der anderen Sprachen (`keine`, `nessuna`, `ninguna`, `aucune`, `なし`) gehen ebenso. Zusatzinfos wie `Beta` hinter `none` setzen solche Dateien ans Ende (Regel 6); `Beta` passt auch zu `Beta 2`.
 - `region_aliases`: andere Schreibweisen einer Region, zum Beispiel `Europa` für `Europe`.
 - `delete_tags`: die Löschwörter, Zusatzinfos, die immer zum Löschen führen (Regel 2). Als Vorgabe ist die Liste leer. `Hack` passt auch zu `Hack 2` und `Hack by Someone`, aber nicht zu `Hacks` oder `Hackers`; wer Hacks löschen will, trägt deshalb `Hack` und `Hacks` ein.
 - `part_tags`: Teile einer Version, zum Beispiel `Disc 1`.
+- `prefer_zip`: `false` (Vorgabe) behält die normale Datei, wenn es ein Spiel als normale Datei und als ZIP-Datei derselben Version gibt, `true` behält die ZIP-Datei.
 
 Ältere Dateien können noch `low_priority_tags` enthalten, Zusatzinfos mit der niedrigsten Priorität. Das Programm liest deren Einträge, als stünden sie am Ende von `region_priority`, hinter `none`; die Einstellungen verschieben sie beim Speichern dorthin, und der Eintrag verschwindet.
 
@@ -281,7 +284,7 @@ Manche Dateien übergeht das Programm ganz: Sie erscheinen nirgends und werden n
 5. Eine Region, die nicht in `region_priority` steht, zählt als `none`. Das gilt auch für Angaben wie `(Rev 1)`.
 6. Zusatzinfos wie `Beta`, `Proto` oder `Alpha` werden in `region_priority` hinter `none` geschrieben. Dateien damit kommen nach allen anderen, auch nach Dateien ohne Region, und in der Reihenfolge der Liste: Bei `none, Beta, Proto` kommt eine Beta vor einem Proto. Sie bleiben nur erhalten, wenn es keine bessere Datei des Spiels gibt. Untereinander zählt wieder die Region, dann die Version aus Regel 7, dann die Nummer hinter der Zusatzinfo: `Beta 2` gewinnt gegen `Beta 1` und `Beta 1` gegen `Beta` ohne Nummer. Die Nummern werden numerisch verglichen (`Beta 10` vor `Beta 9`). Die unterlegene Datei bekommt den Hinweis `Ältere Beta`.
 7. Bei gleicher Priorität gewinnt die höchste Versionsnummer, numerisch verglichen (`v1.10` vor `v1.9`). Erkannt werden in Klammern `v1.1`, `Ver 1.1`, `Version 1.1`, `Rev 1` und `Rev A`; im Spielnamen nur die Form `Title v1.1`, auch mit `-` oder `_` statt eines Leerzeichens. Eine Datei ohne Version verliert gegen eine mit Version. Die Region zählt vor der Version.
-8. Danach gewinnt die Datei mit weniger Zusatzinformationen, dann eine Datei ohne ZIP, dann das Alphabet. Der Bericht zeigt dann `Gleichstand`.
+8. Danach gewinnt die Datei mit weniger Zusatzinformationen, dann eine Datei ohne ZIP (mit `prefer_zip`: eine ZIP-Datei), dann das Alphabet. Der Bericht zeigt dann `Gleichstand`.
 9. Eine Datei, die kleiner ist als 1/4 der größten Datei des Spiels, wird vor den Regeln 3 bis 8 beiseitegelegt und behalten: Sie könnte eine Status- oder Spielstanddatei sein. Sie kann daher weder gelöscht werden noch das echte ROM verdrängen, etwa `1941.state` die Datei `1941.zip`. Die Hinweisspalte zeigt dann `Verdacht auf Status- oder Spielstanddatei`, und das Spiel gilt als problematisch. Ein solches Spiel erscheint in allen drei Ansichten, auch wenn keine seiner Dateien markiert ist. Beim Löschen bestätigt das Programm alle übrigen vermuteten Dateien als legitim: Sie bleiben, wo sie sind, werden weiterhin nie gelöscht und erscheinen nicht mehr in `Problematische Löschmarkierungen` und `Alle Löschmarkierungen`, auch nach `F5` oder einem Neustart. Die Bestätigung nennt ihre Anzahl. Das Programm merkt sie sich mit Pfad und Größe in `rom_cleanup_workbench_settings.json`; ändert sich die Größe, steht die Datei wieder unter Verdacht. Ist nichts markiert, bietet `Enter` an, sie zu bestätigen, ohne etwas zu löschen. ZIPs zählen mit ihrer entpackten Größe. Das gilt nicht für eine kleine normale Datei neben einer großen normalen Datei ihrer eigenen Version, etwa eine `.cue` neben ihrer `.bin`, und nicht für Dateien, die wegen `delete_tags` oder eines defekten ZIPs markiert sind. Mit `x` kannst du die Datei trotzdem von Hand markieren.
 
 ## ZIP-Dateien
@@ -290,6 +293,7 @@ Jede ZIP-Datei wird vollständig gelesen, auch wenn sie die einzige Datei eines 
 
 - **Gleicher Inhalt wie eine behaltene Datei:** Die ZIP-Datei wird markiert, und der Bericht nennt die Datei mit demselben Inhalt.
 - **Bleiben nach der Auswahl ein ZIP und eine normale Datei übrig:** Das ZIP wird immer markiert, auch bei anderem Inhalt, wenn es die einzige Datei mit einem Teil wie `(Disc 1)` ist oder wenn es nicht lesbar ist.
+- **Mit `ZIP-Datei behalten` (`prefer_zip`):** Umgekehrt: Neben einer lesbaren ZIP-Datei derselben Version werden die normalen Dateien markiert (`ZIP-Datei bevorzugt`). Kommt der Inhalt einer solchen Datei in keinem behaltenen ZIP vor, zeigt der Bericht `WARNUNG`, und das Spiel gilt als problematisch (`Inhalt einer markierten normalen Datei bleibt nicht erhalten`). Ein nicht lesbares ZIP verdrängt keine normale Datei. Die Priorität geht weiterhin vor: Eine normale `(USA)`-Datei gewinnt gegen ein `(Japan)`-ZIP.
 - **Mehrere ZIPs derselben Version mit anderem Inhalt:** Alle bleiben erhalten, und der Bericht weist darauf hin.
 - **Markiert, aber der Inhalt kommt in keiner behaltenen Datei vor:** Der Bericht zeigt `WARNUNG`. Die Datei bleibt markiert.
 - **Keine Region oder Version im ZIP-Namen:** Die Angabe wird den Dateien im ZIP entnommen, sofern sie denselben Spielnamen haben.

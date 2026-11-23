@@ -684,6 +684,13 @@ class SettingsScreen(Screen):
                 yield Static(tr("settings.language_hint"), id="language-hint", markup=False)
                 yield Static(tr("settings.delete_keywords"), id="tags-label", markup=False)
                 yield Input(", ".join(self.values["delete_tags"]), id="tags")
+                # prefer_zip: which of the two remains when a game exists as a plain file and as a ZIP.
+                yield Static(tr("settings.prefer"), id="prefer-label", markup=False)
+                with RadioSet(id="prefer"):
+                    prefer_zip = bool(self.values["prefer_zip"])
+                    for key, value in (("settings.prefer_plain", False), ("settings.prefer_zip", True)):
+                        button = RadioButton(tr(key), value=value == prefer_zip, id=f"prefer-{str(value).lower()}")
+                        yield _plain_radio(button) if getattr(self.app, "ascii", False) else button
         yield Static(tr("settings.tui_hint"), id="settings-hint", markup=False)
 
     def on_mount(self) -> None:
@@ -700,6 +707,9 @@ class SettingsScreen(Screen):
 
     def tag_list(self) -> list[str]:
         return [tag.strip() for tag in self.query_one("#tags", Input).value.split(",") if tag.strip()]
+
+    def prefers_zip(self) -> bool:
+        return self.query_one("#prefer-true", RadioButton).value
 
     # Editing the regions ---------------------------------------------------------------------
 
@@ -749,7 +759,8 @@ class SettingsScreen(Screen):
 
     def on_radio_set_changed(self, event: RadioSet.Changed) -> None:
         event.stop()  # not the app's views
-        self.language = event.pressed.id.removeprefix("language-")
+        if event.radio_set.id == "languages":
+            self.language = event.pressed.id.removeprefix("language-")
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         event.stop()
@@ -782,9 +793,10 @@ class WorkbenchApp(App):
         scrollbar-color: #444444; scrollbar-color-hover: #666666; scrollbar-color-active: #888888;
         scrollbar-corner-color: #000000; }
     /* Textual marks the view under its keyboard cursor in blue; the views never get the focus here. */
-    #views > RadioButton.-selected, #languages > RadioButton.-selected,
+    #views > RadioButton.-selected, #languages > RadioButton.-selected, #prefer > RadioButton.-selected,
     #views > RadioButton.-selected > .toggle--label,
-    #languages > RadioButton.-selected > .toggle--label { background: #000000; }
+    #languages > RadioButton.-selected > .toggle--label,
+    #prefer > RadioButton.-selected > .toggle--label { background: #000000; }
     #title-row { height: 1; background: #1a7f37; color: #ffffff; }
     #title { width: auto; text-style: bold; padding: 0 1; }
     #folder { width: 1fr; text-align: right; padding: 0 1; }
@@ -854,13 +866,14 @@ class WorkbenchApp(App):
     #new-region-row { height: 1; margin-top: 1; }
     #new-region { width: 1fr; }
     #new-region-row > Button { margin-left: 1; width: 14; }
-    #languages { height: auto; border: none; background: #000000; margin-top: 1; }
-    #languages:focus-within { border: none; }
-    #languages > RadioButton { background: #000000; color: #ffffff; border: none; }
-    #languages > RadioButton > .toggle--button { color: #222222; background: #222222; }
-    #languages > RadioButton.-on > .toggle--button { color: #e5383b; background: #222222; }
+    #languages, #prefer { height: auto; border: none; background: #000000; margin-top: 1; }
+    #languages:focus-within, #prefer:focus-within { border: none; }
+    #languages > RadioButton, #prefer > RadioButton { background: #000000; color: #ffffff; border: none; }
+    #languages > RadioButton > .toggle--button, #prefer > RadioButton > .toggle--button { color: #222222; background: #222222; }
+    #languages > RadioButton.-on > .toggle--button, #prefer > RadioButton.-on > .toggle--button { color: #e5383b; background: #222222; }
     #language-hint { margin: 1 0 1 0; color: #aaaaaa; }
     #tags-label { margin-bottom: 1; }
+    #prefer-label { margin-top: 1; margin-bottom: 1; }
     #settings-hint { height: auto; margin-top: 1; }
 
     /* 16 colors and the Linux console (class -colors16, see wants_16_colors). The values are
@@ -871,12 +884,13 @@ class WorkbenchApp(App):
        buttons are light gray, and the header is underlined. Nothing is transparent: blending
        would make colors between them. Each rule names the same ids as the normal one, which it
        must outrank. */
-    .-colors16 Screen, .-colors16 #games, .-colors16 #views, .-colors16 #languages,
+    .-colors16 Screen, .-colors16 #games, .-colors16 #views, .-colors16 #languages, .-colors16 #prefer,
     .-colors16 #folder-tree, .-colors16 #question, .-colors16 QuestionScreen,
     .-colors16 FolderScreen, .-colors16 SettingsScreen { background: #000000; color: #aaaaaa; }
     /* Textual highlights the radio item under the keyboard cursor half-transparently, which would
        make a color between the 16 (the focus tint is off everywhere, see above). */
     .-colors16 #views > RadioButton.-selected, .-colors16 #languages > RadioButton.-selected,
+    .-colors16 #prefer > RadioButton.-selected,
     .-colors16 RadioButton > .toggle--label { background: #000000; }
     .-colors16 * { scrollbar-background: #000000; scrollbar-background-hover: #000000;
                    scrollbar-background-active: #000000; scrollbar-color: #aaaaaa;
@@ -903,11 +917,14 @@ class WorkbenchApp(App):
     .-colors16 SettingsScreen Button { background: #aaaaaa; color: #000000; }
     .-colors16 #question-buttons > Button:focus, .-colors16 #folder-head > Button:focus,
     .-colors16 SettingsScreen Button:focus { background: #0000aa; color: #ffffff; }
-    .-colors16 #views > RadioButton, .-colors16 #languages > RadioButton { background: #000000; color: #aaaaaa; }
+    .-colors16 #views > RadioButton, .-colors16 #languages > RadioButton,
+    .-colors16 #prefer > RadioButton { background: #000000; color: #aaaaaa; }
     .-colors16 #views > RadioButton > .toggle--button,
-    .-colors16 #languages > RadioButton > .toggle--button { background: #000000; color: #000000; }
+    .-colors16 #languages > RadioButton > .toggle--button,
+    .-colors16 #prefer > RadioButton > .toggle--button { background: #000000; color: #000000; }
     .-colors16 #views > RadioButton.-on > .toggle--button,
-    .-colors16 #languages > RadioButton.-on > .toggle--button { background: #000000; color: #ff5555; }
+    .-colors16 #languages > RadioButton.-on > .toggle--button,
+    .-colors16 #prefer > RadioButton.-on > .toggle--button { background: #000000; color: #ff5555; }
     .-colors16 #folder-tree > .tree--guides, .-colors16 #folder-tree > .tree--guides-hover,
     .-colors16 #folder-tree > .tree--guides-selected { color: #aaaaaa; }
     .-colors16 #question-dot { color: #00aa00; }
@@ -1434,12 +1451,14 @@ class WorkbenchApp(App):
     def save_settings(self, screen: SettingsScreen) -> None:
         """Writes the settings, as the window does; a new priority or new tags take effect at once."""
         language, regions, tags = screen.language_code(), screen.region_list(), screen.tag_list()
+        prefer_zip = screen.prefers_zip()
         before = screen.values
-        rules_changed = regions != before["region_priority"] or tags != before["delete_tags"]
+        rules_changed = (regions != before["region_priority"] or tags != before["delete_tags"]
+                         or prefer_zip != before["prefer_zip"])
 
         def write() -> None:
             try:
-                self.config_file.write(language, regions, tags)
+                self.config_file.write(language, regions, tags, prefer_zip)
             except (OSError, ValueError) as error:
                 self.show_message("error", tr("settings.error_title"), str(error))  # the settings stay open
                 return

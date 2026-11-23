@@ -230,7 +230,7 @@ class _AnalysisReplaced(Exception):
 
 
 class SettingsPanel:
-    """Edits language, region priority and low priority tags in place of the file list.
+    """Edits language, region priority, delete keywords and ZIP or plain file in place of the file list.
 
     The list and everything that acts on it is locked meanwhile (see ReviewWindow._refresh_locks).
     """
@@ -283,7 +283,7 @@ class SettingsPanel:
         right = ttk.Frame(frame)
         right.grid(row=1, column=1, sticky="nsew")
         right.columnconfigure(0, weight=1)
-        right.rowconfigure(5, weight=1)
+        right.rowconfigure(8, weight=1)
         ttk.Label(right, text=tr("settings.language")).grid(row=0, column=0, sticky="w", pady=(0, 4))
         name = LANGUAGE_NAMES.get(self.values["language"], LANGUAGE_NAMES[current_language()])
         self.language = tk.StringVar(frame, name)
@@ -301,6 +301,17 @@ class SettingsPanel:
         self.tags = tk.StringVar(frame, ", ".join(self.values["delete_tags"]))
         tags_entry = ttk.Entry(right, textvariable=self.tags)
         tags_entry.grid(row=4, column=0, sticky="ew")
+        # prefer_zip: which of the two remains when a game exists as a plain file and as a ZIP file.
+        prefer_label = ttk.Label(right, text=tr("settings.prefer"))
+        prefer_label.grid(row=5, column=0, sticky="ew", pady=(12, 4))
+        prefer_label.bind("<Configure>", lambda event: prefer_label.configure(wraplength=max(event.width, 1)))
+        self.prefer_zip = tk.BooleanVar(frame, bool(self.values["prefer_zip"]))
+        self.prefer_buttons = [
+            ttk.Radiobutton(right, text=tr(key), variable=self.prefer_zip, value=value)
+            for key, value in (("settings.prefer_plain", False), ("settings.prefer_zip", True))
+        ]
+        for row, button in enumerate(self.prefer_buttons, start=6):
+            button.grid(row=row, column=0, sticky="w")
 
         # Where text is typed, the window's keys must not fire: An "x" in a region name marks nothing.
         for widget in (language_box, self.regions, new_entry, tags_entry):
@@ -319,6 +330,9 @@ class SettingsPanel:
 
     def tag_list(self) -> list[str]:
         return [tag.strip() for tag in self.tags.get().split(",") if tag.strip()]
+
+    def prefers_zip(self) -> bool:
+        return bool(self.prefer_zip.get())
 
     def _select(self, index: int) -> None:
         self.regions.selection_clear(0, "end")
@@ -1144,14 +1158,16 @@ class ReviewWindow:
         self._hide_panel()
 
     def save_settings(self, panel: SettingsPanel) -> None:
-        """Writes the settings; a new priority or new tags take effect at once through a new analysis."""
+        """Writes the settings; new rules (priority, tags, ZIP or plain) take effect at once through a new analysis."""
         language, regions, tags = panel.language_code(), panel.region_list(), panel.tag_list()
+        prefer_zip = panel.prefers_zip()
         before = panel.values
-        rules_changed = regions != before["region_priority"] or tags != before["delete_tags"]
+        rules_changed = (regions != before["region_priority"] or tags != before["delete_tags"]
+                         or prefer_zip != before["prefer_zip"])
         if rules_changed and not self._may_discard_changes(tr("settings.discard")):
             return
         try:
-            self.config_file.write(language, regions, tags)
+            self.config_file.write(language, regions, tags, prefer_zip)
         except (OSError, ValueError) as error:
             messagebox.showerror(tr("settings.error_title"), str(error), parent=self.root)
             return
