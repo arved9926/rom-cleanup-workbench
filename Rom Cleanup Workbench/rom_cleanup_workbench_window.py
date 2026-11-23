@@ -967,6 +967,7 @@ class ReviewWindow:
 
     def _fill_group(self, result) -> None:
         group_id = self._group_ids[id(result)]
+        self.tree.item(group_id, text=result.title)  # k and x may change the first kept file
         self.tree.delete(*self.tree.get_children(group_id))
         if result.keep:
             section = self.tree.insert(

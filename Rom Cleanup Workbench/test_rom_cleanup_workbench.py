@@ -154,6 +154,22 @@ class GameKeyTests(unittest.TestCase):
         self.assert_same("Robocop vs Terminator", "Robocop vs. Terminator", "Robocop versus Terminator",
                          "Robocop VS Terminator", "Robocop Versus Terminator", "Robocop_vs._Terminator")
 
+    def test_roman_numerals_one_to_seven_equal_numbers(self):
+        for number, roman in enumerate(("I", "II", "III", "IV", "V", "VI", "VII"), 1):
+            self.assert_same(f"Final Fantasy {roman}", f"Final Fantasy {number}", f"final fantasy {roman.lower()}")
+        self.assert_same("Street Fighter II - The World Warrior", "Street Fighter 2: The World Warrior".replace(":", ""))
+        self.assert_same("Rocky IV (Part)", "Rocky 4 (Part)")
+
+    def test_roman_numerals_only_as_whole_words(self):
+        self.assert_different("Vivi", "5vi")
+        self.assert_different("Mega Man X", "Mega Man 10")
+        self.assert_different("Final Fantasy VIII", "Final Fantasy 8")  # only I to VII
+        self.assert_different("Final Fantasy VII", "Final Fantasy 6")
+
+    def test_roman_i_in_front_is_no_number(self):
+        self.assert_different("I Robot", "Robot")
+        self.assertFalse(rf.has_leading_number("I Robot"))
+
     def test_double_ampersand_equals_and(self):
         self.assert_same("Tom && Jerry", "Tom&&Jerry", "Tom & Jerry", "Tom and Jerry", "Tom und Jerry")
 
@@ -997,6 +1013,18 @@ class SameTypeSmallFileTests(RedundanzTestCase):
 
 
 class GameTitleTests(RedundanzTestCase):
+    def test_the_title_uses_the_spelling_of_the_first_kept_file(self):
+        self.write("Street Fighter 2 (Japan).sfc", b"j")
+        self.write("Street Fighter II (USA).sfc", b"u")
+        review = rf.Review(self.scan(), self.config)
+        result = review.results[0]
+        self.assertEqual(result.title, "Street Fighter II")
+        review.promote(result, result.marked[0])
+        review.demote(result, next(e for e in result.keep if "USA" in e.path.name))
+        self.assertEqual(result.title, "Street Fighter 2")  # k and x: the new first kept file
+        review.demote(result, result.keep[0])
+        self.assertEqual(result.title, "Street Fighter II")  # nothing kept: the first marked file (USA)
+
     def test_the_title_leaves_out_the_number_in_front(self):
         self.write("073 Batman (USA).sfc", b"rom")
         self.write("Batman (Japan).sfc", b"jap")
