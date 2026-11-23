@@ -726,6 +726,74 @@ class EquivalenceTests(RedundanzTestCase):
         self.assertIn("Different spellings of the name", result.problems)
 
 
+class NumberInFrontTests(RedundanzTestCase):
+    """073 Batman: in a tie the name with the number wins; region and delete keywords come first."""
+
+    def test_same_version_the_numbered_name_remains(self):
+        self.write("073 Batman (USA).sfc", b"rom")
+        self.write("Batman (USA).sfc", b"rom")
+        result = self.single()
+        self.assertEqual(self.names(result.keep), ["073 Batman (USA).sfc"])
+        self.assertEqual(self.names(result.marked), ["Batman (USA).sfc"])
+        self.assertIn("Name with number preferred", result.marked[0].notes)
+
+    def test_numbered_name_wins_a_tie_in_extra_info(self):
+        # The number comes before "fewer extra info", which would favor the other file.
+        self.write("073 Batman (USA) (Alt).sfc", b"one")
+        self.write("Batman (USA).sfc", b"two")
+        result = self.single()
+        self.assertEqual(self.names(result.keep), ["073 Batman (USA) (Alt).sfc"])
+        self.assertEqual(self.names(result.marked), ["Batman (USA).sfc"])
+
+    def test_region_wins_over_the_number(self):
+        self.write("073 Batman (Europe).sfc", b"eur")
+        self.write("Batman (USA).sfc", b"usa")
+        result = self.single()
+        self.assertEqual(self.names(result.keep), ["Batman (USA).sfc"])
+        self.assertEqual(self.names(result.marked), ["073 Batman (Europe).sfc"])
+
+    def test_delete_keyword_wins_over_the_number(self):
+        self.write("073 Batman (USA) (Hack).sfc", b"hack")
+        self.write("Batman (USA).sfc", b"usa")
+        result = self.single()
+        self.assertEqual(self.names(result.keep), ["Batman (USA).sfc"])
+        self.assertIn("Extra info: Hack", result.marked[0].notes)
+
+    def test_newer_version_wins_over_the_number(self):
+        self.write("073 Batman (USA).sfc", b"old")
+        self.write("Batman (USA) (Rev 1).sfc", b"new")
+        result = self.single()
+        self.assertEqual(self.names(result.keep), ["Batman (USA) (Rev 1).sfc"])
+
+    def test_all_parts_of_the_numbered_version_remain(self):
+        self.write("073 Batman (USA).cue", b"c" * 10)
+        self.write("073 Batman (USA).bin", b"b" * 10)
+        self.write("Batman (USA).cue", b"c" * 10)
+        self.write("Batman (USA).bin", b"b" * 10)
+        result = self.single()
+        self.assertEqual(sorted(self.names(result.keep)), ["073 Batman (USA).bin", "073 Batman (USA).cue"])
+        self.assertEqual(sorted(self.names(result.marked)), ["Batman (USA).bin", "Batman (USA).cue"])
+
+    def test_numbered_zip_beats_plain_file_without_number(self):
+        self.write("Batman (USA).sfc", b"rom")
+        self.write_zip("073 Batman (USA).zip", {"Batman (USA).sfc": b"rom"})
+        result = self.single()
+        self.assertEqual(self.names(result.keep), ["073 Batman (USA).zip"])
+        self.assertIn("Name with number preferred", result.marked[0].notes)
+
+    def test_two_numbers_stay_together_as_before(self):
+        self.write("073 Batman (USA).sfc", b"one")
+        self.write("112 Batman (USA).sfc", b"two")
+        self.assertEqual(self.single().marked, [])
+
+    def test_number_alone_or_n_in_1_counts_as_no_number(self):
+        self.assertTrue(rf.has_leading_number("073 Batman"))
+        self.assertTrue(rf.has_leading_number("073 - Batman"))
+        self.assertFalse(rf.has_leading_number("1942"))
+        self.assertFalse(rf.has_leading_number("4 in 1 Fun Pak"))
+        self.assertFalse(rf.has_leading_number("Batman 2"))
+
+
 class ZipTests(RedundanzTestCase):
     def test_zip_with_same_tags_and_same_content_is_redundant(self):
         self.write("Title (USA).bin", b"rom")

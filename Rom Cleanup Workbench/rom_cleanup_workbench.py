@@ -121,6 +121,11 @@ def game_key(game: str) -> str:
     return key.replace(" ", "") or normalize(game)
 
 
+def has_leading_number(game: str) -> bool:
+    """True for "073 Batman": the number in front of the name that game_key ignores."""
+    return bool(_LEADING_NUMBER_RE.match(normalize(_SEPARATOR_RE.sub(" ", game))))
+
+
 def parse_filename(filename: str) -> tuple[str, list[str]]:
     """Splits a file name into the game name and the bracket contents."""
     game, groups = parse_tag_groups(filename)
@@ -608,6 +613,8 @@ def _sort_key(entry: Entry, config: Config):
         _newest_first(entry.tags),
         # Like a version: The higher number wins, a Beta without a number loses to Beta 1.
         tuple(-part for part in config.keyword_number(entry.tags)) + (1,),
+        # In a tie the name with a number in front wins ("073 Batman" before "Batman").
+        not has_leading_number(entry.game),
         len(config.version_key(entry.tags)),
         entry.is_zip != config.prefer_zip,  # the preferred form first (prefer_zip)
         entry.path.name.casefold(),
@@ -753,6 +760,14 @@ def analyze_group(entries: list[Entry], config: Config) -> GroupResult:
                     else:
                         entry.notes.append(Note("tie"))
                 marked.append(entry)
+
+    # Same version, one name with a number in front ("073 Batman"), one without: the number wins.
+    numbered = [entry for entry in keep if has_leading_number(entry.game)]
+    if numbered and len(numbered) < len(keep):
+        for entry in [e for e in keep if not has_leading_number(e.game)]:
+            entry.notes.append(Note("number_preferred"))
+            marked.append(entry)
+        keep = numbered
 
     zip_files = [entry for entry in keep if entry.is_zip]
     plain_files = [entry for entry in keep if not entry.is_zip]
