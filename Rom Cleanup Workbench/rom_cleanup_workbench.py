@@ -44,10 +44,11 @@ DEFAULT_CONFIG = {
     # Entries after "none", such as "Beta", push a file back (see Config.rank). Japan stays a
     # region there, because it has other spellings: Japanese files come after files without region.
     "region_priority": ["USA", "Europe", NO_REGION, "Japan", "Beta"],
+    # U, E and J are the short forms of GoodTools names such as "Title (J) [o1].nes".
     "region_aliases": {
-        "USA": ["US"],
-        "Europe": ["Europa", "EU"],
-        "Japan": ["JP", "JPN"],
+        "USA": ["US", "U"],
+        "Europe": ["Europa", "EU", "E"],
+        "Japan": ["JP", "JPN", "J"],
     },
     # Extra info that marks a file for deletion (rule 2); none by default, the settings can add some.
     "delete_tags": [],
@@ -61,6 +62,9 @@ _TAG_RE = re.compile(r"\(([^()]*)\)|\[([^\[\]]*)\]")
 _EXT_RE = re.compile(r"\.[A-Za-z0-9]+$")
 _SEPARATOR_RE = re.compile(r"[-_]")
 _AND_RE = re.compile(r"\b(?:und|and)\b")
+# Apostrophes do not count: Sullivan's = Sullivan`s = Sullivan´s = Sullivan’s = Sullivans.
+_APOSTROPHE_RE = re.compile("['`\u00b4\u2019]")
+_AMPERSANDS_RE = re.compile("&+")  # "&&" = "&"
 _VERSUS_RE = re.compile(r"\b(?:versus|vs)\b\.?")
 # A number in front of the name, such as the "057" of a numbered collection, is no part of it:
 # "057 Robocop", "057 - Robocop", "057. Robocop" = "Robocop". Not in "4 in 1", which names the game.
@@ -107,12 +111,12 @@ def normalize(text: str) -> str:
 
 
 def game_key(game: str) -> str:
-    """Comparison key: "&" = "und" = "and", "vs" = "vs." = "versus", "The X" = "X The" = "X, The" = "X",
+    """Comparison key: "&" = "&&" = "und" = "and", "vs" = "vs." = "versus", "Sullivan's" = "Sullivans", "The X" = "X The" = "X, The" = "X",
     "057 X" = "X" and "Pac-Man" = "Pac Man" = "Pac_Man" = "PacMan".
 
     "und" becomes "&" so that "H & M" does not turn into "Hund M" once the spaces are removed.
     """
-    text = normalize(_SEPARATOR_RE.sub(" ", game.replace("&", " & ")))
+    text = normalize(_SEPARATOR_RE.sub(" ", _AMPERSANDS_RE.sub(" & ", _APOSTROPHE_RE.sub("", game))))
     text = _LEADING_NUMBER_RE.sub("", text)
     key = _VERSUS_RE.sub("vs", text)
     key = _AND_RE.sub("&", key)

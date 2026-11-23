@@ -3,9 +3,9 @@
   "region_priority": ["USA", "Europe", "none", "Japan", "Beta"],
   "region_aliases": {
     "Germany": ["Deutschland", "DE", "GER"],
-    "USA": ["US"],
-    "Europe": ["Europa", "EU"],
-    "Japan": ["JP", "JPN"]
+    "USA": ["US", "U"],
+    "Europe": ["Europa", "EU", "E"],
+    "Japan": ["JP", "JPN", "J"]
   },
   "delete_tags": [],
   "part_tags": ["Disc", "Disk", "CD", "Side", "Seite", "Part", "Teil", "Track"],

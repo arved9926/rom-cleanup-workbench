@@ -154,6 +154,14 @@ class GameKeyTests(unittest.TestCase):
         self.assert_same("Robocop vs Terminator", "Robocop vs. Terminator", "Robocop versus Terminator",
                          "Robocop VS Terminator", "Robocop Versus Terminator", "Robocop_vs._Terminator")
 
+    def test_double_ampersand_equals_and(self):
+        self.assert_same("Tom && Jerry", "Tom&&Jerry", "Tom & Jerry", "Tom and Jerry", "Tom und Jerry")
+
+    def test_apostrophes_do_not_count(self):
+        self.assert_same("Sullivan's Island", "Sullivan`s Island", "Sullivan´s Island", "Sullivan’s Island",
+                         "Sullivans Island", "sullivans island")
+        self.assert_same("Rock 'n' Roll Racing", "Rock n Roll Racing")
+
     def test_vs_only_as_whole_word(self):
         self.assert_different("Canvas Hero", "Canvs Hero")
         self.assert_different("Vsat", "Versusat")
@@ -899,10 +907,39 @@ class RenameNumberTests(RedundanzTestCase):
         return path
 
 
+class ShortRegionTests(RedundanzTestCase):
+    """(U), (E) and (J): the short forms of GoodTools names."""
+
+    def test_short_forms_count_as_their_regions(self):
+        self.write("Title (J).nes", b"j")
+        self.write("Title (U).nes", b"u")
+        self.write("Title (E).nes", b"e")
+        result = self.single()
+        self.assertEqual(self.names(result.keep), ["Title (U).nes"])
+        self.assertEqual(self.names(result.marked), ["Title (E).nes", "Title (J).nes"])
+
+    def test_short_forms_with_the_shipped_priority(self):
+        self.config = rf.Config.load(None)  # USA, Europe, none, Japan, Beta
+        self.write("Title (J).nes", b"j")
+        self.write("Title.nes", b"n")
+        self.assertEqual(self.names(self.single().keep), ["Title.nes"])
+
+    def test_only_the_whole_bracket_counts(self):
+        self.write("Title (Jumbo).nes", b"j")
+        self.write("Title (E).nes", b"e")
+        self.assertEqual(self.names(self.single().keep), ["Title (E).nes"])
+
+    def test_shipped_file_has_the_short_forms(self):
+        shipped = json.loads(rf.DEFAULT_CONFIG_PATH.read_text(encoding="utf-8"))
+        for region, aliases in rf.DEFAULT_CONFIG["region_aliases"].items():
+            self.assertEqual(shipped["region_aliases"][region], aliases, region)
+
+
 class SameTypeSmallFileTests(RedundanzTestCase):
     """A small file of the same type as the largest file is a ROM, not a status or save file."""
 
     def test_small_files_of_the_same_type_are_decided_by_the_rules(self):
+        self.config = rf.Config.load(None)  # the shipped priority: none before Japan
         self.write("Dynamite Bowl (J) [o2].nes", b"o" * 577 * 1024)
         self.write("283 Dynamite Bowl.nes", b"a" * 65 * 1024)
         self.write("Dynamite Bowl (J) [o1].nes", b"b" * 65 * 1024)
@@ -915,6 +952,13 @@ class SameTypeSmallFileTests(RedundanzTestCase):
         self.assertIn("Dynamite Bowl (J) [o2].nes", self.names(result.marked))
         notes = [note for entry in result.keep + result.marked for note in entry.notes]
         self.assertFalse(any(getattr(note, "kind", "") == "save_suspected" for note in notes))
+
+    def test_with_japan_before_none_the_plain_j_file_wins(self):
+        self.write("Dynamite Bowl (J) [o2].nes", b"o" * 577 * 1024)
+        self.write("283 Dynamite Bowl.nes", b"a" * 65 * 1024)
+        self.write("Dynamite Bowl (J).nes", b"d" * 65 * 1024)
+        result = self.single()  # USA > Europe > Japan > none: (J) is Japan now
+        self.assertEqual(self.names(result.keep), ["Dynamite Bowl (J).nes"])
 
     def test_a_small_file_of_another_type_is_still_suspected(self):
         self.write_zip("1941.zip", {"1941.bin": b"r" * 64 * 1024})
