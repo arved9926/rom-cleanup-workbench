@@ -8,11 +8,97 @@ Finds duplicate ROM files in a directory by game name and deletes them on reques
 Requires Python 3.10 or newer. The window needs no additional packages; the terminal version for Linux needs Textual (see [Terminal version (Linux)](#terminal-version-linux)).
 The program speaks English, German, Italian, Spanish, French and Japanese (see [Language](#language)).
 
+**Important:** Do not use this program on your original ROM files. Make a copy of your ROM repository and use the program to clean up only that copy.
+
+## Installation
+
+### Windows
+
+1. **Install Python:** Download Python 3.10 or newer from [python.org/downloads](https://www.python.org/downloads/) and install it. If the installer offers "Add python.exe to PATH", tick that option. `tkinter` for the window comes with it. Then check in a new terminal:
+
+   ```powershell
+   python --version
+   ```
+
+2. **Download the program:** Without Git, the easiest way is a ZIP file. Either in the browser: on the [GitHub page](https://github.com/arved9926/rom-cleanup-workbench), choose the green button **Code** and then **Download ZIP**, right-click the file `rom-cleanup-workbench-main.zip` in Explorer, choose **Extract All...** and rename the extracted folder `rom-cleanup-workbench-main` to `rom-cleanup-workbench`. Or the same in PowerShell:
+
+   ```powershell
+   Invoke-WebRequest https://github.com/arved9926/rom-cleanup-workbench/archive/refs/heads/main.zip -OutFile rom-cleanup-workbench.zip
+   Expand-Archive rom-cleanup-workbench.zip -DestinationPath .
+   Rename-Item rom-cleanup-workbench-main rom-cleanup-workbench
+   cd "rom-cleanup-workbench\Rom Cleanup Workbench"
+   ```
+
+   If you have Git installed, you can clone the repository instead:
+
+   ```powershell
+   git clone https://github.com/arved9926/rom-cleanup-workbench.git
+   cd "rom-cleanup-workbench\Rom Cleanup Workbench"
+   ```
+
+   The program is in the folder `Rom Cleanup Workbench`. The window needs no further packages. Only if you want the terminal version on Windows, also install Textual:
+
+   ```powershell
+   python -m pip install textual==8.2.8
+   ```
+
+### Linux
+
+1. **Install Python:** Python 3 is usually there already (`python3 --version`). Otherwise, on Debian or Ubuntu:
+
+   ```bash
+   sudo apt install python3 python3-venv wget unzip
+   ```
+
+   The package `python3-tk` is only needed if you want the window instead of the terminal version on Linux with a graphical display.
+
+2. **Download the program:** Without Git, download it from GitHub as a ZIP file and unpack it:
+
+   ```bash
+   wget https://github.com/arved9926/rom-cleanup-workbench/archive/refs/heads/main.zip -O rom-cleanup-workbench.zip
+   unzip rom-cleanup-workbench.zip
+   mv rom-cleanup-workbench-main rom-cleanup-workbench
+   ```
+
+   If you have Git installed (`sudo apt install git`), you can clone the repository instead:
+
+   ```bash
+   git clone https://github.com/arved9926/rom-cleanup-workbench.git
+   ```
+
+3. **Install Textual in a virtual environment:**
+
+   ```bash
+   cd "rom-cleanup-workbench/Rom Cleanup Workbench"
+   python3 -m venv ~/venvs/rom-cleanup-workbench
+   ~/venvs/rom-cleanup-workbench/bin/pip install textual==8.2.8
+   ```
+
 ## Usage
 
-```bash
+### Windows
+
+Open a terminal (for example PowerShell) in the folder `Rom Cleanup Workbench` and start the program with the folder of your games:
+
+```powershell
+cd "rom-cleanup-workbench\Rom Cleanup Workbench"
 python rom_cleanup_workbench.py "D:\Games"
 ```
+
+Without a folder, the window asks for it. If you want the terminal version, add `--tui`.
+
+### Linux
+
+Change to the folder `Rom Cleanup Workbench` and start the program with the Python of the virtual environment and the folder of your games:
+
+```bash
+cd "rom-cleanup-workbench/Rom Cleanup Workbench"
+~/venvs/rom-cleanup-workbench/bin/python rom_cleanup_workbench.py ~/roms
+```
+
+Without a graphical display, for example over SSH, the terminal version starts by itself. With a graphical display, the window opens (this needs `python3-tk`); with `--tui`, the terminal version starts anyway. More under [Terminal version (Linux)](#terminal-version-linux).
+
+### What happens then
 
 The program opens the analysis window and shows everything there; it prints nothing in the terminal and asks nothing there. Questions, messages and the folder choice also appear inside the window, in the language of the program, never as Windows popups; Enter chooses the preselected button and Esc answers No. Without a directory, the window asks for the folder. Files are only deleted after the confirmation in the window. **Deleted files do not go to the Recycle Bin.**
 
@@ -31,10 +117,11 @@ The program opens the analysis window and shows everything there; it prints noth
 
 The command line options and their help (`--help`) are always in English.
 
-In VS Code: open the folder `Rom Cleanup Workbench`, start with F5 and enter the directory.
-The tests run through the test view or with `python -m unittest`.
+The tests run with `python -m unittest`.
 
 ## Analysis window
+
+Since the ZIP files have to be unpacked to get the size, SHA-256 checksum and name of their contents, it can take a moment after choosing a directory until the results are shown.
 
 The green row at the top says `Rom Cleanup Workbench` on the left and names the folder on the right; below it the window names the active priority with its source. The green second-to-last row shows the status, during the analysis for example `Analyzing: 120 of 2007 files`. A progress bar also appears in the middle during that time. The window also shows errors, for example in the configuration, and nothing can be deleted as long as the analysis fails. While deleting, the progress bar appears in the middle and the green row shows for example `Deleting: 120 of 500 files`; the window accepts no input until the deletion is finished. After deleting, it reports the result and removes the deleted files from the list without analyzing the folder again; files that could not be deleted stay marked. `F5` analyzes the folder again when you want that.
 
@@ -44,7 +131,7 @@ The three radio buttons determine what the list shows:
 
 - `Problematic deletion marks`: only games with a marked file that count as problematic (default on first start)
 - `All deletion marks`: all games with a marked file
-- `All ROM files`: all games. Their files can then also be marked with `D`, and problematic cases without a marked file, such as an unreadable ZIP, appear too.
+- `All ROM files`: all games. Their files can then also be marked with `x`, and problematic cases without a marked file, such as an unreadable ZIP, appear too.
 
 The window remembers the most recently chosen view and the confirmed status or save files (rule 9) in `rom_cleanup_workbench_settings.json` next to the program.
 
@@ -52,16 +139,17 @@ The window remembers the most recently chosen view and the confirmed status or s
 | --- | --- |
 | Arrow keys | select a row, with Shift several (for example all discs of a game) |
 | `Tab` / `Shift+Tab` | go to the next / previous game; the first file of the game is selected |
-| `D` (Demote) | mark the file for deletion; it moves to the end of its game |
-| `P` (Promote) | keep the file; it moves to the position the rules give it |
+| `x` | mark the file for deletion; it moves to the end of its game |
+| `k` | keep the file; it moves to the position the rules give it |
+| `1` `2` `3` | the views `Problematic deletion marks`, `All deletion marks`, `All ROM files` |
 | `Ctrl` + mouse wheel | enlarge or shrink the font (8 to 32 pt, applies until the window is closed) |
-| `Ctrl+E` | same as the button `Settings...`: show or hide the settings for language, priority and delete keywords (see [Settings](#settings)) |
-| `Ctrl+F` | go to the filter field |
-| `Ctrl+L` | same as the button `Proceed...`: delete after a confirmation and confirm the suspected status or save files (rule 9) |
-| `Ctrl+O` | choose another folder, inside the window in place of the list: open folders with a double-click or the arrow, or type a path into `Path`, then `Select` or `Enter`; `Cancel` or `Esc` keep the current folder |
-| `F5` | analyze again, also reads the configuration again |
-| `F1` | show the credits |
-| `Esc` | close without deleting anything |
+| `s` | same as the button `Settings...`: show or hide the settings for language, priority and delete keywords (see [Settings](#settings)) |
+| `/` | go to the filter field |
+| `Enter` | same as the button `Proceed...`: delete after a confirmation and confirm the suspected status or save files (rule 9) |
+| `f` | choose another folder, inside the window in place of the list: open folders with a double-click or the arrow, or type a path into `Path`, then `Select` or `Enter`; `Cancel` or `Esc` keep the current folder |
+| `r` or `F5` | analyze again, also reads the configuration again |
+| `c` or `F1` | show the credits |
+| `q` or `Esc` | close without deleting anything; after changes by hand the program asks first |
 
 Horizontal lines separate the games, and every second game has a dark gray background. The column `Size` shows the size of every file in KB, rounded up as in Windows Explorer (`1,234 KB`); `?` means the size could not be read. The size is read during the analysis. Kept files are shown in bold under `Keep:`, files to be deleted in normal weight under `Marked for deletion`. The window shows white text in Lucida Sans Typewriter 11 pt on a black background. If the font is not installed, Windows silently picks a substitute. Files moved by hand have a brown background and carry the note `By hand`; while the row is selected, it appears blue. The program's notes stay unchanged, even if they refer to a file you have moved.
 
@@ -74,18 +162,18 @@ The filter field on the left of the bottom row narrows the current view to games
 - `*` stands for any number of characters, `?` for exactly one. All other characters, including `[` and `]`, count literally, and case does not count.
 - The pattern may appear anywhere in the name: `Beta`, `*Beta*` and `Mario?2` all also find `Super Mario 2 (Beta).nes`. Accordingly, `S*` finds every name containing an `S`, not only names starting with it.
 - `Enter`, `Tab` and the down arrow return to the list; `Esc` clears the filter and returns to the list.
-- While the cursor is in the field, keys only write there: `D`, `P`, `Ctrl+L`, `Ctrl+O`, `F5` and `Esc` do not perform their list functions.
+- While the cursor is in the field, keys only write there: `x`, `k`, `Enter`, `f`, `r`, `F5` and `Esc` do not perform their list functions.
 - The filter stays active after `F5`, after deleting and after choosing another folder. It is not saved.
 
 **The filter only changes the display. Marked files hidden by the filter are still deleted when you delete**; the confirmation states their number.
 
 ### Settings
 
-The button `Settings...` in the bottom row, or `Ctrl+E`, shows the most frequent changes to `redundanz_config.json` in the main window, in place of the file list. `Save` or `Cancel`, `Esc`, a second `Ctrl+E` or another click on `Settings...` bring the list back. Meanwhile the filter, the views, `Proceed...`, `Analyze again` and `Folder...` are locked, and `D`, `P` and `Ctrl+L` do nothing, so that nothing can change in the hidden list.
+The button `Settings...` in the bottom row, or `s`, shows the most frequent changes to `redundanz_config.json` in the main window, in place of the file list. `Save` or `Cancel`, `Esc`, `Ctrl+E` or another click on `Settings...` bring the list back. Meanwhile the filter, the views, `Proceed...`, `Analyze again` and `Folder...` are locked, and `x`, `k` and `Enter` do nothing, so that nothing can change in the hidden list.
 
-- **Language:** choose from the six languages. A new language applies from the next start of the program.
-- **Priority:** the best region at the top; extra info such as `Beta` or `Proto` goes after `none`, so that such files come last (rule 6). Select an entry and move it with `Up` and `Down`, remove it with `Remove` or the `Delete` key, and add a new one with the field below the list and `Add` (or `Enter`).
-- **Delete keywords:** separated by commas, for example `Hack, Hacks`. Files with them are marked for deletion (rule 2).
+- **Language:** sets the language of the user interface. Choose one of the six languages. A new language applies from the next start of the program.
+- **Priority:** sets which regional versions take precedence over others. The best region at the top; extra info such as `Beta` or `Proto` goes after `none`, so that such files come last (rule 6). Select an entry and move it with `Up` and `Down`, remove it with `Remove` or the `Delete` key, and add a new one with the field below the list and `Add` (or `Enter`).
+- **Delete keywords:** set which versions of a game are always deleted. Separated by commas, for example `Hack, Hacks`. Files with them are marked for deletion (rule 2).
 
 `Save` writes the file and analyzes the folder again if the priority or the tags have changed; if you have changed marks by hand, the program asks first, because these changes are lost. All other entries of the file stay as they are. Wrong values, such as an empty region list or the same region twice, are reported, nothing is written, and the settings stay open. If the file cannot be read, the settings do not open, so that they cannot overwrite entries they do not know. With `--config`, the settings edit that file; with `--priority`, the priority given there still applies to this run.
 
@@ -102,23 +190,21 @@ A game counts as problematic if
 
 The window uses `tkinter`, which is part of the usual Python installation on Windows. If it is missing, the program reports this and deletes nothing.
 
+## After the automatic cleanup
+
+Even after the automatic cleanup, redundant game versions may remain. The easiest way to find them is the filter (key `/` and then the name of the game). Then you can mark the files that still need to be deleted.
+
 ## Terminal version (Linux)
 
 The same program also runs in a text terminal, for example over SSH (PuTTY, MobaXterm), in `tmux` or on the Linux console. It shows the same list, applies the same rules, and shares `redundanz_config.json`, `rom_cleanup_workbench_settings.json` and `translations.py` with the window.
 
 It starts by itself on Linux when there is no graphical display (neither `DISPLAY` nor `WAYLAND_DISPLAY` is set, as over SSH). `--tui` starts it everywhere else, also on Windows; use it where a graphical display exists but you want the terminal, for example in MobaXterm or under WSL.
 
-It needs [Textual](https://textual.textualize.io/) (tested with 8.2.8), best in a virtual environment:
-
-```bash
-python3 -m venv ~/venvs/rom-cleanup-workbench
-~/venvs/rom-cleanup-workbench/bin/pip install textual==8.2.8
-~/venvs/rom-cleanup-workbench/bin/python rom_cleanup_workbench.py --tui ~/roms
-```
+It needs [Textual](https://textual.textualize.io/) (tested with 8.2.8). How to install it and start the program is described under [Installation](#installation) and [Usage](#usage).
 
 Without Textual, the program says so and deletes nothing. The screen has the rows of the window from top to bottom: the green title row with the folder, a help row, the priority, the list, the filter field, the three views and the green status row. In the list, each game starts with its name in bold, followed by dashes up to the right edge; a note such as `Different spellings of the name` stands in that line. In a narrow terminal, such as PuTTY's 80 columns, long file names and notes wrap in their column instead of leaving the screen. `Nothing to do.` blinks with the terminal's own blinking; in PuTTY, blinking text may have to be switched on first. Questions and messages appear in a frame over the list, with buttons in the program's language; `No` is preselected.
 
-The help row shows the keys as `key:action`, for example `x:delete  k:keep`. The terminal version has its own keys; the window keeps `D`, `P` and the `Ctrl` keys.
+The help row shows the keys as `key:action`, for example `x:delete  k:keep`. The window and the terminal version have the same keys.
 
 | Key | Effect |
 | --- | --- |
@@ -146,16 +232,16 @@ Differences from the window: no font zoom, because the font belongs to the termi
 The file is next to the program and is read again for every analysis. Language, priority and delete keywords are easiest to change in the window with `Settings...` (see [Settings](#settings)). In the file itself, it is enough to rearrange the order in `region_priority` and save the file:
 
 ```json
-"region_priority": ["Germany", "Europe", "USA", "none", "Japan", "Beta", "Proto"],
-"delete_tags": ["Hack", "Hacks"],
+"region_priority": ["USA", "Europe", "none", "Japan", "Beta"],
+"delete_tags": [],
 ```
 
-If the file contains an error, such as a misspelled entry, no analysis takes place and nothing is deleted. If the file or an entry is missing, the program's defaults apply; the priority there is USA, Europe, Japan, none, Beta, the delete keywords are Hack and Hacks, and the language is English.
+If the file contains an error, such as a misspelled entry, no analysis takes place and nothing is deleted. This is the file as shipped: the language is English, the priority USA, Europe, none, Japan, Beta, and there are no delete keywords. Files without a region therefore come before Japanese ones. If the file or an entry is missing, the same defaults apply.
 
 - `language`: the language of the window, the notes and the terminal output (see below).
 - `region_priority`: regions and extra info, the best first. `none` stands for files without a known region; the words of the other languages (`keine`, `nessuna`, `ninguna`, `aucune`, `なし`) work as well. Extra info such as `Beta` after `none` puts such files last (rule 6); `Beta` also matches `Beta 2`.
 - `region_aliases`: other spellings of a region, for example `Europa` for `Europe`.
-- `delete_tags`: the delete keywords, extra info that always leads to deletion (rule 2). `Hack` also matches `Hack 2` and `Hack by Someone`, but not `Hacks` or `Hackers`, hence both `Hack` and `Hacks`.
+- `delete_tags`: the delete keywords, extra info that always leads to deletion (rule 2). The list is empty by default. `Hack` also matches `Hack 2` and `Hack by Someone`, but not `Hacks` or `Hackers`; if you want to delete hacks, enter both `Hack` and `Hacks`.
 - `part_tags`: parts of a version, for example `Disc 1`.
 
 Older files may still contain `low_priority_tags`, extra info with the lowest priority. The program reads its entries as if they stood at the end of `region_priority`, after `none`; the settings move them there when they save, and the entry disappears.
@@ -187,14 +273,14 @@ The program ignores some files completely: they appear nowhere and are never del
 - Hidden files: names starting with a dot, such as `.xxx` or `.DS_Store`, and files with the Windows attribute "hidden".
 
 1. Files belong together if the text before the first bracket is the same. Case, spaces, hyphens and underscores do not count, so `Pac-Man` = `Pac Man` = `Pac_Man` = `PacMan`. This also means `Title 1-2` = `Title 12`. In addition, `und` = `and` = `&` as well as `The Title` = `Title The` = `Title, The` = `Title` count as equal. A `The` in the middle of the name does count.
-2. Files with a delete keyword (`delete_tags`, by default `Hack` and `Hacks`) are always marked, even if it is the only file of the game. `P` keeps such a file anyway.
+2. Files with a delete keyword (`delete_tags`, none by default, for example `Hack` and `Hacks`) are always marked, even if it is the only file of the game. `k` keeps such a file anyway.
 3. Of the remaining files, the one with the best entry in `region_priority` is kept. Within one bracket the best entry counts: with `(USA, Japan)`, the better of the two. Across brackets the worst counts: `(USA) (Beta)` counts as `Beta` (rule 6).
 4. All files of the same version are kept together, for example `(Disc 1)` and `(Disc 2)` or `.cue` and `.bin`. Everything else is marked.
 5. A region that is not in `region_priority` counts as `none`. This also applies to information such as `(Rev 1)`.
 6. Extra info such as `Beta`, `Proto` or `Alpha` is written into `region_priority` after `none`. Files with it come after all others, even after files without a region, and in the order of the list: with `none, Beta, Proto`, a Beta comes before a Proto. They are only kept if there is no better file of the game. Among themselves, the region counts again, then the version from rule 7, then the number after the extra info: `Beta 2` wins over `Beta 1`, and `Beta 1` over `Beta` without a number. The numbers are compared numerically (`Beta 10` before `Beta 9`). The losing file gets the note `Older beta`.
 7. With equal priority, the highest version number wins, compared numerically (`v1.10` before `v1.9`). Recognized in brackets are `v1.1`, `Ver 1.1`, `Version 1.1`, `Rev 1` and `Rev A`; in the game name only the form `Title v1.1`, also with `-` or `_` instead of a space. A file without a version loses to one with a version. The region counts before the version.
 8. After that, the file with less extra information wins, then a file without ZIP, then the alphabet. The report then shows `Tie`.
-9. A file that is smaller than 1/4 of the largest file of the game is set aside before rules 3 to 8 and kept: it may be a status or save file. It therefore can neither be deleted nor push out the real ROM, for example `1941.state` the file `1941.zip`. The note column then says `Suspected status or save file`, and the game counts as problematic. Such a game appears in all three views, even if none of its files is marked. When you delete, the program confirms all suspected files that remain as legitimate: they stay where they are, are still never deleted, and no longer show up in `Problematic deletion marks` and `All deletion marks`, also after `F5` or a new start. The confirmation names their number. The program remembers them with path and size in `rom_cleanup_workbench_settings.json`; if the size changes, the file is suspected again. If nothing is marked, `Ctrl+L` offers to confirm them without deleting anything. ZIPs count with their unpacked size. This does not apply to a small plain file next to a large plain file of its own version, such as a `.cue` next to its `.bin`, nor to files marked because of `delete_tags` or a defective ZIP. With `D` you can still mark the file by hand.
+9. A file that is smaller than 1/4 of the largest file of the game is set aside before rules 3 to 8 and kept: it may be a status or save file. It therefore can neither be deleted nor push out the real ROM, for example `1941.state` the file `1941.zip`. The note column then says `Suspected status or save file`, and the game counts as problematic. Such a game appears in all three views, even if none of its files is marked. When you delete, the program confirms all suspected files that remain as legitimate: they stay where they are, are still never deleted, and no longer show up in `Problematic deletion marks` and `All deletion marks`, also after `F5` or a new start. The confirmation names their number. The program remembers them with path and size in `rom_cleanup_workbench_settings.json`; if the size changes, the file is suspected again. If nothing is marked, `Enter` offers to confirm them without deleting anything. ZIPs count with their unpacked size. This does not apply to a small plain file next to a large plain file of its own version, such as a `.cue` next to its `.bin`, nor to files marked because of `delete_tags` or a defective ZIP. With `x` you can still mark the file by hand.
 
 ## ZIP files
 
@@ -208,13 +294,41 @@ Every ZIP file is read completely, even if it is the only file of a game. Its co
 - **Defective or encrypted ZIP:** The file is always marked, even if it is the only file of the game. The content of an encrypted ZIP is not checked.
 - **Locked ZIP or unknown method (for example Deflate64):** This says nothing about the condition of the file. Without a plain file of the game, it is kept and named in the report.
 
+## Developing it further with Claude Code
+
+The program is free software: you can clone the repository and develop it further with [Claude Code](https://claude.com/claude-code), without programming yourself. That is also how it was written.
+
+1. Install Claude Code. It needs a Claude subscription or an account for the Claude API. On Windows in PowerShell:
+
+   ```powershell
+   irm https://claude.ai/install.ps1 | iex
+   ```
+
+   On Linux:
+
+   ```bash
+   curl -fsSL https://claude.ai/install.sh | bash
+   ```
+
+2. Clone the repository and start Claude Code in it:
+
+   ```bash
+   git clone https://github.com/arved9926/rom-cleanup-workbench.git
+   cd rom-cleanup-workbench
+   claude
+   ```
+
+3. Describe in your own words what should change, for example "Add an option that only shows ZIP files". Claude Code reads the code, suggests changes and asks before it changes files or runs commands. Then let it run the tests (`python -m unittest` in the folder `Rom Cleanup Workbench`) and try the change on a copy of your collection.
+
+The plans of earlier changes are in `docs/`. If you pass on your changes, you must publish them under the GPL as well.
+
 ## License and disclaimer
 
 Copyright (C) 2026 M. Kärcher
 
 Rom Cleanup Workbench is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version. The full text is in [LICENSE](<../LICENSE>).
 
-**Use at your own risk.** The program deletes files, and there is no warranty of any kind; whoever uses it takes on all risks that come with it. We recommend running it on a copy of your own ROM collection first.
+**Use at your own risk.** The program deletes files, and there is no warranty of any kind; whoever uses it takes on all risks that come with it. We strongly recommend running it only on a copy of your own ROM collection.
 
 ## Credits
 

@@ -150,7 +150,6 @@ Das Fenster merkt sich die zuletzt gewählte Ansicht und die bestätigten Status
 | `r` oder `F5` | neu analysieren, liest auch die Konfiguration neu |
 | `c` oder `F1` | die Credits zeigen |
 | `q` oder `Esc` | schließen, ohne etwas zu löschen; nach Änderungen von Hand fragt das Programm vorher |
-| `Esc` | schließen, ohne etwas zu löschen |
 
 Waagerechte Linien trennen die Spiele, und jedes zweite Spiel hat einen dunkelgrauen Hintergrund. Die Spalte `Größe` zeigt die Größe jeder Datei in KB, aufgerundet wie im Windows-Explorer (`1.234 KB`); `?` heißt, dass sich die Größe nicht lesen ließ. Die Größe wird bei der Analyse gelesen. Behaltene Dateien stehen fett unter `Bleibt erhalten:`, zu löschende Dateien in normaler Schrift unter `Zum Löschen markiert`. Das Fenster zeigt weiße Schrift in Lucida Sans Typewriter 11 pt auf schwarzem Grund. Ist die Schrift nicht installiert, nimmt Windows stillschweigend einen Ersatz. Von Hand verschobene Dateien haben einen braunen Hintergrund und tragen den Hinweis `Von Hand`; solange die Zeile gewählt ist, erscheint sie blau. Die Hinweise des Programms bleiben unverändert, auch wenn sie sich auf eine Datei beziehen, die du verschoben hast.
 
@@ -233,16 +232,16 @@ Unterschiede zum Fenster: kein Schriftzoom, weil die Schrift dem Terminal gehör
 Die Datei liegt neben dem Programm und wird bei jeder Analyse neu gelesen. Sprache, Priorität und Löschwörter änderst du am einfachsten im Fenster mit `Einstellungen...` (siehe [Einstellungen](#einstellungen)). In der Datei selbst genügt es, die Reihenfolge in `region_priority` umzustellen und die Datei zu speichern:
 
 ```json
-"region_priority": ["Germany", "Europe", "USA", "none", "Japan", "Beta", "Proto"],
-"delete_tags": ["Hack", "Hacks"],
+"region_priority": ["USA", "Europe", "none", "Japan", "Beta"],
+"delete_tags": [],
 ```
 
-Enthält die Datei einen Fehler, etwa einen falsch geschriebenen Eintrag, findet keine Analyse statt, und es wird nichts gelöscht. Fehlt die Datei oder ein Eintrag, gelten die Vorgaben des Programms; die Priorität ist dort USA, Europe, Japan, none, Beta, die Löschwörter sind Hack und Hacks, und die Sprache ist Englisch.
+Enthält die Datei einen Fehler, etwa einen falsch geschriebenen Eintrag, findet keine Analyse statt, und es wird nichts gelöscht. So sieht die mitgelieferte Datei aus: Die Sprache ist Englisch, die Priorität USA, Europe, none, Japan, Beta, und es gibt keine Löschwörter. Dateien ohne Region kommen also vor japanischen. Fehlt die Datei oder ein Eintrag, gelten dieselben Vorgaben.
 
 - `language`: die Sprache des Fensters, der Hinweise und der Terminalausgabe (siehe unten).
 - `region_priority`: Regionen und Zusatzinfos, die besten zuerst. `none` steht für Dateien ohne bekannte Region; die Wörter der anderen Sprachen (`keine`, `nessuna`, `ninguna`, `aucune`, `なし`) gehen ebenso. Zusatzinfos wie `Beta` hinter `none` setzen solche Dateien ans Ende (Regel 6); `Beta` passt auch zu `Beta 2`.
 - `region_aliases`: andere Schreibweisen einer Region, zum Beispiel `Europa` für `Europe`.
-- `delete_tags`: die Löschwörter, Zusatzinfos, die immer zum Löschen führen (Regel 2). `Hack` passt auch zu `Hack 2` und `Hack by Someone`, aber nicht zu `Hacks` oder `Hackers`, deshalb `Hack` und `Hacks`.
+- `delete_tags`: die Löschwörter, Zusatzinfos, die immer zum Löschen führen (Regel 2). Als Vorgabe ist die Liste leer. `Hack` passt auch zu `Hack 2` und `Hack by Someone`, aber nicht zu `Hacks` oder `Hackers`; wer Hacks löschen will, trägt deshalb `Hack` und `Hacks` ein.
 - `part_tags`: Teile einer Version, zum Beispiel `Disc 1`.
 
 Ältere Dateien können noch `low_priority_tags` enthalten, Zusatzinfos mit der niedrigsten Priorität. Das Programm liest deren Einträge, als stünden sie am Ende von `region_priority`, hinter `none`; die Einstellungen verschieben sie beim Speichern dorthin, und der Eintrag verschwindet.
@@ -274,7 +273,7 @@ Manche Dateien übergeht das Programm ganz: Sie erscheinen nirgends und werden n
 - Versteckte Dateien: Namen, die mit einem Punkt beginnen, etwa `.xxx` oder `.DS_Store`, und Dateien mit dem Windows-Attribut „Versteckt“.
 
 1. Dateien gehören zusammen, wenn der Text vor der ersten Klammer gleich ist. Groß- und Kleinschreibung, Leerzeichen, Bindestriche und Unterstriche zählen nicht, also `Pac-Man` = `Pac Man` = `Pac_Man` = `PacMan`. Damit gilt auch `Title 1-2` = `Title 12`. Außerdem gelten `und` = `and` = `&` sowie `The Title` = `Title The` = `Title, The` = `Title` als gleich. Ein `The` mitten im Namen zählt dagegen.
-2. Dateien mit einem Löschwort (`delete_tags`, als Vorgabe `Hack` und `Hacks`) werden immer markiert, auch wenn es die einzige Datei des Spiels ist. `k` behält eine solche Datei trotzdem.
+2. Dateien mit einem Löschwort (`delete_tags`, als Vorgabe keine, zum Beispiel `Hack` und `Hacks`) werden immer markiert, auch wenn es die einzige Datei des Spiels ist. `k` behält eine solche Datei trotzdem.
 3. Von den übrigen Dateien bleibt die mit dem besten Eintrag in `region_priority` erhalten. Innerhalb einer Klammer zählt der beste Eintrag: bei `(USA, Japan)` der bessere der beiden. Über Klammern hinweg zählt der schlechteste: `(USA) (Beta)` zählt als `Beta` (Regel 6).
 4. Alle Dateien derselben Version bleiben gemeinsam erhalten, zum Beispiel `(Disc 1)` und `(Disc 2)` oder `.cue` und `.bin`. Alles andere wird markiert.
 5. Eine Region, die nicht in `region_priority` steht, zählt als `none`. Das gilt auch für Angaben wie `(Rev 1)`.

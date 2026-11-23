@@ -15,6 +15,7 @@
 import contextlib
 import gc
 import io
+import json
 import os
 import sys
 import queue
@@ -31,6 +32,17 @@ import rom_cleanup_workbench as rf
 import translations
 
 
+def rules_config():
+    """The configuration the rule tests were written for: the earlier defaults.
+
+    Priority USA > Europe > Japan > none > Beta, and Hack and Hacks as delete words. The program's
+    own defaults (USA > Europe > none > Japan > Beta, no delete words) have tests of their own.
+    """
+    values = dict(rf.DEFAULT_CONFIG, region_priority=["USA", "Europe", "Japan", "none", "Beta"],
+                  delete_tags=["Hack", "Hacks"])
+    return rf.Config(**values)
+
+
 class RedundanzTestCase(unittest.TestCase):
     def setUp(self):
         # The texts below are English; a test that switches the language switches it back.
@@ -39,7 +51,7 @@ class RedundanzTestCase(unittest.TestCase):
         temp = tempfile.TemporaryDirectory()
         self.addCleanup(temp.cleanup)
         self.dir = Path(temp.name)
-        self.config = rf.Config.load(None)
+        self.config = rules_config()
 
     def write(self, name, content=b"data"):
         (self.dir / name).write_bytes(content)
@@ -241,8 +253,23 @@ class AnalyzeTests(RedundanzTestCase):
         result = self.single()
         self.assertEqual(self.names(result.keep), ["Title (Japan).bin"])
 
-    def test_hack_and_hacks_are_deleted_by_default(self):
-        self.assertEqual(rf.DEFAULT_CONFIG["delete_tags"], ["Hack", "Hacks"])
+    def test_no_delete_words_and_japan_after_none_by_default(self):
+        self.assertEqual(rf.DEFAULT_CONFIG["delete_tags"], [])
+        self.assertEqual(rf.DEFAULT_CONFIG["region_priority"], ["USA", "Europe", "none", "Japan", "Beta"])
+        self.config = rf.Config.load(None)
+        for name in ("Title (USA) (Hack).bin", "Title (Japan).bin", "Title.bin"):
+            self.write(name)
+        result = self.single()
+        # Without delete words the hack counts as USA and wins; a file without region beats Japan.
+        self.assertEqual(self.names(result.keep), ["Title (USA) (Hack).bin"])
+        self.assertEqual(sorted(self.names(result.marked)), ["Title (Japan).bin", "Title.bin"])
+
+    def test_shipped_configuration_matches_the_defaults(self):
+        shipped = json.loads(rf.DEFAULT_CONFIG_PATH.read_text(encoding="utf-8"))
+        for key in ("language", "region_priority", "delete_tags"):
+            self.assertEqual(shipped[key], rf.DEFAULT_CONFIG[key], key)
+
+    def test_hack_and_hacks_are_deleted_when_configured(self):
         self.write("Title (USA).bin")
         for name in ("Title (USA) (Hack).bin", "Title (USA) (Hacks).bin", "Title (Japan) (Hack 2).bin",
                      "Title (Hack by Someone).bin"):
@@ -1123,8 +1150,8 @@ class ConfigFileTests(RedundanzTestCase):
     def test_missing_file_shows_the_defaults(self):
         values = self.config_file().read()
         self.assertEqual(values, {
-            "language": "en", "region_priority": ["USA", "Europe", "Japan", "none", "Beta"],
-            "delete_tags": ["Hack", "Hacks"],
+            "language": "en", "region_priority": ["USA", "Europe", "none", "Japan", "Beta"],
+            "delete_tags": [],
         })
 
     def test_write_keeps_other_entries_and_their_order(self):
@@ -1644,7 +1671,7 @@ class ReviewWindowTests(RedundanzTestCase):
         dialog = window.settings_panel
         self.assertEqual(dialog.language.get(), "English")
         self.assertEqual(dialog.region_list(), ["USA", "Japan"])
-        self.assertEqual(dialog.tag_list(), ["Hack", "Hacks"])  # the delete keywords; the file has none
+        self.assertEqual(dialog.tag_list(), [])  # the delete keywords; the file has none, nor do the defaults
         window.open_settings()  # Already open: nothing happens.
         self.assertIs(window.settings_panel, dialog)
 
@@ -1716,7 +1743,7 @@ class ReviewWindowTests(RedundanzTestCase):
         window.open_settings()
         dialog = window.settings_panel
         self.assertEqual(dialog.region_list(), ["USA", "none", "Japan", "Beta"])
-        self.assertEqual(dialog.tag_list(), ["Hack", "Hacks"])  # the file has none: the defaults
+        self.assertEqual(dialog.tag_list(), [])  # the file has none: the defaults, which are empty
 
     def test_new_language_is_announced_for_the_next_start(self):
         window = self.window_with_settings()
@@ -3281,7 +3308,7 @@ class TerminalVersionTests(unittest.IsolatedAsyncioTestCase):
 
     def app_for(self, files, scope="marked", analyze=None, **options):
         folder = self.demo_folder(files)
-        config = rf.Config.load(None)
+        config = rules_config()
         analyze = analyze or (lambda directory, progress=None: rf.Review(
             rf.scan_directory(directory, config, progress), config))
         return self.tui.WorkbenchApp(analyze, folder, scope, settings_path=folder.with_name("settings.json"),
@@ -4263,7 +4290,7 @@ class TerminalVersionTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_without_a_folder_the_choice_opens_at_the_start(self):
         other = self.other_folder()
-        config = rf.Config.load(None)
+        config = rules_config()
         app = self.tui.WorkbenchApp(lambda directory, progress=None: rf.Review(
             rf.scan_directory(directory, config, progress), config), None, "marked",
             settings_path=other.with_name("settings.json"))
@@ -4282,7 +4309,7 @@ class TerminalVersionTests(unittest.IsolatedAsyncioTestCase):
     async def test_folder_can_be_changed_during_analysis(self):
         other = self.other_folder()
         release = threading.Event()
-        config = rf.Config.load(None)
+        config = rules_config()
         seen = []
 
         def analyze(directory, progress=None):
@@ -4942,7 +4969,7 @@ class TerminalVersionTests(unittest.IsolatedAsyncioTestCase):
 
     def test_delete_question_names_the_trash_of_the_system(self):
         folder = self.demo_folder({"Title (USA).bin": b"a", "Title (Japan).bin": b"b"})
-        config = rf.Config.load(None)
+        config = rules_config()
         review = rf.Review(rf.scan_directory(folder, config), config)
         with mock.patch.object(rf.os, "name", "nt"):
             self.assertIn("Recycle Bin", review.confirm_message(False))

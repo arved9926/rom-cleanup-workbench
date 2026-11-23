@@ -41,15 +41,16 @@ REVIEW_PROBLEMS = "problems"
 _REVIEW_SCOPES = {REVIEW_ALL: "marked", REVIEW_PROBLEMS: "problems"}
 DEFAULT_CONFIG_PATH = Path(__file__).with_name("redundanz_config.json")
 DEFAULT_CONFIG = {
-    # Entries after "none", such as "Beta", push a file back (see Config.rank).
-    "region_priority": ["USA", "Europe", "Japan", NO_REGION, "Beta"],
+    # Entries after "none", such as "Beta", push a file back (see Config.rank). Japan stays a
+    # region there, because it has other spellings: Japanese files come after files without region.
+    "region_priority": ["USA", "Europe", NO_REGION, "Japan", "Beta"],
     "region_aliases": {
         "USA": ["US"],
         "Europe": ["Europa", "EU"],
         "Japan": ["JP", "JPN"],
     },
-    # Extra info that marks a file for deletion by default (rule 2); the settings can change it.
-    "delete_tags": ["Hack", "Hacks"],
+    # Extra info that marks a file for deletion (rule 2); none by default, the settings can add some.
+    "delete_tags": [],
     "part_tags": ["Disc", "Disk", "CD", "Side", "Seite", "Part", "Teil", "Track"],
     "language": DEFAULT_LANGUAGE,
 }
