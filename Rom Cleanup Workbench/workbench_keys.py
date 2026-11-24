@@ -32,7 +32,7 @@ def short_keys(context: str) -> list[tuple[str, str]]:
     if context == OVERVIEW:
         keys = [("Enter", "keys.short.open"), ("r", "keys.short.scan"), ("a", "keys.short.scan_all")]
     else:
-        keys = [("x", "keys.short.delete"), ("k", "keys.short.keep")]
+        keys = [("x", "keys.short.delete"), ("k", "keys.short.keep"), ("Enter", "keys.run_cleanup")]
     return [(key, tr(text)) for key, text in keys] + [(ALL_KEYS, tr("keys.short.all"))]
 
 
@@ -68,6 +68,13 @@ def key_sections(context: str, window: bool, collection: bool, ascii: bool = Fal
                                       ("c", "keys.credits"), ("F1  ?", "keys.this_overview")]),
         ]
     return [(tr(title), [(key, tr(text)) for key, text in rows]) for title, rows in sections]
+
+
+def key_notes(context: str) -> list[str]:
+    """Explanations below the keys: in the overview what its states and switches mean."""
+    if context == OVERVIEW:
+        return [tr("overview.hint"), tr("overview.own_hint")]
+    return []
 
 
 def keys_title(context: str) -> str:

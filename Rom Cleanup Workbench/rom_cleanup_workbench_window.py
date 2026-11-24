@@ -438,7 +438,7 @@ class KeysPanel:
     """All keys of the current view, grouped, in place of the list or the overview (F1 or ?)."""
 
     def __init__(self, window: "ReviewWindow", context: str):
-        from workbench_keys import key_sections, keys_title
+        from workbench_keys import key_notes, key_sections, keys_title
 
         self.window = window
         self.context = context
@@ -448,7 +448,7 @@ class KeysPanel:
         ttk.Label(heading, text=keys_title(context), font=window.bold_font, foreground=_KEEP_TEXT).pack(side="left")
         ttk.Label(heading, text=tr("keys.close_hint"), foreground=_LIGHT_GRAY).pack(side="right")
         columns = ttk.Frame(frame)
-        columns.pack(fill="both", expand=True, anchor="nw")
+        columns.pack(fill="x", anchor="nw")
         sections = key_sections(context, window=True, collection=window.collection_root is not None)
         left = (len(sections) + 1) // 2  # the first half of the sections on the left, the rest on the right
         self.key_labels = []
@@ -466,6 +466,13 @@ class KeysPanel:
                     ttk.Label(column, text=text).grid(row=row, column=1, sticky="w")
                     self.key_labels.append((key, text))
                 row += 1
+        self.notes = key_notes(context)
+        if self.notes:
+            ttk.Label(frame, text=tr("keys.section.notes").upper(), font=window.bold_font).pack(
+                anchor="w", pady=(16, 4))
+            notes = ttk.Label(frame, text=" ".join(self.notes), padding=(16, 0, 0, 0))
+            notes.pack(fill="x", anchor="w")
+            notes.bind("<Configure>", lambda event: notes.configure(wraplength=max(event.width - 16, 1)))
 
 
 class OverviewPanel:
@@ -510,9 +517,6 @@ class OverviewPanel:
         scrollbar = ttk.Scrollbar(frame, orient="vertical", command=self.tree.yview)
         scrollbar.grid(row=1, column=1, sticky="ns")
         self.tree.configure(yscrollcommand=scrollbar.set)
-        hint = ttk.Label(frame, text=tr("overview.hint") + " " + tr("overview.own_hint"))
-        hint.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(8, 0))
-        hint.bind("<Configure>", lambda event: hint.configure(wraplength=max(event.width, 1)))
 
         self._fit_columns(rows)
         self.tree.tag_configure("total", font=window.bold_font)
@@ -1314,6 +1318,10 @@ class ReviewWindow:
             self.overview_panel.frame.pack_forget()  # comes back when the keys close
             panel.frame.pack(fill="both", expand=True)
             self._refresh_locks()
+            # As for the settings: a low window grows until everything fits; closing restores the minimum.
+            self.root.update_idletasks()
+            width, height = self.root.minsize()
+            self.root.minsize(width, max(height, min(self.root.winfo_reqheight(), self.root.winfo_screenheight())))
         else:
             self._show_panel(panel.frame)
 
@@ -1325,6 +1333,7 @@ class ReviewWindow:
         if self.overview_panel is not None:
             self.overview_panel.frame.pack(fill="both", expand=True)
             self._refresh_locks()
+            self._fit_bottom_row()
             self.overview_panel.tree.focus_set()
         else:
             self._hide_panel()

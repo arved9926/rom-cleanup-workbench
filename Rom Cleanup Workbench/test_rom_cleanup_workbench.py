@@ -1482,10 +1482,11 @@ class OverviewWindowTests(OverviewWindowBase):
         self.fill()
         window = self.make_window(self.roms)
         window.open_folder(self.roms)
-        self.assertEqual(shown(window), ["Enter", "Open", "r", "Scan", "a", "Scan all", "F1 / ?", "All keys"])
+        self.assertEqual(shown(window), ["Enter", "Open", "r", "Scan", "a", "Scan all", "F1 / ?", "Help: more keys"])
         window.overview_panel.open()
         self.wait(window)
-        self.assertEqual(shown(window), ["x", "Delete", "k", "Keep", "F1 / ?", "All keys"])
+        self.assertEqual(shown(window), ["x", "Delete", "k", "Keep", "Enter", "Run the cleanup",
+                                         "F1 / ?", "Help: more keys"])
         self.assertEqual(window.info.get(), "nes")
 
     def test_f1_and_question_mark_show_all_keys_of_the_view(self):
@@ -1497,6 +1498,7 @@ class OverviewWindowTests(OverviewWindowBase):
         panel = window.keys_panel
         self.assertEqual(panel.context, "overview")
         self.assertIn(("d", "Deep Scan on/off"), panel.key_labels)
+        self.assertIn("* = own settings", " ".join(panel.notes))  # the overview's explanation lives here now
         self.assertFalse(window._overview_keys_work())  # nothing acts behind the keys
         window._on_escape()
         self.assertIsNone(window.keys_panel)
@@ -6893,7 +6895,8 @@ class TerminalVersionTests(unittest.IsolatedAsyncioTestCase):
         app = self.app_for(self.TWO_GAMES)
         async with app.run_test(size=(110, 30)) as pilot:
             await self.analyzed(app, pilot)
-            self.assertEqual(str(app.query_one("#short-keys").render()), "x Delete   k Keep   F1 / ? All keys")
+            self.assertEqual(str(app.query_one("#short-keys").render()),
+                             "x Delete   k Keep   Enter Run the cleanup   F1 / ? Help: more keys")
             for key in ("f1", "question_mark"):
                 await pilot.press(key)
                 await pilot.pause()

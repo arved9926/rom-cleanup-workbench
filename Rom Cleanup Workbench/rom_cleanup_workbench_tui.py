@@ -36,7 +36,7 @@ from rich.text import Text
 from textual import events
 from textual.app import App, ComposeResult
 from textual.binding import Binding
-from textual.containers import Horizontal, Vertical
+from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.geometry import Region
 from textual.renderables.bar import Bar as BarRenderable
 from textual.screen import ModalScreen, Screen
@@ -654,7 +654,7 @@ class OverviewScreen(Screen):
         with Horizontal(id="overview-head"):
             yield Static(tr("overview.title"), id="overview-title", markup=False)
             yield Static(tr("window.folder", directory=self.root_folder), id="overview-folder", markup=False)
-        yield Static(_short_keys_text("overview", self.app), id="overview-keys")
+        yield ShortKeys("overview", id="overview-keys")
         table = DataTable(id="overview-table", cursor_type="row", zebra_stripes=False)
         yield table
         with Horizontal(id="overview-buttons"):
@@ -666,7 +666,6 @@ class OverviewScreen(Screen):
                                      id="overview-hide", compact=True)):
                 yield _plain_radio(switch) if getattr(self.app, "ascii", False) else switch
             yield Button(tr("settings.cancel"), id="overview-cancel", compact=True)
-        yield Static(tr("overview.hint") + " " + tr("overview.own_hint"), id="overview-hint", markup=False)
         yield Static("", id="overview-status", markup=False)
 
     def on_mount(self) -> None:
@@ -819,7 +818,7 @@ class KeysScreen(Screen):
         self.collection = collection
 
     def compose(self) -> ComposeResult:
-        from workbench_keys import key_sections, keys_title
+        from workbench_keys import key_notes, key_sections, keys_title
 
         ascii = getattr(self.app, "ascii", False)
         green = _green(self.app)
@@ -829,9 +828,18 @@ class KeysScreen(Screen):
             yield Static(tr("keys.close_hint"), id="keys-hint", markup=False)
         sections = key_sections(self.context, window=False, collection=self.collection, ascii=ascii)
         left = (len(sections) + 1) // 2
-        with Horizontal(id="keys-columns"):
-            for part in (sections[:left], sections[left:]):
-                yield Static(self._column(part, green), classes="keys-column")
+        columns = [self._column(part, green) for part in (sections[:left], sections[left:])]
+        # Side by side only if both fit (each with its padding); a narrow terminal shows them one below the other.
+        widths = [max(cell_len(line) for line in text.plain.split("\n")) for text in columns]
+        side_by_side = sum(widths) + 7 * len(widths) <= self.app.size.width
+        with VerticalScroll(id="keys-body"):
+            with (Horizontal if side_by_side else Vertical)(id="keys-columns"):
+                for text in columns:
+                    yield Static(text, classes="keys-column")
+            notes = key_notes(self.context)
+            if notes:
+                yield Static(Text(tr("keys.section.notes").upper(), style="bold"), id="keys-notes-title")
+                yield Static(" ".join(notes), id="keys-notes", markup=False)
 
     @staticmethod
     def _column(sections, green: str) -> Text:
@@ -857,17 +865,43 @@ def _green(app) -> str:
     return "#00aa00" if getattr(app, "colors16", False) else "#3fb950"
 
 
-def _short_keys_text(context: str, app) -> Text:
-    """The few keys of a view for the line above the list: key in green, then what it does."""
-    from workbench_keys import short_keys
+class ShortKeys(Static):
+    """The few keys of a view, right of "Platform: nes": key in green, then what it does.
 
-    text = Text()
-    for index, (key, description) in enumerate(short_keys(context)):
-        if index:
-            text.append("   ")
-        text.append(key, style=f"bold {_green(app)}")
-        text.append(" " + description)
-    return text
+    A narrow terminal breaks the line only between entries, never inside one ("F1 / ?" stays whole).
+    """
+
+    def __init__(self, context: str, **kwargs):
+        super().__init__("", **kwargs)
+        self.context = context
+
+    def _entries(self) -> list[Text]:
+        from workbench_keys import short_keys
+
+        green = _green(self.app)
+        return [Text.assemble((key, f"bold {green}"), " " + description)
+                for key, description in short_keys(self.context)]
+
+    def _lines(self, width: int) -> list[Text]:
+        lines, line = [], Text()
+        for entry in self._entries():
+            if line.cell_len and line.cell_len + 3 + entry.cell_len > width:
+                lines.append(line)
+                line = Text()
+            if line.cell_len:
+                line.append("   ")
+            line.append_text(entry)
+        lines.append(line)
+        return lines
+
+    def render(self) -> Text:
+        return Text("\n").join(self._lines(self.content_region.width or 10_000))
+
+    def get_content_width(self, container, viewport) -> int:
+        return self._lines(10_000)[0].cell_len
+
+    def get_content_height(self, container, viewport, width: int) -> int:
+        return len(self._lines(width))
 
 
 class SettingsScreen(Screen):
@@ -1062,14 +1096,15 @@ class WorkbenchApp(App):
     #title-row { height: 1; background: #1a7f37; color: #ffffff; }
     #title { width: auto; text-style: bold; padding: 0 1; }
     #folder { width: 1fr; text-align: right; padding: 0 1; }
-    #info-row { height: 1; margin-bottom: 1; }
-    #info { width: 1fr; padding: 0 1; }
-    #short-keys { width: auto; padding: 0 1; }
+    #info-row { height: auto; margin-bottom: 1; }
+    #info { width: auto; padding: 0 1; }
+    #short-keys { width: 1fr; height: auto; padding: 0 1; text-align: right; }
     #keys-head { height: 1; margin: 1 1 1 1; }
     #keys-title { width: 1fr; }
     #keys-hint { width: auto; color: #aaaaaa; }
+    #keys-body { height: 1fr; }
     #keys-columns { height: auto; }
-    .keys-column { width: auto; padding: 0 6 0 1; }
+    .keys-column { width: auto; height: auto; padding: 0 6 1 1; }
     #games { height: 1fr; background: #000000; }
     #games > .datatable--header { background: #222222; color: #ffffff; text-style: bold; }
     #games > .datatable--cursor { background: #0a4a8a; color: #ffffff; }
@@ -1142,7 +1177,7 @@ class WorkbenchApp(App):
     #language-hint { margin: 1 0 1 0; color: #aaaaaa; }
     #tags-label { margin-bottom: 1; }
     #overview-head { height: 1; }
-    #overview-keys { height: 1; margin-bottom: 1; text-align: right; }
+    #overview-keys { height: auto; margin-bottom: 1; text-align: right; }
     #overview-title { width: auto; text-style: bold; padding: 0 2 0 0; color: #3fb950; }
     .-colors16 #overview-title { color: #00aa00; }
     #overview-folder { width: 1fr; }
@@ -1157,7 +1192,8 @@ class WorkbenchApp(App):
         background: #000000; color: #000000; }
     .-colors16 #overview-full.-on > .toggle--button, .-colors16 #overview-hide.-on > .toggle--button {
         background: #000000; color: #ff5555; }
-    #overview-hint { height: auto; margin-top: 1; color: #aaaaaa; }
+    #keys-notes-title { margin: 1 1 0 1; }
+    #keys-notes { margin: 0 1 0 3; height: auto; }
     #overview-status { height: 1; margin-top: 1; }
     #prefer-label { margin-top: 1; margin-bottom: 1; }
     #scope-row { height: auto; margin-bottom: 1; }
@@ -1289,7 +1325,7 @@ class WorkbenchApp(App):
             yield Static(self._folder_text(), id="folder", markup=False)
         with Horizontal(id="info-row"):
             yield Static("", id="info", markup=False)
-            yield Static(_short_keys_text("list", self), id="short-keys")
+            yield ShortKeys("list", id="short-keys")
         table = GameTable(id="games", cursor_type="row", zebra_stripes=False)
         table.add_column(_cell(tr("window.column.file")), key="file")
         table.add_column(_cell(tr("window.column.size"), justify="right"), key="size")
