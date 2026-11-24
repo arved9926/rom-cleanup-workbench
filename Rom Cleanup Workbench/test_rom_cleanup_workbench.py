@@ -1526,6 +1526,19 @@ class OverviewWindowTests(OverviewWindowBase):
         press("<KeyPress-f>")
         self.assertIsNotNone(window.folder_panel)
 
+    def test_q_goes_one_step_back_like_escape(self):
+        self.fill()
+        window = self.make_window(self.roms)
+        window.open_folder(self.roms)
+        window.overview_panel.open()
+        self.wait(window)
+        with mock.patch.object(window, "close") as close:
+            window._quit_key()
+            self.assertIsNotNone(window.overview_panel)
+            close.assert_not_called()
+            window._quit_key()
+            close.assert_called_once()
+
     def test_escape_closes_a_folder_on_its_own(self):
         self.fill()
         window = self.make_window(self.roms / "nes")
@@ -1789,6 +1802,20 @@ class OverviewTerminalTests(OverviewTerminalBase):
             self.assertTrue(app.overview_open())
             self.assertTrue(app.is_running)
             await pilot.press("escape")
+            await pilot.pause()
+            self.assertFalse(app.is_running)
+
+    async def test_q_goes_back_to_the_overview_and_ends_there(self):
+        app = self.app(self.roms)
+        async with app.run_test(size=(140, 30)) as pilot:
+            await self.settle(app, pilot)
+            await pilot.press("enter")
+            await self.settle(app, pilot)
+            await pilot.press("q")
+            await self.settle(app, pilot)
+            self.assertTrue(app.overview_open())
+            self.assertTrue(app.is_running)
+            await pilot.press("q")
             await pilot.pause()
             self.assertFalse(app.is_running)
 

@@ -92,7 +92,7 @@ _EN = {
     "terminal.need_directory": "--report-only and --yes need a directory",
     "terminal.no_window": "The window cannot be opened: {error}",
     "terminal.no_textual": "The terminal version needs Textual (pip install textual): {error}",
-    "tui.help": "x:delete  k:keep  Tab:next game  1-3:view  /:filter  Enter:execute  s:settings  f:folder  r:analyze again  c:credits  q:quit",
+    "tui.help": "x:delete  k:keep  Tab:next game  1-3:view  /:filter  Enter:execute  s:settings  f:folder  r:analyze again  c:credits  q:back/quit",
     "tui.no_folder": "Folder: none chosen yet (f)",
     "window.scope.problems": "Problematic deletion marks",
     "window.scope.marked": "All deletion marks",
@@ -102,7 +102,7 @@ _EN = {
     "window.help": (
         "x: delete file  |  k: keep file  |  Tab / Shift+Tab: next / previous game  |  1-3: view\n"
         "Arrow keys: select row (Shift: several)  |  Ctrl+mouse wheel: font size  |  "
-        "/: Filter (* and ?)  |  Enter: Proceed  |  s: Settings  |  f: Folder  |  r or F5: Analyze again  |  c or F1: Credits  |  q: Close  |  Esc: Overview or Close"
+        "/: Filter (* and ?)  |  Enter: Proceed  |  s: Settings  |  f: Folder  |  r or F5: Analyze again  |  c or F1: Credits  |  q or Esc: Overview or Close"
     ),
     "window.folder": "Folder: {directory}",
     "window.no_folder": "Folder: none chosen yet (f)",
@@ -143,7 +143,7 @@ _EN = {
     "terminal.scan_platform": "{platform}: {files} file(s), {read} read",
     "terminal.scan_done": "{count} platform(s) scanned; nothing was deleted.",
     "terminal.not_collection": "{directory} is no roms folder with platform folders.",
-    "overview.tui_keys": "Keys: Enter open, r scan, a scan all, v full, f folder, q close; o or Esc in the list comes back here.",
+    "overview.tui_keys": "Keys: Enter open, r scan, a scan all, v full, f folder, q close; o, q or Esc in the list comes back here.",
     "settings.scope_label": "Settings for this platform:",
     "settings.scope_default": "Use the default",
     "settings.scope_own": "Own for {platform}",
@@ -284,7 +284,7 @@ _DE = {
     "terminal.need_directory": "--report-only und --yes brauchen ein Verzeichnis",
     "terminal.no_window": "Das Fenster lässt sich nicht öffnen: {error}",
     "terminal.no_textual": "Die Terminal-Version braucht Textual (pip install textual): {error}",
-    "tui.help": "x:löschen  k:behalten  Tab:nächstes Spiel  1-3:Ansicht  /:Filter  Enter:ausführen  s:Einstellungen  f:Ordner  r:neu analysieren  c:Credits  q:beenden",
+    "tui.help": "x:löschen  k:behalten  Tab:nächstes Spiel  1-3:Ansicht  /:Filter  Enter:ausführen  s:Einstellungen  f:Ordner  r:neu analysieren  c:Credits  q:zurück/beenden",
     "tui.no_folder": "Ordner: noch keiner gewählt (f)",
     "window.scope.problems": "Problematische Löschmarkierungen",
     "window.scope.marked": "Alle Löschmarkierungen",
@@ -294,7 +294,7 @@ _DE = {
     "window.help": (
         "x: Datei löschen  |  k: Datei behalten  |  Tab / Umschalt+Tab: nächstes / voriges Spiel  |  1-3: Ansicht\n"
         "Pfeiltasten: Zeile wählen (Umschalt: mehrere)  |  Strg+Scrollrad: Schriftgröße  |  "
-        "/: Filter (* und ?)  |  Enter: Ausführen  |  s: Einstellungen  |  f: Ordner  |  r oder F5: Neu analysieren  |  c oder F1: Credits  |  q: Schließen  |  Esc: Übersicht oder Schließen"
+        "/: Filter (* und ?)  |  Enter: Ausführen  |  s: Einstellungen  |  f: Ordner  |  r oder F5: Neu analysieren  |  c oder F1: Credits  |  q oder Esc: Übersicht oder Schließen"
     ),
     "window.folder": "Ordner: {directory}",
     "window.no_folder": "Ordner: noch keiner gewählt (f)",
@@ -335,7 +335,7 @@ _DE = {
     "terminal.scan_platform": "{platform}: {files} Datei(en), {read} gelesen",
     "terminal.scan_done": "{count} Plattform(en) gescannt; nichts wurde gelöscht.",
     "terminal.not_collection": "{directory} ist kein roms-Ordner mit Plattform-Ordnern.",
-    "overview.tui_keys": "Tasten: Enter öffnen, r scannen, a alle scannen, v vollständig, f Ordner, q beenden; o oder Esc in der Liste führt hierher zurück.",
+    "overview.tui_keys": "Tasten: Enter öffnen, r scannen, a alle scannen, v vollständig, f Ordner, q beenden; o, q oder Esc in der Liste führt hierher zurück.",
     "settings.scope_label": "Einstellungen für diese Plattform:",
     "settings.scope_default": "Standard verwenden",
     "settings.scope_own": "Eigene für {platform}",
@@ -474,7 +474,7 @@ _IT = {
     "terminal.need_directory": "--report-only e --yes richiedono una cartella",
     "terminal.no_window": "Impossibile aprire la finestra: {error}",
     "terminal.no_textual": "La versione per terminale richiede Textual (pip install textual): {error}",
-    "tui.help": "x:elimina  k:mantieni  Tab:gioco successivo  1-3:vista  /:filtro  Invio:esegui  s:impostazioni  f:cartella  r:analizza di nuovo  c:riconoscimenti  q:esci",
+    "tui.help": "x:elimina  k:mantieni  Tab:gioco successivo  1-3:vista  /:filtro  Invio:esegui  s:impostazioni  f:cartella  r:analizza di nuovo  c:riconoscimenti  q:indietro/esci",
     "tui.no_folder": "Cartella: nessuna scelta (f)",
     "window.scope.problems": "Marcature problematiche",
     "window.scope.marked": "Tutte le marcature",
@@ -484,7 +484,7 @@ _IT = {
     "window.help": (
         "x: elimina file  |  k: mantieni file  |  Tab / Maiusc+Tab: gioco successivo / precedente  |  1-3: vista\n"
         "Frecce: seleziona riga (Maiusc: più righe)  |  Ctrl+rotellina: dimensione del testo  |  "
-        "/: Filtro (* e ?)  |  Invio: Esegui  |  s: Impostazioni  |  f: Cartella  |  r o F5: Analizza di nuovo  |  c o F1: Riconoscimenti  |  q: Chiudi  |  Esc: Panoramica o Chiudi"
+        "/: Filtro (* e ?)  |  Invio: Esegui  |  s: Impostazioni  |  f: Cartella  |  r o F5: Analizza di nuovo  |  c o F1: Riconoscimenti  |  q o Esc: Panoramica o Chiudi"
     ),
     "window.folder": "Cartella: {directory}",
     "window.no_folder": "Cartella: nessuna scelta (f)",
@@ -525,7 +525,7 @@ _IT = {
     "terminal.scan_platform": "{platform}: {files} file, {read} letti",
     "terminal.scan_done": "{count} piattaforme scansionate; non è stato eliminato nulla.",
     "terminal.not_collection": "{directory} non è una cartella roms con cartelle di piattaforme.",
-    "overview.tui_keys": "Tasti: Invio apri, r scansiona, a scansiona tutto, v completa, f cartella, q chiudi; o o Esc nell'elenco torna qui.",
+    "overview.tui_keys": "Tasti: Invio apri, r scansiona, a scansiona tutto, v completa, f cartella, q chiudi; o, q o Esc nell'elenco torna qui.",
     "settings.scope_label": "Impostazioni per questa piattaforma:",
     "settings.scope_default": "Usa le predefinite",
     "settings.scope_own": "Proprie per {platform}",
@@ -664,7 +664,7 @@ _ES = {
     "terminal.need_directory": "--report-only y --yes necesitan una carpeta",
     "terminal.no_window": "No se puede abrir la ventana: {error}",
     "terminal.no_textual": "La versión para terminal necesita Textual (pip install textual): {error}",
-    "tui.help": "x:eliminar  k:conservar  Tab:juego siguiente  1-3:vista  /:filtro  Intro:ejecutar  s:ajustes  f:carpeta  r:analizar de nuevo  c:créditos  q:salir",
+    "tui.help": "x:eliminar  k:conservar  Tab:juego siguiente  1-3:vista  /:filtro  Intro:ejecutar  s:ajustes  f:carpeta  r:analizar de nuevo  c:créditos  q:atrás/salir",
     "tui.no_folder": "Carpeta: ninguna elegida (f)",
     "window.scope.problems": "Marcas problemáticas",
     "window.scope.marked": "Todas las marcas",
@@ -674,7 +674,7 @@ _ES = {
     "window.help": (
         "x: eliminar archivo  |  k: conservar archivo  |  Tab / Mayús+Tab: juego siguiente / anterior  |  1-3: vista\n"
         "Flechas: elegir fila (Mayús: varias)  |  Ctrl+rueda: tamaño de letra  |  "
-        "/: Filtro (* y ?)  |  Intro: Ejecutar  |  s: Ajustes  |  f: Carpeta  |  r o F5: Analizar de nuevo  |  c o F1: Créditos  |  q: Cerrar  |  Esc: Resumen o Cerrar"
+        "/: Filtro (* y ?)  |  Intro: Ejecutar  |  s: Ajustes  |  f: Carpeta  |  r o F5: Analizar de nuevo  |  c o F1: Créditos  |  q o Esc: Resumen o Cerrar"
     ),
     "window.folder": "Carpeta: {directory}",
     "window.no_folder": "Carpeta: ninguna elegida (f)",
@@ -715,7 +715,7 @@ _ES = {
     "terminal.scan_platform": "{platform}: {files} archivo(s), {read} leídos",
     "terminal.scan_done": "{count} plataforma(s) analizadas; no se eliminó nada.",
     "terminal.not_collection": "{directory} no es una carpeta roms con carpetas de plataformas.",
-    "overview.tui_keys": "Teclas: Intro abrir, r analizar, a analizar todo, v completo, f carpeta, q cerrar; o o Esc en la lista vuelve aquí.",
+    "overview.tui_keys": "Teclas: Intro abrir, r analizar, a analizar todo, v completo, f carpeta, q cerrar; o, q o Esc en la lista vuelve aquí.",
     "settings.scope_label": "Ajustes para esta plataforma:",
     "settings.scope_default": "Usar los predeterminados",
     "settings.scope_own": "Propios para {platform}",
@@ -852,7 +852,7 @@ _FR = {
     "terminal.need_directory": "--report-only et --yes nécessitent un dossier",
     "terminal.no_window": "Impossible d'ouvrir la fenêtre : {error}",
     "terminal.no_textual": "La version terminal nécessite Textual (pip install textual) : {error}",
-    "tui.help": "x:supprimer  k:garder  Tab:jeu suivant  1-3:vue  /:filtre  Entrée:exécuter  s:paramètres  f:dossier  r:analyser à nouveau  c:crédits  q:quitter",
+    "tui.help": "x:supprimer  k:garder  Tab:jeu suivant  1-3:vue  /:filtre  Entrée:exécuter  s:paramètres  f:dossier  r:analyser à nouveau  c:crédits  q:retour/quitter",
     "tui.no_folder": "Dossier : aucun choisi (f)",
     "window.scope.problems": "Marquages problématiques",
     "window.scope.marked": "Tous les marquages",
@@ -862,7 +862,7 @@ _FR = {
     "window.help": (
         "x : supprimer le fichier  |  k : garder le fichier  |  Tab / Maj+Tab : jeu suivant / précédent  |  1-3 : vue\n"
         "Flèches : choisir la ligne (Maj : plusieurs)  |  Ctrl+molette : taille du texte  |  "
-        "/ : Filtre (* et ?)  |  Entrée : Exécuter  |  s : Paramètres  |  f : Dossier  |  r ou F5 : Analyser à nouveau  |  c ou F1 : Crédits  |  q : Fermer  |  Échap : Vue d'ensemble ou Fermer"
+        "/ : Filtre (* et ?)  |  Entrée : Exécuter  |  s : Paramètres  |  f : Dossier  |  r ou F5 : Analyser à nouveau  |  c ou F1 : Crédits  |  q ou Échap : Vue d'ensemble ou Fermer"
     ),
     "window.folder": "Dossier : {directory}",
     "window.no_folder": "Dossier : aucun choisi (f)",
@@ -903,7 +903,7 @@ _FR = {
     "terminal.scan_platform": "{platform} : {files} fichier(s), {read} lu(s)",
     "terminal.scan_done": "{count} plateforme(s) analysée(s) ; rien n'a été supprimé.",
     "terminal.not_collection": "{directory} n'est pas un dossier roms avec des dossiers de plateformes.",
-    "overview.tui_keys": "Touches : Entrée ouvrir, r analyser, a tout analyser, v complète, f dossier, q fermer ; o ou Échap dans la liste revient ici.",
+    "overview.tui_keys": "Touches : Entrée ouvrir, r analyser, a tout analyser, v complète, f dossier, q fermer ; o, q ou Échap dans la liste revient ici.",
     "settings.scope_label": "Paramètres pour cette plateforme :",
     "settings.scope_default": "Utiliser les paramètres par défaut",
     "settings.scope_own": "Propres à {platform}",
@@ -1042,7 +1042,7 @@ _JA = {
     "terminal.need_directory": "--report-only と --yes にはフォルダーの指定が必要です",
     "terminal.no_window": "ウィンドウを開けません: {error}",
     "terminal.no_textual": "ターミナル版には Textual が必要です (pip install textual): {error}",
-    "tui.help": "x:削除  k:保持  Tab:次のゲーム  1-3:表示  /:フィルター  Enter:実行  s:設定  f:フォルダー  r:再分析  c:クレジット  q:終了",
+    "tui.help": "x:削除  k:保持  Tab:次のゲーム  1-3:表示  /:フィルター  Enter:実行  s:設定  f:フォルダー  r:再分析  c:クレジット  q:戻る/終了",
     "tui.no_folder": "フォルダー: 未選択 (f)",
     "window.scope.problems": "要確認の削除対象",
     "window.scope.marked": "すべての削除対象",
@@ -1052,7 +1052,7 @@ _JA = {
     "window.help": (
         "x: ファイルを削除  |  k: ファイルを保持  |  Tab / Shift+Tab: 次 / 前のゲーム  |  1-3: 表示\n"
         "矢印キー: 行を選択 (Shift: 複数)  |  Ctrl+ホイール: 文字サイズ  |  "
-        "/: フィルター (* と ?)  |  Enter: 実行  |  s: 設定  |  f: フォルダー  |  r または F5: 再分析  |  c または F1: クレジット  |  q: 閉じる  |  Esc: 概要 または 閉じる"
+        "/: フィルター (* と ?)  |  Enter: 実行  |  s: 設定  |  f: フォルダー  |  r または F5: 再分析  |  c または F1: クレジット  |  q または Esc: 概要 または 閉じる"
     ),
     "window.folder": "フォルダー: {directory}",
     "window.no_folder": "フォルダー: 未選択 (f)",
@@ -1093,7 +1093,7 @@ _JA = {
     "terminal.scan_platform": "{platform}: {files} ファイル、{read} 読み込み",
     "terminal.scan_done": "{count} プラットフォームをスキャンしました。何も削除していません。",
     "terminal.not_collection": "{directory} はプラットフォームフォルダーを含む roms フォルダーではありません。",
-    "overview.tui_keys": "キー: Enter 開く、r スキャン、a すべてスキャン、v 完全、f フォルダー、q 終了。一覧で o または Esc を押すとここに戻ります。",
+    "overview.tui_keys": "キー: Enter 開く、r スキャン、a すべてスキャン、v 完全、f フォルダー、q 終了。一覧で o、q または Esc を押すとここに戻ります。",
     "settings.scope_label": "このプラットフォームの設定:",
     "settings.scope_default": "既定を使う",
     "settings.scope_own": "{platform} 専用",

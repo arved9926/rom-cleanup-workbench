@@ -1195,9 +1195,9 @@ class ReviewWindow:
             self._scope_changed()
 
     def _quit_key(self) -> None:
-        """q closes the window like Esc, but not while the settings, the folder choice or a question is open."""
+        """q goes one step back like Esc, but not while the settings, the folder choice or a question is open."""
         if not self._list_locked() or self._overview_keys_work():
-            self.close()
+            self._on_escape()
 
     def _overview_keys_work(self) -> bool:
         """The overview is shown and nothing lies on top of it."""

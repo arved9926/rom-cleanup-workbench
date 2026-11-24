@@ -206,7 +206,7 @@ Die Tasten gelten im Fenster und in der Terminal-Version gleich; die Hilfezeile 
 
 **Scannen.** Ein Scan ist normalerweise schnell: Er liest nur neue und geänderte Dateien (erkannt an Name, Größe und Änderungszeit) und übernimmt alles andere aus der Datenbank. Mit `Vollständig` wird jede Datei neu gelesen. `F5` in der Liste scannt die geöffnete Plattform schnell. Ausführen trägt gelöschte und umbenannte Dateien sofort ein, ein neuer Scan ist danach nicht nötig.
 
-**Zurück zur Übersicht** führt in der Liste `Esc` oder der Knopf `Übersicht`, in der Terminal-Version `Esc` oder die Taste `o`. `Esc` in der Übersicht beendet das Programm; wer ganz hinaus will, drückt `Esc` also zweimal.
+**Zurück zur Übersicht** führt in der Liste `Esc`, `q` oder der Knopf `Übersicht`, in der Terminal-Version auch `o`. `Esc` oder `q` in der Übersicht beendet das Programm; wer ganz hinaus will, drückt also zweimal.
 
 **Änderungen von Hand** (`k`/`x`) bleiben gespeichert, auch nach dem Schließen, bis du ausführst oder die Plattform neu scannst. Ändert sich eine Datei, verfällt ihre Änderung von Hand.
 
@@ -250,7 +250,7 @@ Das Fenster merkt sich die zuletzt gewählte Ansicht und die bestätigten Status
 | `f` | einen anderen Ordner wählen, im Fenster an der Stelle der Liste: Ordner mit dem Pfeil öffnen, mit Doppelklick sofort auswählen, oder einen Pfad in `Pfad:` tippen, dann `Auswählen` oder `Enter`; `Abbrechen` oder `Esc` behalten den aktuellen Ordner |
 | `r` oder `F5` | neu analysieren, liest auch die Konfiguration neu |
 | `c` oder `F1` | die Credits zeigen |
-| `q` oder `Esc` | schließen, ohne etwas zu löschen; in einer Plattform der Sammlung führt `Esc` erst zurück zur Übersicht; nach Änderungen von Hand fragt das Programm vorher |
+| `q` oder `Esc` | schließen, ohne etwas zu löschen; in einer Plattform der Sammlung führen beide erst zurück zur Übersicht; nach Änderungen von Hand fragt das Programm vorher |
 
 Waagerechte Linien trennen die Spiele, und jedes zweite Spiel hat einen dunkelgrauen Hintergrund. Dateien, die erhalten bleiben, stehen in Grün, Dateien, die zum Löschen markiert sind, in Rot. Die Spalte `Größe` zeigt die Größe jeder Datei in KB, aufgerundet wie im Windows-Explorer (`1.234 KB`); `?` heißt, dass sich die Größe nicht lesen ließ. Die Größe wird bei der Analyse gelesen. Behaltene Dateien stehen fett unter `Bleibt erhalten:`, zu löschende Dateien in normaler Schrift unter `Zum Löschen markiert`. Das Fenster zeigt weiße Schrift in Lucida Sans Typewriter 11 pt auf schwarzem Grund. Ist die Schrift nicht installiert, nimmt Windows stillschweigend einen Ersatz. Von Hand verschobene Dateien haben einen braunen Hintergrund und tragen den Hinweis `Von Hand`; solange die Zeile gewählt ist, erscheint sie blau. Die Hinweise des Programms bleiben unverändert, auch wenn sie sich auf eine Datei beziehen, die du verschoben hast.
 
@@ -320,7 +320,7 @@ Die Hilfezeile zeigt die Tasten als `Taste:Aktion`, zum Beispiel `x:löschen  k:
 | `s` | Einstellungen: `Umschalt+Hoch`/`Umschalt+Runter` verschieben eine Region, `Entf` entfernt sie, `Strg+S` speichert, `Esc` bricht ab |
 | `r` oder `F5` | neu analysieren |
 | `c` oder `F1` | die Credits zeigen (auch `c`, weil manche Terminals `F1` für ihre eigene Hilfe behalten) |
-| `q` oder `Esc` | schließen, ohne etwas zu löschen; in einer Plattform der Sammlung führt `Esc` erst zurück zur Übersicht; nach Änderungen von Hand fragt das Programm vorher |
+| `q` oder `Esc` | schließen, ohne etwas zu löschen; in einer Plattform der Sammlung führen beide erst zurück zur Übersicht; nach Änderungen von Hand fragt das Programm vorher |
 | In einer Frage | `Links`/`Rechts` wählen eine Schaltfläche, `Enter` drückt sie, `Esc` antwortet `Nein` |
 
 Die Maus geht auch: Ein Klick wählt eine Zeile, das Rad scrollt, und die Ansichten und Schaltflächen lassen sich anklicken. Buchstaben, die in ein Feld getippt werden, bleiben im Feld, auch schnell getippt oder eingefügt: Ein `x` im Filter markiert nie eine Datei.
