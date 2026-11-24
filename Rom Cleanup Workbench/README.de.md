@@ -199,6 +199,7 @@ Meist liegen die Spiele nach Plattformen getrennt in einem gemeinsamen Ordner, e
 | `Scannen` | `r` oder `F5` | die markierte Plattform scannen und öffnen |
 | `Alle scannen` | `a` | alle Plattformen nacheinander scannen; jede wird sofort gespeichert und ihre Zahlen erscheinen gleich in der Übersicht; `Abbrechen` behält die fertigen; löscht nichts |
 | `Vollständig` | `v` | Häkchen für Scannen und Alle scannen: jede Datei neu lesen statt nur neue und geänderte |
+| `Leere ausblenden` | `h` | Häkchen: Ordner ohne Spieldatei ausblenden, etwa `bios` oder einen Ordner nur mit `info.txt`; Beipack-Dateien zählen nicht als Spieldatei; die Wahl bleibt gespeichert |
 | `Ordner...` | `f` | einen anderen `roms`-Ordner wählen |
 | | `q` oder `Esc` | das Programm schließen |
 

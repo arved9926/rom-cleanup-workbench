@@ -1539,6 +1539,37 @@ class OverviewWindowTests(OverviewWindowBase):
             window._quit_key()
             close.assert_called_once()
 
+    def empty_folders(self):
+        (self.roms / "bios").mkdir()
+        (self.roms / "docs").mkdir()
+        (self.roms / "docs" / "info.txt").write_bytes(b"side")  # a side file is no game file
+
+    def test_rows_know_whether_their_folder_holds_a_game_file(self):
+        import workbench_db
+
+        self.fill()
+        self.empty_folders()
+        rows = {row.folder: row.has_games for row in workbench_db.overview(self.roms, self.config)}
+        self.assertEqual(rows, {"bios": False, "docs": False, "nes": True, "snes": True})
+
+    def test_h_hides_the_folders_without_a_game_file_and_is_remembered(self):
+        self.fill()
+        self.empty_folders()
+        window = self.make_window(self.roms)
+        window.open_folder(self.roms)
+        tree = window.overview_panel.tree
+        self.assertEqual(tree.get_children()[:-1], ("bios", "docs", "nes", "snes"))
+        tree.selection_set("snes")
+        window._hide_empty_key()
+        self.assertEqual(tree.get_children(), ("nes", "snes", "*total*"))
+        self.assertEqual(tree.selection(), ("snes",))
+        self.assertEqual(window.status.get(), "2 platform(s), 0 file(s) scanned")
+        self.assertIn("hide_empty_folders", (self.roms.parent / "settings.json").read_text(encoding="utf-8"))
+        window.show_overview()  # remembered
+        self.assertEqual(window.overview_panel.tree.get_children(), ("nes", "snes", "*total*"))
+        window._hide_empty_key()
+        self.assertEqual(len(window.overview_panel.tree.get_children()), 5)
+
     def test_escape_closes_a_folder_on_its_own(self):
         self.fill()
         window = self.make_window(self.roms / "nes")
@@ -1818,6 +1849,20 @@ class OverviewTerminalTests(OverviewTerminalBase):
             await pilot.press("q")
             await pilot.pause()
             self.assertFalse(app.is_running)
+
+    async def test_h_hides_the_folders_without_a_game_file(self):
+        (self.roms / "bios").mkdir()
+        app = self.app(self.roms)
+        async with app.run_test(size=(140, 30)) as pilot:
+            await self.settle(app, pilot)
+            self.assertEqual(list(self.overview_rows(app)), ["bios", "nes", "snes", "*total*"])
+            await pilot.press("h")
+            await pilot.pause()
+            self.assertEqual(list(self.overview_rows(app)), ["nes", "snes", "*total*"])
+            self.assertTrue(self.tui.load_hide_empty(self.settings))
+            await pilot.press("h")
+            await pilot.pause()
+            self.assertEqual(list(self.overview_rows(app)), ["bios", "nes", "snes", "*total*"])
 
     async def test_a_scans_all_platforms(self):
         app = self.app(self.roms)

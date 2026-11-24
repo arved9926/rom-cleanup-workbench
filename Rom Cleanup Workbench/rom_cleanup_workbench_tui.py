@@ -48,8 +48,8 @@ from textual.widgets.data_table import ColumnKey
 
 from translations import LANGUAGE_NAMES, current_language, tr
 from workbench_state import (
-    SCOPES, SETTINGS_PATH, add_confirmed_saves, drives, format_kb, load_confirmed_saves, load_last_collection,
-    load_scope, save_last_collection, save_scope,
+    SCOPES, SETTINGS_PATH, add_confirmed_saves, drives, format_kb, load_confirmed_saves, load_hide_empty,
+    load_last_collection, load_scope, save_hide_empty, save_last_collection, save_scope,
     scope_flags, subfolders,
 )
 
@@ -661,6 +661,7 @@ class OverviewScreen(Screen):
         Binding("r,R,f5", "scan", show=False),
         Binding("a,A", "scan_all", show=False),
         Binding("v,V", "toggle_full", show=False),
+        Binding("h,H", "toggle_hide_empty", show=False),
         Binding("f,F", "folder", show=False),
     ]
     TOTAL = "*total*"
@@ -683,6 +684,8 @@ class OverviewScreen(Screen):
             yield Button(tr("overview.scan"), id="overview-scan", compact=True)
             yield Button(tr("overview.scan_all"), id="overview-scan-all", compact=True)
             yield Checkbox(tr("overview.full"), id="overview-full", compact=True)
+            yield Checkbox(tr("overview.hide_empty"), load_hide_empty(self.app.settings_path), id="overview-hide",
+                           compact=True)
             yield Button(tr("settings.cancel"), id="overview-cancel", compact=True)
         yield Static(tr("overview.hint") + " " + tr("overview.own_hint") + "  " + tr("overview.tui_keys"),
                      id="overview-hint", markup=False)
@@ -693,16 +696,42 @@ class OverviewScreen(Screen):
         table.add_column(tr("overview.platform"), key="platform")
         for column in ("files", "games", "marked", "problematic", "last_scan", "state"):
             table.add_column(tr(f"overview.{column}"), key=column)
-        for row in self.rows.values():
+        self.query_one("#overview-cancel", Button).display = False
+        self._fill(self.message)
+        table.focus()
+
+    def visible(self) -> list:
+        """The rows shown: all, or without the folders that hold no game file."""
+        hide = self.query_one("#overview-hide", Checkbox).value
+        return [row for row in self.rows.values() if row.has_games or not hide]
+
+    def _fill(self, message: str | None = None) -> None:
+        """Shows the visible rows and the total; the highlighted platform stays if it is still shown."""
+        table = self.query_one("#overview-table", DataTable)
+        selected = self.selected()
+        table.clear()
+        visible = self.visible()
+        for row in visible:
             table.add_row(Text(row.folder + (" *" if row.has_own_config else "")), *self._cells(row), key=row.folder)
         totals = self._totals()
         table.add_row(Text(tr("overview.total"), style="bold"),
                       *(Text(_count(value), justify="right", style="bold") for value in totals),
                       Text(""), Text(""), key=self.TOTAL)
-        self.query_one("#overview-cancel", Button).display = False
+        names = [row.folder for row in visible]
+        if selected in names:
+            table.move_cursor(row=names.index(selected))
         self.query_one("#overview-status", Static).update(
-            self.message or tr("overview.status", platforms=len(self.rows), files=_count(totals[0])))
-        table.focus()
+            message or tr("overview.status", platforms=len(visible), files=_count(totals[0])))
+
+    def on_checkbox_changed(self, event: Checkbox.Changed) -> None:
+        if event.checkbox.id == "overview-hide":
+            event.stop()
+            save_hide_empty(self.app.settings_path, event.value)
+            self._fill()
+
+    def action_toggle_hide_empty(self) -> None:
+        box = self.query_one("#overview-hide", Checkbox)
+        box.value = not box.value
 
     _NUMBERS = ("files", "games", "marked", "problematic")
 
@@ -712,7 +741,7 @@ class OverviewScreen(Screen):
                 Text(_when(row.last_scan)), Text(tr(f"overview.state.{row.state}"))]
 
     def _totals(self) -> list[int]:
-        return [sum(getattr(row, name) or 0 for row in self.rows.values()) for name in self._NUMBERS]
+        return [sum(getattr(row, name) or 0 for row in self.visible()) for name in self._NUMBERS]
 
     def set_row(self, row) -> None:
         """A platform's new numbers, for example as soon as scan all has finished it."""
@@ -721,8 +750,9 @@ class OverviewScreen(Screen):
         self.rows[row.folder] = row
         table = self.query_one("#overview-table", DataTable)
         columns = (*self._NUMBERS, "last_scan", "state")
-        for column, cell in zip(columns, self._cells(row)):
-            table.update_cell(row.folder, column, cell)
+        if row.folder in {key.value for key in table.rows}:
+            for column, cell in zip(columns, self._cells(row)):
+                table.update_cell(row.folder, column, cell)
         for column, value in zip(self._NUMBERS, self._totals()):
             table.update_cell(self.TOTAL, column, Text(_count(value), justify="right", style="bold"))
 

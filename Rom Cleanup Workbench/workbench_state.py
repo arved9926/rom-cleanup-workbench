@@ -31,6 +31,7 @@ SETTINGS_PATH = Path(__file__).with_name("rom_cleanup_workbench_settings.json")
 _SCOPE_KEY = "scope"
 _CONFIRMED_KEY = "confirmed_save_files"
 _COLLECTION_KEY = "last_collection"
+_HIDE_EMPTY_KEY = "hide_empty_folders"
 SCOPE_PROBLEMS = "problems"
 SCOPE_MARKED = "marked"
 SCOPE_ALL_FILES = "all"
@@ -93,6 +94,15 @@ def load_last_collection(path: Path) -> Path | None:
 
 def save_last_collection(path: Path, folder: Path) -> None:
     _save_settings(path, **{_COLLECTION_KEY: str(folder)})
+
+
+def load_hide_empty(path: Path) -> bool:
+    """Whether the overview hides folders without a game file."""
+    return _load_settings(path).get(_HIDE_EMPTY_KEY) is True
+
+
+def save_hide_empty(path: Path, hide: bool) -> None:
+    _save_settings(path, **{_HIDE_EMPTY_KEY: bool(hide)})
 
 
 def load_confirmed_saves(path: Path) -> dict[str, int]:

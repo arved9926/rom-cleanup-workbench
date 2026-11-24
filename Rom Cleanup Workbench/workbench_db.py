@@ -235,12 +235,14 @@ class Collection:
         return {name: (size, mtime) for name, size, mtime in self._db.execute(
             "SELECT name, size, mtime_ns FROM files WHERE platform_id = ?", (platform_id,))}
 
-    def state(self, directory: Path) -> str:
+    def state(self, directory: Path, stamps: dict | None = None) -> str:
         """not_scanned, current or changed: compares names, sizes and change times only (fast)."""
         directory = Path(directory)
         if self.platform(directory.name).last_scan is None:
             return NOT_SCANNED
-        return CURRENT if _stamps(directory) == self.file_stamps(directory.name) else CHANGED
+        if stamps is None:
+            stamps = _stamps(directory)
+        return CURRENT if stamps == self.file_stamps(directory.name) else CHANGED
 
     def update_checksums(self, folder: str, checksums: dict[str, str]) -> None:
         """Keeps checksums of plain files that were computed while deciding."""
@@ -512,6 +514,7 @@ class OverviewRow:
     problematic: int | None = None
     last_scan: str | None = None
     has_own_config: bool = False
+    has_games: bool = True  # False: not a single game file in the folder (side files do not count)
 
 
 def overview(root: Path, config: Config) -> list[OverviewRow]:
@@ -523,7 +526,8 @@ def overview(root: Path, config: Config) -> list[OverviewRow]:
 def _overview_row(collection: "Collection", directory: Path, config: Config) -> OverviewRow:
     """One platform's row; numbers computed with other settings are computed again (no scan)."""
     name = directory.name
-    state = collection.state(directory)
+    stamps = _stamps(directory)
+    state = collection.state(directory, stamps)
     row = collection.platform(name)
     effective = with_own_settings(config, collection.own_config(name))
     key = config_key(effective)
@@ -533,7 +537,12 @@ def _overview_row(collection: "Collection", directory: Path, config: Config) -> 
         collection.save_summary(name, *summary_of(results), key=key)
         row = collection.platform(name)
     return OverviewRow(name, state, row.files, row.games, row.marked, row.problematic,
-                       row.last_scan, row.has_own_config)
+                       row.last_scan, row.has_own_config, has_game_files(stamps))
+
+
+def has_game_files(names) -> bool:
+    """At least one file that is no side file such as info.txt, a picture or a PDF."""
+    return any(Path(name).suffix.casefold() not in SIDE_FILE_EXTENSIONS for name in names)
 
 
 class ScanCancelled(Exception):

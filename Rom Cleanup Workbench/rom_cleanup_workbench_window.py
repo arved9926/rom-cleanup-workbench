@@ -36,7 +36,8 @@ from translations import LANGUAGE_NAMES, current_language, tr
 # The settings file, the views, sizes and folders are shared with the terminal version.
 from workbench_state import (  # noqa: F401  (SETTINGS_PATH and the scope names belong to this module's interface)
     DEFAULT_SCOPE, SCOPE_ALL_FILES, SCOPE_MARKED, SCOPE_PROBLEMS, SETTINGS_PATH, add_confirmed_saves,
-    format_kb, load_confirmed_saves, load_last_collection, load_scope, save_last_collection, save_scope,
+    format_kb, load_confirmed_saves, load_hide_empty, load_last_collection, load_scope, save_hide_empty,
+    save_last_collection, save_scope,
 )
 from workbench_state import SCOPES as _SCOPES
 from workbench_state import drives as _drives
@@ -455,6 +456,10 @@ class OverviewPanel:
             self.buttons.append(button)
         self.full_box = ttk.Checkbutton(heading, text=tr("overview.full"), variable=self.full)
         self.full_box.pack(side="right", padx=(8, 0))
+        self.hide_empty = tk.BooleanVar(frame, load_hide_empty(window.settings_path))
+        self.hide_box = ttk.Checkbutton(heading, text=tr("overview.hide_empty"), variable=self.hide_empty,
+                                        command=self._hide_empty_changed)
+        self.hide_box.pack(side="right", padx=(8, 0))
         self.cancel_button = ttk.Button(heading, text=tr("settings.cancel"), command=window.cancel_scan_all)
         ttk.Label(heading, text=tr("overview.title"), font=window.bold_font).pack(side="left")
 
@@ -475,22 +480,42 @@ class OverviewPanel:
         hint.bind("<Configure>", lambda event: hint.configure(wraplength=max(event.width, 1)))
 
         self._fit_columns(rows)
-        for row in rows:
-            self.tree.insert("", "end", row.folder, text=row.folder + (" *" if row.has_own_config else ""),
-                             values=self._values(row))
-        self.tree.insert("", "end", self._TOTAL, text=tr("overview.total"), tags=("total",))
-        totals = self._update_total()
         self.tree.tag_configure("total", font=window.bold_font)
+        self._fill()
         self.tree.bind("<Double-Button-1>", self._open_clicked)
         self.tree.bind("<Return>", lambda _event: self.open() or "break")
         # Ctrl+mouse wheel changes the font size here as in the list (the window's binding is not reached).
         self.tree.bind("<Control-MouseWheel>", window._on_zoom)
         self.tree.bindtags((str(self.tree), self.tree.winfo_class(), str(window.root), "all"))
-        first = next(iter(self.rows), None)
+
+    def visible(self) -> list:
+        """The rows shown: all, or without the folders that hold no game file."""
+        return [row for row in self.rows.values() if row.has_games or not self.hide_empty.get()]
+
+    def _fill(self) -> None:
+        """Shows the visible rows and the total; the highlighted platform stays if it is still shown."""
+        selected = self.selected()
+        self.tree.delete(*self.tree.get_children())
+        visible = self.visible()
+        for row in visible:
+            self.tree.insert("", "end", row.folder, text=row.folder + (" *" if row.has_own_config else ""),
+                             values=self._values(row))
+        self.tree.insert("", "end", self._TOTAL, text=tr("overview.total"), tags=("total",))
+        totals = self._update_total()
+        first = selected if selected in {row.folder for row in visible} else (visible[0].folder if visible else None)
         if first is not None:
             self.tree.selection_set(first)
             self.tree.focus(first)
-        window.status.set(tr("overview.status", platforms=len(rows), files=_count(totals[0])))
+            self.tree.see(first)
+        self.window.status.set(tr("overview.status", platforms=len(visible), files=_count(totals[0])))
+
+    def _hide_empty_changed(self) -> None:
+        save_hide_empty(self.window.settings_path, self.hide_empty.get())
+        self._fill()
+
+    def toggle_hide_empty(self) -> None:
+        self.hide_empty.set(not self.hide_empty.get())
+        self._hide_empty_changed()
 
     _TOTAL = "*total*"  # no folder name: * is not allowed in Windows names
 
@@ -500,7 +525,7 @@ class OverviewPanel:
                 _when(row.last_scan), tr(f"overview.state.{row.state}"))
 
     def _update_total(self) -> list[int]:
-        totals = [sum(getattr(row, name) or 0 for row in self.rows.values())
+        totals = [sum(getattr(row, name) or 0 for row in self.visible())
                   for name in ("files", "games", "marked", "problematic")]
         self.tree.item(self._TOTAL, values=(*(_count(value) for value in totals), "", ""))
         return totals
@@ -510,7 +535,8 @@ class OverviewPanel:
         if row.folder not in self.rows:
             return
         self.rows[row.folder] = row
-        self.tree.item(row.folder, values=self._values(row))
+        if self.tree.exists(row.folder):
+            self.tree.item(row.folder, values=self._values(row))
         self._update_total()
 
     def _fit_columns(self, rows) -> None:
@@ -528,7 +554,7 @@ class OverviewPanel:
             self.tree.column(column, width=width, minwidth=width, stretch=column == "#0")
 
     def selected(self) -> str | None:
-        selection = self.tree.selection()
+        selection = self.tree.selection() if self.tree.get_children() else ()
         return selection[0] if selection and selection[0] in self.rows else None
 
     def _open_clicked(self, event) -> str | None:
@@ -1141,7 +1167,7 @@ class ReviewWindow:
         keys = {
             "x": self.demote_selected, "k": self.promote_selected, "s": self.toggle_settings,
             "f": self.choose_directory, "r": self.reanalyze, "c": self.show_credits, "q": self._quit_key,
-            "a": self._scan_all_key, "v": self._toggle_full_key,
+            "a": self._scan_all_key, "v": self._toggle_full_key, "h": self._hide_empty_key,
         }
         for key, action in keys.items():
             for variant in (key, key.upper()):
@@ -1207,6 +1233,10 @@ class ReviewWindow:
     def _scan_all_key(self) -> None:
         if self._overview_keys_work():
             self.scan_all()
+
+    def _hide_empty_key(self) -> None:
+        if self._overview_keys_work():
+            self.overview_panel.toggle_hide_empty()
 
     def _toggle_full_key(self) -> None:
         if self._overview_keys_work() and self._batch is None:
