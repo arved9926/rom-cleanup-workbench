@@ -969,7 +969,32 @@ class FileFacts:
 
 def rom_files(directory: Path) -> list[Path]:
     """The files of a folder the program looks at, sorted by name."""
-    return sorted((p for p in directory.iterdir() if _is_rom_candidate(p)), key=lambda p: p.name.casefold())
+    return [path for path, _stat in rom_files_with_stat(directory)]
+
+
+def rom_files_with_stat(directory: Path) -> list[tuple[Path, os.stat_result]]:
+    """rom_files with each file's size and change time, from one reading of the folder.
+
+    On Windows the folder listing already holds sizes, times and attributes, so this needs no call
+    per file; that keeps the overview fast on large and slow drives.
+    """
+    found = []
+    with os.scandir(directory) as entries:
+        for entry in entries:
+            name = entry.name
+            if name.startswith(".") or name.casefold().startswith(_NO_ROM_PREFIX):
+                continue
+            try:
+                if not entry.is_file():
+                    continue
+                stat = entry.stat()
+            except OSError:
+                continue
+            if getattr(stat, "st_file_attributes", 0) & _HIDDEN_ATTRIBUTE:
+                continue
+            found.append((Path(directory) / name, stat))
+    found.sort(key=lambda item: item[0].name.casefold())
+    return found
 
 
 def read_facts(path: Path) -> FileFacts:

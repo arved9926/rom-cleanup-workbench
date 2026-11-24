@@ -29,7 +29,7 @@ from datetime import datetime
 from pathlib import Path
 
 from rom_cleanup_workbench import (
-    Config, FileFacts, GroupResult, ZipMember, _is_hidden, decide, known_checksums, read_facts, rom_files,
+    Config, FileFacts, GroupResult, ZipMember, _is_hidden, decide, known_checksums, read_facts, rom_files, rom_files_with_stat,
     scan_facts,
 )
 
@@ -357,14 +357,10 @@ def summary_of(results: list[GroupResult]) -> tuple[int, int, int]:
 
 
 def _stamps(directory: Path) -> dict[str, tuple[int | None, int | None]]:
-    stamps = {}
-    for path in rom_files(directory):
-        try:
-            stat = path.stat()
-            stamps[path.name] = (stat.st_size, stat.st_mtime_ns)
-        except OSError:
-            stamps[path.name] = (None, None)
-    return stamps
+    try:
+        return {path.name: (stat.st_size, stat.st_mtime_ns) for path, stat in rom_files_with_stat(directory)}
+    except OSError:  # a folder that cannot be read counts as changed
+        return {}
 
 
 def quick_scan_facts(directory: Path, old: list[FileFacts], progress=None) -> tuple[list[FileFacts], int]:
