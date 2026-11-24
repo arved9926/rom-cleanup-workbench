@@ -1709,17 +1709,60 @@ class OverviewWindowTests(OverviewWindowBase):
         window = self.make_window(self.roms)
         window.open_folder(self.roms)
         tree = window.overview_panel.tree
-        self.assertEqual(tree.get_children()[:-1], ("bios", "docs", "nes", "snes"))
+        self.assertEqual(tree.get_children()[:-2], ("bios", "docs", "nes", "snes"))
         tree.selection_set("snes")
         window._hide_empty_key()
-        self.assertEqual(tree.get_children(), ("nes", "snes", "*total*"))
+        self.assertEqual(tree.get_children(), ("nes", "snes", "*line*", "*total*"))
         self.assertEqual(tree.selection(), ("snes",))
         self.assertEqual(window.status.get(), "2 platform(s), 0 file(s) scanned")
         self.assertIn("hide_empty_folders", (self.roms.parent / "settings.json").read_text(encoding="utf-8"))
         window.show_overview()  # remembered
-        self.assertEqual(window.overview_panel.tree.get_children(), ("nes", "snes", "*total*"))
+        self.assertEqual(window.overview_panel.tree.get_children(), ("nes", "snes", "*line*", "*total*"))
         window._hide_empty_key()
-        self.assertEqual(len(window.overview_panel.tree.get_children()), 5)
+        self.assertEqual(len(window.overview_panel.tree.get_children()), 6)
+
+    def test_a_click_on_a_heading_sorts_and_a_second_turns_round(self):
+        self.fill()
+        self.write("snes", "More (USA).sfc", b"m")
+        self.write("snes", "Again (USA).sfc", b"a")
+        window = self.make_window(self.roms)
+        window.open_folder(self.roms)
+        panel = window.overview_panel
+        panel.open(rescan=True)
+        self.wait(window)
+        window.show_overview()
+        panel = window.overview_panel
+        self.assertEqual(panel.tree.get_children(), ("nes", "snes", "*line*", "*total*"))
+        self.assertTrue(panel.tree.heading("#0", "text").endswith(" ▲"))
+        panel.sort_by("files")  # snes: never scanned, no numbers: last
+        self.assertEqual(panel.tree.get_children()[:2], ("nes", "snes"))
+        panel.sort_by("platform")
+        panel.sort_by("platform")  # the other way round
+        self.assertEqual(panel.tree.get_children(), ("snes", "nes", "*line*", "*total*"))
+        self.assertTrue(panel.tree.heading("#0", "text").endswith(" ▼"))
+        window.show_overview()  # remembered
+        self.assertEqual(window.overview_panel.tree.get_children()[:2], ("snes", "nes"))
+
+    def test_sort_rows_puts_rows_without_numbers_last(self):
+        import workbench_db
+
+        rows = [workbench_db.OverviewRow("a", "not_scanned"), workbench_db.OverviewRow("b", "current", 5),
+                workbench_db.OverviewRow("c", "current", 9)]
+        self.assertEqual([row.folder for row in workbench_db.sort_rows(rows, "files", False)], ["b", "c", "a"])
+        self.assertEqual([row.folder for row in workbench_db.sort_rows(rows, "files", True)], ["c", "b", "a"])
+
+    def test_a_changed_platform_is_yellow(self):
+        self.fill()
+        window = self.make_window(self.roms)
+        window.open_folder(self.roms)
+        window.overview_panel.open()
+        self.wait(window)
+        self.write("nes", "New (USA).nes", b"n")
+        window.show_overview()
+        tree = window.overview_panel.tree
+        self.assertEqual(tree.item("nes", "values")[-1], "changed")
+        self.assertEqual(tree.item("nes", "tags"), ("changed",))
+        self.assertEqual(str(tree.tag_configure("changed", "foreground")), "#e3b341")
 
     def test_escape_closes_a_folder_on_its_own(self):
         self.fill()
@@ -1961,7 +2004,7 @@ class OverviewTerminalTests(OverviewTerminalBase):
             await self.settle(app, pilot)
             self.assertTrue(app.overview_open())
             rows = self.overview_rows(app)
-            self.assertEqual(list(rows), ["nes", "snes", "*total*"])
+            self.assertEqual(list(rows), ["nes", "snes", "*line*", "*total*"])
             self.assertEqual(rows["nes"][-1], "not scanned")
 
     async def test_enter_opens_a_platform_and_o_comes_back(self):
@@ -2014,14 +2057,14 @@ class OverviewTerminalTests(OverviewTerminalBase):
         app = self.app(self.roms)
         async with app.run_test(size=(140, 30)) as pilot:
             await self.settle(app, pilot)
-            self.assertEqual(list(self.overview_rows(app)), ["bios", "nes", "snes", "*total*"])
+            self.assertEqual(list(self.overview_rows(app)), ["bios", "nes", "snes", "*line*", "*total*"])
             await pilot.press("h")
             await pilot.pause()
-            self.assertEqual(list(self.overview_rows(app)), ["nes", "snes", "*total*"])
+            self.assertEqual(list(self.overview_rows(app)), ["nes", "snes", "*line*", "*total*"])
             self.assertTrue(self.tui.load_hide_empty(self.settings))
             await pilot.press("h")
             await pilot.pause()
-            self.assertEqual(list(self.overview_rows(app)), ["bios", "nes", "snes", "*total*"])
+            self.assertEqual(list(self.overview_rows(app)), ["bios", "nes", "snes", "*line*", "*total*"])
 
     async def test_d_switches_the_deep_scan_and_the_title_is_green(self):
         app = self.app(self.roms)
@@ -2038,6 +2081,18 @@ class OverviewTerminalTests(OverviewTerminalBase):
             await self.settle(app, pilot)
             info = app.query_one("#info").render()
             self.assertEqual(str(info), "Platform: nes")
+
+    async def test_a_click_on_a_heading_sorts(self):
+        app = self.app(self.roms)
+        async with app.run_test(size=(140, 30)) as pilot:
+            await self.settle(app, pilot)
+            screen = app.screen
+            screen.sort_by("platform")  # the second time: the other way round
+            await pilot.pause()
+            self.assertEqual(list(self.overview_rows(app)), ["snes", "nes", "*line*", "*total*"])
+            self.assertTrue(str(screen.query_one("#overview-table").columns["platform"].label).endswith(" ▼"))
+            self.assertEqual(self.tui.load_overview_sort(self.settings), ("platform", True))
+            self.assertTrue(self.overview_rows(app)["*line*"][0].startswith("─"))
 
     async def test_a_scans_all_platforms(self):
         app = self.app(self.roms)

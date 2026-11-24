@@ -32,6 +32,7 @@ _SCOPE_KEY = "scope"
 _CONFIRMED_KEY = "confirmed_save_files"
 _COLLECTION_KEY = "last_collection"
 _HIDE_EMPTY_KEY = "hide_empty_folders"
+_SORT_KEY = "overview_sort"
 SCOPE_PROBLEMS = "problems"
 SCOPE_MARKED = "marked"
 SCOPE_ALL_FILES = "all"
@@ -94,6 +95,21 @@ def load_last_collection(path: Path) -> Path | None:
 
 def save_last_collection(path: Path, folder: Path) -> None:
     _save_settings(path, **{_COLLECTION_KEY: str(folder)})
+
+
+SORT_COLUMNS = ("platform", "files", "games", "marked", "problematic")
+
+
+def load_overview_sort(path: Path) -> tuple[str, bool]:
+    """The overview's order: (column, descending); by platform name, ascending, if none is stored."""
+    value = _load_settings(path).get(_SORT_KEY)
+    if isinstance(value, dict) and value.get("column") in SORT_COLUMNS:
+        return value["column"], value.get("descending") is True
+    return "platform", False
+
+
+def save_overview_sort(path: Path, column: str, descending: bool) -> None:
+    _save_settings(path, **{_SORT_KEY: {"column": column, "descending": bool(descending)}})
 
 
 def load_hide_empty(path: Path) -> bool:

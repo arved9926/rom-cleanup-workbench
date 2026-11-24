@@ -689,3 +689,13 @@ def platform_label(directory: Path | None) -> str:
     with Collection(root) as collection:
         own = collection.own_config(directory.name) is not None
     return directory.name + (" *" if own else "")
+
+
+def sort_rows(rows: list, column: str, descending: bool) -> list:
+    """The overview's rows in the chosen order; rows without numbers (never scanned) always come last."""
+    if column == "platform":
+        return sorted(rows, key=lambda row: row.folder.casefold(), reverse=descending)
+    known = [row for row in rows if getattr(row, column) is not None]
+    unknown = [row for row in rows if getattr(row, column) is None]
+    known.sort(key=lambda row: (getattr(row, column), row.folder.casefold()), reverse=descending)
+    return known + sorted(unknown, key=lambda row: row.folder.casefold())

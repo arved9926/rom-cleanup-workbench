@@ -36,8 +36,8 @@ from translations import LANGUAGE_NAMES, current_language, tr
 # The settings file, the views, sizes and folders are shared with the terminal version.
 from workbench_state import (  # noqa: F401  (SETTINGS_PATH and the scope names belong to this module's interface)
     DEFAULT_SCOPE, SCOPE_ALL_FILES, SCOPE_MARKED, SCOPE_PROBLEMS, SETTINGS_PATH, add_confirmed_saves,
-    format_kb, load_confirmed_saves, load_hide_empty, load_last_collection, load_scope, save_hide_empty,
-    save_last_collection, save_scope,
+    format_kb, load_confirmed_saves, load_hide_empty, load_last_collection, load_overview_sort, load_scope,
+    save_hide_empty, save_last_collection, save_overview_sort, save_scope,
 )
 from workbench_state import SCOPES as _SCOPES
 from workbench_state import drives as _drives
@@ -60,6 +60,7 @@ _HIGHLIGHT_STYLE = "Highlight.TLabel"
 _HIGHLIGHT_FRAME_STYLE = "Highlight.TFrame"
 _APP_NAME = "Rom Cleanup Workbench"
 _LINE_COLOR = "#888888"
+_CHANGED_TEXT = "#e3b341"  # yellow: a platform that changed since its last scan
 # The list has no real dividing lines, so each line is a row of its own.
 _LINE_TEXT = "─" * 400
 _SEPARATOR_SUFFIX = "s"
@@ -527,12 +528,15 @@ class OverviewPanel:
         self.cancel_button = ttk.Button(heading, text=tr("settings.cancel"), command=window.cancel_scan_all)
         ttk.Label(heading, text=tr("overview.title"), font=window.bold_font, foreground=_KEEP_TEXT).pack(side="left")
 
+        self.sort_column, self.sort_descending = load_overview_sort(window.settings_path)
         self.tree = ttk.Treeview(frame, columns=self._COLUMNS, selectmode="browse")
-        self.tree.heading("#0", text=tr("overview.platform"), anchor="w")
+        self.tree.heading("#0", text=tr("overview.platform"), anchor="w", command=lambda: self.sort_by("platform"))
         self.tree.column("#0", width=200, stretch=True)
         for column in self._COLUMNS:
             numeric = column in ("files", "games", "marked", "problematic")
             self.tree.heading(column, text=tr(f"overview.{column}"), anchor="e" if numeric else "w")
+            if numeric:  # a click on the heading sorts by this column, a second click the other way round
+                self.tree.heading(column, command=lambda column=column: self.sort_by(column))
             self.tree.column(column, width=110 if numeric else 200, anchor="e" if numeric else "w",
                              stretch=not numeric)
         self.tree.grid(row=1, column=0, sticky="nsew")
@@ -542,6 +546,9 @@ class OverviewPanel:
 
         self._fit_columns(rows)
         self.tree.tag_configure("total", font=window.bold_font)
+        self.tree.tag_configure("separator", foreground=_LINE_COLOR)
+        self.tree.tag_configure("changed", foreground=_CHANGED_TEXT)
+        self._show_sort_arrow()
         self._fill()
         self.tree.bind("<Double-Button-1>", self._open_clicked)
         self.tree.bind("<Return>", lambda _event: self.open() or "break")
@@ -550,8 +557,31 @@ class OverviewPanel:
         self.tree.bindtags((str(self.tree), self.tree.winfo_class(), str(window.root), "all"))
 
     def visible(self) -> list:
-        """The rows shown: all, or without the folders that hold no game file."""
-        return [row for row in self.rows.values() if row.has_games or not self.hide_empty.get()]
+        """The rows shown, in the chosen order: all, or without the folders that hold no game file."""
+        from workbench_db import sort_rows
+
+        rows = [row for row in self.rows.values() if row.has_games or not self.hide_empty.get()]
+        return sort_rows(rows, self.sort_column, self.sort_descending)
+
+    def sort_by(self, column: str) -> None:
+        """A click on a column heading: sorts by it; a second click turns the order round. Remembered."""
+        if column == self.sort_column:
+            self.sort_descending = not self.sort_descending
+        else:
+            self.sort_column, self.sort_descending = column, False
+        save_overview_sort(self.window.settings_path, self.sort_column, self.sort_descending)
+        self._show_sort_arrow()
+        self._fill()
+
+    def _show_sort_arrow(self) -> None:
+        arrow = " ▼" if self.sort_descending else " ▲"
+        self.tree.heading("#0", text=tr("overview.platform") + (arrow if self.sort_column == "platform" else ""))
+        for column in ("files", "games", "marked", "problematic"):
+            self.tree.heading(column, text=tr(f"overview.{column}") + (arrow if self.sort_column == column else ""))
+
+    @staticmethod
+    def _tags(row) -> tuple:
+        return ("changed",) if row.state == "changed" else ()
 
     def _fill(self) -> None:
         """Shows the visible rows and the total; the highlighted platform stays if it is still shown."""
@@ -560,7 +590,10 @@ class OverviewPanel:
         visible = self.visible()
         for row in visible:
             self.tree.insert("", "end", row.folder, text=row.folder + (" *" if row.has_own_config else ""),
-                             values=self._values(row))
+                             values=self._values(row), tags=self._tags(row))
+        # A line above the total, as between the games of the list.
+        self.tree.insert("", "end", self._LINE, text=_LINE_TEXT, values=(_LINE_TEXT,) * len(self._COLUMNS),
+                         tags=("separator",))
         self.tree.insert("", "end", self._TOTAL, text=tr("overview.total"), tags=("total",))
         totals = self._update_total()
         first = selected if selected in {row.folder for row in visible} else (visible[0].folder if visible else None)
@@ -579,6 +612,7 @@ class OverviewPanel:
         self._hide_empty_changed()
 
     _TOTAL = "*total*"  # no folder name: * is not allowed in Windows names
+    _LINE = "*line*"
 
     @staticmethod
     def _values(row) -> tuple:
@@ -597,7 +631,7 @@ class OverviewPanel:
             return
         self.rows[row.folder] = row
         if self.tree.exists(row.folder):
-            self.tree.item(row.folder, values=self._values(row))
+            self.tree.item(row.folder, values=self._values(row), tags=self._tags(row))
         self._update_total()
 
     def _fit_columns(self, rows) -> None:

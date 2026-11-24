@@ -49,7 +49,8 @@ from textual.widgets.data_table import ColumnKey
 from translations import LANGUAGE_NAMES, current_language, tr
 from workbench_state import (
     SCOPES, SETTINGS_PATH, add_confirmed_saves, drives, format_kb, load_confirmed_saves, load_hide_empty,
-    load_last_collection, load_scope, save_hide_empty, save_last_collection, save_scope,
+    load_last_collection, load_overview_sort, load_scope, save_hide_empty, save_last_collection, save_overview_sort,
+    save_scope,
     scope_flags, subfolders,
 )
 
@@ -642,6 +643,7 @@ class OverviewScreen(Screen):
         Binding("f,F", "folder", show=False),
     ]
     TOTAL = "*total*"
+    LINE = "*line*"
 
     def __init__(self, root: Path, rows, message: str | None = None):
         super().__init__()
@@ -669,18 +671,50 @@ class OverviewScreen(Screen):
         yield Static("", id="overview-status", markup=False)
 
     def on_mount(self) -> None:
+        self.sort_column, self.sort_descending = load_overview_sort(self.app.settings_path)
         table = self.query_one("#overview-table", DataTable)
         table.add_column(tr("overview.platform"), key="platform")
         for column in ("files", "games", "marked", "problematic", "last_scan", "state"):
             table.add_column(tr(f"overview.{column}"), key=column)
+        self._show_sort_arrow()
         self.query_one("#overview-cancel", Button).display = False
         self._fill(self.message)
         table.focus()
 
     def visible(self) -> list:
-        """The rows shown: all, or without the folders that hold no game file."""
+        """The rows shown, in the chosen order: all, or without the folders that hold no game file."""
+        from workbench_db import sort_rows
+
         hide = self.query_one("#overview-hide", Checkbox).value
-        return [row for row in self.rows.values() if row.has_games or not hide]
+        rows = [row for row in self.rows.values() if row.has_games or not hide]
+        return sort_rows(rows, self.sort_column, self.sort_descending)
+
+    _SORTABLE = ("platform", "files", "games", "marked", "problematic")
+
+    def on_data_table_header_selected(self, event: DataTable.HeaderSelected) -> None:
+        """A click on a column heading sorts by it; a second click turns the order round."""
+        event.stop()
+        if event.column_key.value in self._SORTABLE:
+            self.sort_by(event.column_key.value)
+
+    def sort_by(self, column: str) -> None:
+        if column == self.sort_column:
+            self.sort_descending = not self.sort_descending
+        else:
+            self.sort_column, self.sort_descending = column, False
+        save_overview_sort(self.app.settings_path, self.sort_column, self.sort_descending)
+        self._show_sort_arrow()
+        self._fill()
+
+    def _show_sort_arrow(self) -> None:
+        table = self.query_one("#overview-table", DataTable)
+        arrow = " v" if self.sort_descending else " ^"
+        if not getattr(self.app, "ascii", False):
+            arrow = " ▼" if self.sort_descending else " ▲"
+        for column in self._SORTABLE:
+            text = tr(f"overview.{column}") + (arrow if column == self.sort_column else "")
+            table.columns[column].label = Text(text)  # a ColumnKey equals its text
+        table.refresh()
 
     def _fill(self, message: str | None = None) -> None:
         """Shows the visible rows and the total; the highlighted platform stays if it is still shown."""
@@ -691,6 +725,16 @@ class OverviewScreen(Screen):
         for row in visible:
             table.add_row(Text(row.folder + (" *" if row.has_own_config else "")), *self._cells(row), key=row.folder)
         totals = self._totals()
+        # A line above the total, as wide as each column's widest entry.
+        names = [tr("overview.total")] + [row.folder + (" *" if row.has_own_config else "") for row in visible]
+        widths = [max(cell_len(text) for text in names) + 2]
+        for index in range(6):
+            texts = [str(self._cells(row)[index]) for row in visible] + [tr(f"overview.{column}") for column in
+                                                                          ("files", "games", "marked", "problematic",
+                                                                           "last_scan", "state")[index:index + 1]]
+            widths.append(max(cell_len(text) for text in texts) + 2)
+        line = "-" if getattr(self.app, "ascii", False) else "─"
+        table.add_row(*(Text(line * width, style="#888888") for width in widths), key=self.LINE)
         table.add_row(Text(tr("overview.total"), style="bold"),
                       *(Text(_count(value), justify="right", style="bold") for value in totals),
                       Text(""), Text(""), key=self.TOTAL)
@@ -712,10 +756,12 @@ class OverviewScreen(Screen):
 
     _NUMBERS = ("files", "games", "marked", "problematic")
 
-    @staticmethod
-    def _cells(row) -> list[Text]:
+    def _cells(self, row) -> list[Text]:
+        # "changed" in yellow: the platform should be scanned again.
+        yellow = "#ffff55" if getattr(self.app, "colors16", False) else "#e3b341"
+        state = Text(tr(f"overview.state.{row.state}"), style=yellow if row.state == "changed" else "")
         return [*(Text(_count(getattr(row, name)), justify="right") for name in OverviewScreen._NUMBERS),
-                Text(_when(row.last_scan)), Text(tr(f"overview.state.{row.state}"))]
+                Text(_when(row.last_scan)), state]
 
     def _totals(self) -> list[int]:
         return [sum(getattr(row, name) or 0 for row in self.visible()) for name in self._NUMBERS]
