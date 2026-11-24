@@ -14,31 +14,54 @@ Das Programm spricht Englisch, Deutsch, Italienisch, Spanisch, Französisch und 
 
 ## Installation
 
+Ein GitHub-Konto brauchst du nicht. Jeder Befehl steht in einem eigenen Kasten; gib ihn so ein und drücke Enter.
+
 ### Windows
 
-1. **Python installieren:** Python 3.10 oder neuer von [python.org/downloads](https://www.python.org/downloads/) herunterladen und installieren. Bietet das Installationsprogramm „Add python.exe to PATH“ an, diese Option anhaken. `tkinter` für das Fenster ist dabei. Danach in einem neuen Terminal prüfen:
+Alle Befehle gibst du in PowerShell ein.
+
+1. **Prüfen, ob Python installiert ist:**
 
    ```powershell
    python --version
    ```
 
-2. **Das Programm herunterladen:** Ohne Git geht es am einfachsten als ZIP-Datei. Entweder im Browser: Auf der [GitHub-Seite](https://github.com/arved9926/rom-cleanup-workbench) die grüne Schaltfläche **Code** und dann **Download ZIP** wählen, die Datei `rom-cleanup-workbench-main.zip` im Explorer mit der rechten Maustaste anklicken, **Alle extrahieren...** wählen und den entpackten Ordner `rom-cleanup-workbench-main` in `rom-cleanup-workbench` umbenennen. Oder dasselbe in PowerShell:
+   - **Es erscheint `Python 3.10` oder höher:** Python ist da, weiter mit Schritt 2.
+   - **Es erscheint eine Fehlermeldung oder eine ältere Version:** Python 3.10 oder neuer von [python.org/downloads](https://www.python.org/downloads/) herunterladen und installieren. Bietet das Installationsprogramm „Add python.exe to PATH“ an, diese Option anhaken. `tkinter` für das Fenster ist dabei. Danach ein neues PowerShell-Fenster öffnen und die Prüfung wiederholen.
+
+2. **Prüfen, ob Git installiert ist:**
 
    ```powershell
-   Invoke-WebRequest https://github.com/arved9926/rom-cleanup-workbench/archive/refs/heads/main.zip -OutFile rom-cleanup-workbench.zip
-   Expand-Archive rom-cleanup-workbench.zip -DestinationPath .
-   Rename-Item rom-cleanup-workbench-main rom-cleanup-workbench
+   git --version
+   ```
+
+   - **Es erscheint eine Versionsnummer, zum Beispiel `git version 2.47.0`:** Das Programm mit Git herunterladen:
+
+     ```powershell
+     git clone https://github.com/arved9926/rom-cleanup-workbench.git
+     ```
+
+   - **Es erscheint eine Fehlermeldung:** Das Programm als ZIP-Datei herunterladen. Im Browser geht das auf der [GitHub-Seite](https://github.com/arved9926/rom-cleanup-workbench) mit **Code** und dann **Download ZIP**; danach die Datei mit der rechten Maustaste entpacken (**Alle extrahieren...**) und den Ordner `rom-cleanup-workbench-main` in `rom-cleanup-workbench` umbenennen. Oder in PowerShell, Befehl für Befehl:
+
+     ```powershell
+     Invoke-WebRequest https://github.com/arved9926/rom-cleanup-workbench/archive/refs/heads/main.zip -OutFile rom-cleanup-workbench.zip
+     ```
+
+     ```powershell
+     Expand-Archive rom-cleanup-workbench.zip -DestinationPath .
+     ```
+
+     ```powershell
+     Rename-Item rom-cleanup-workbench-main rom-cleanup-workbench
+     ```
+
+3. **In den Programmordner wechseln:**
+
+   ```powershell
    cd "rom-cleanup-workbench\Rom Cleanup Workbench"
    ```
 
-   Wer Git installiert hat, kann das Repository stattdessen klonen:
-
-   ```powershell
-   git clone https://github.com/arved9926/rom-cleanup-workbench.git
-   cd "rom-cleanup-workbench\Rom Cleanup Workbench"
-   ```
-
-   Das Programm liegt im Ordner `Rom Cleanup Workbench`. Für das Fenster sind keine weiteren Pakete nötig. Nur wer unter Windows die Terminal-Version nutzen will, installiert zusätzlich Textual:
+   Für das Fenster sind keine weiteren Pakete nötig. Nur wer unter Windows die Terminal-Version nutzen will, installiert zusätzlich Textual:
 
    ```powershell
    python -m pip install textual==8.2.8
@@ -46,33 +69,66 @@ Das Programm spricht Englisch, Deutsch, Italienisch, Spanisch, Französisch und 
 
 ### Linux
 
-1. **Python installieren:** Meist ist Python 3 schon da (`python3 --version`). Sonst unter Debian oder Ubuntu:
+Alle Befehle gibst du in einem Terminal ein. Die Beispiele gelten für Debian und Ubuntu.
+
+1. **Prüfen, ob Python installiert ist:**
 
    ```bash
-   sudo apt install python3 python3-venv wget unzip
+   python3 --version
    ```
+
+   - **Es erscheint `Python 3.10` oder höher:** Python ist da, weiter mit Schritt 2.
+   - **Es erscheint eine Fehlermeldung oder eine ältere Version:** Python installieren:
+
+     ```bash
+     sudo apt install python3 python3-venv
+     ```
 
    Das Paket `python3-tk` ist nur nötig, wenn du unter Linux mit grafischer Anzeige das Fenster statt der Terminal-Version nutzen willst.
 
-2. **Das Programm herunterladen:** Ohne Git als ZIP-Datei von GitHub laden und entpacken:
+2. **Prüfen, ob Git installiert ist:**
 
    ```bash
-   wget https://github.com/arved9926/rom-cleanup-workbench/archive/refs/heads/main.zip -O rom-cleanup-workbench.zip
-   unzip rom-cleanup-workbench.zip
-   mv rom-cleanup-workbench-main rom-cleanup-workbench
+   git --version
    ```
 
-   Wer Git installiert hat (`sudo apt install git`), kann das Repository stattdessen klonen:
+   - **Es erscheint eine Versionsnummer:** Das Programm mit Git herunterladen:
 
-   ```bash
-   git clone https://github.com/arved9926/rom-cleanup-workbench.git
-   ```
+     ```bash
+     git clone https://github.com/arved9926/rom-cleanup-workbench.git
+     ```
 
-3. **Textual in einer virtuellen Umgebung installieren:**
+   - **Es erscheint eine Fehlermeldung:** Das Programm als ZIP-Datei herunterladen und entpacken, Befehl für Befehl:
+
+     ```bash
+     sudo apt install wget unzip
+     ```
+
+     ```bash
+     wget https://github.com/arved9926/rom-cleanup-workbench/archive/refs/heads/main.zip -O rom-cleanup-workbench.zip
+     ```
+
+     ```bash
+     unzip rom-cleanup-workbench.zip
+     ```
+
+     ```bash
+     mv rom-cleanup-workbench-main rom-cleanup-workbench
+     ```
+
+3. **In den Programmordner wechseln:**
 
    ```bash
    cd "rom-cleanup-workbench/Rom Cleanup Workbench"
+   ```
+
+4. **Textual in einer virtuellen Umgebung installieren:**
+
+   ```bash
    python3 -m venv ~/venvs/rom-cleanup-workbench
+   ```
+
+   ```bash
    ~/venvs/rom-cleanup-workbench/bin/pip install textual==8.2.8
    ```
 
@@ -80,10 +136,13 @@ Das Programm spricht Englisch, Deutsch, Italienisch, Spanisch, Französisch und 
 
 ### Windows
 
-Ein Terminal (zum Beispiel PowerShell) im Ordner `Rom Cleanup Workbench` öffnen und das Programm mit dem Ordner deiner Spiele starten:
+Ein Terminal (zum Beispiel PowerShell) öffnen, in den Ordner `Rom Cleanup Workbench` wechseln und das Programm mit dem Ordner deiner Spiele starten:
 
 ```powershell
 cd "rom-cleanup-workbench\Rom Cleanup Workbench"
+```
+
+```powershell
 python rom_cleanup_workbench.py "D:\Games"
 ```
 
@@ -95,6 +154,9 @@ In den Ordner `Rom Cleanup Workbench` wechseln und das Programm mit der Python-V
 
 ```bash
 cd "rom-cleanup-workbench/Rom Cleanup Workbench"
+```
+
+```bash
 ~/venvs/rom-cleanup-workbench/bin/python rom_cleanup_workbench.py ~/roms
 ```
 
