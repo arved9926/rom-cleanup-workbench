@@ -345,7 +345,8 @@ def collection_root(directory: Path) -> Path | None:
 
 # Raised whenever the rules decide differently, so that the overview counts again (no scan needed).
 # 2: save files stay only next to a kept file of their name (2026-11-24).
-RULES_VERSION = 2
+# 3: a delete keyword leaves "(Japan, USA)" alone when USA is in the priority list (2026-11-24).
+RULES_VERSION = 3
 
 
 def config_key(config: Config) -> str:

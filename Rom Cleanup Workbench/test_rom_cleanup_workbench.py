@@ -1060,6 +1060,41 @@ class ShortRegionTests(RedundanzTestCase):
             self.assertEqual(shipped["region_aliases"][region], aliases, region)
 
 
+class MultiRegionKeywordTests(RedundanzTestCase):
+    """A delete keyword does not remove a release that is also one of the listed regions."""
+
+    def setUp(self):
+        super().setUp()
+        self.config = rf.replace(self.config, delete_tags=["Japan", "Hack"])
+
+    def test_japan_and_usa_stays_japan_alone_goes(self):
+        self.write("1080 Snowboarding (Japan, USA) (En,Ja).n64", b"a" * 4096)
+        self.write("Other (Japan).n64", b"b" * 4096)
+        results = self.scan()
+        by_title = {result.title: result for result in results}
+        snowboarding = next(result for title, result in by_title.items() if "Snowboarding" in title)
+        self.assertEqual(self.names(snowboarding.keep), ["1080 Snowboarding (Japan, USA) (En,Ja).n64"])
+        self.assertEqual(self.names(by_title["Other"].marked), ["Other (Japan).n64"])
+
+    def test_the_other_region_must_be_in_the_list(self):
+        self.write("Title (Japan, Korea).n64", b"a" * 4096)  # Korea is not in the priority list
+        self.assertEqual(self.names(self.single().marked), ["Title (Japan, Korea).n64"])
+
+    def test_an_alias_counts_and_the_order_does_not_matter(self):
+        self.write("Title (U, Japan).n64", b"a" * 4096)
+        self.assertEqual(self.names(self.single().keep), ["Title (U, Japan).n64"])
+
+    def test_a_keyword_inside_a_longer_entry_still_applies(self):
+        self.write("Title (USA, Japan Hack).n64", b"a" * 4096)
+        self.assertEqual(self.names(self.single().marked), ["Title (USA, Japan Hack).n64"])
+
+    def test_the_japan_and_usa_release_counts_as_usa(self):
+        self.write("Title (Japan, USA).n64", b"a" * 4096)
+        self.write("Title (Europe).n64", b"b" * 4096)
+        result = self.single()  # USA > Europe > Japan > none in the test configuration
+        self.assertEqual(self.names(result.keep), ["Title (Japan, USA).n64"])
+
+
 class SaveFileTests(RedundanzTestCase):
     """An emulator loads a save only with exactly the ROM's name: other saves are marked."""
 

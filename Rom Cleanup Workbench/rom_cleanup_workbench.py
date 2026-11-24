@@ -395,10 +395,24 @@ class Config:
                     best = max(best, tuple(parts))
         return best
 
-    def delete_reason(self, tags: list[str]) -> str | None:
-        """The first delete keyword found as a whole word anywhere in a bracket."""
+    def delete_reason(self, tags: list[str], groups: list[list[str]] | None = None) -> str | None:
+        """The first delete keyword found as a whole word anywhere in a bracket.
+
+        Exception: in a bracket of several entries, an entry that is just the keyword does not count
+        if the bracket also names a region of the priority list. "(Japan, USA)" is the USA release
+        too, so the keyword Japan leaves it alone when USA is in the list; "(Japan)" still goes.
+        groups: the brackets; without them every tag counts as a bracket of its own.
+        """
+        groups = groups if groups is not None else [[tag] for tag in tags]
         for name in self.delete_tags:
-            if any(_contains_word(tag, name) for tag in tags):
+            for group in groups:
+                hits = [part for part in group if _contains_word(part, name)]
+                if not hits:
+                    continue
+                only_the_word = all(self.canonical(part) == self.canonical(name) for part in hits)
+                listed = [part for part in group if part not in hits and self.is_region(self.canonical(part))]
+                if only_the_word and listed:
+                    continue
                 return name
         return None
 
@@ -747,7 +761,7 @@ def _suspected_save_files(entries: list[Entry], config: Config) -> list[Entry]:
     suspected = []
     for entry in entries:
         size = entry.content_size()
-        if size is None or config.delete_reason(entry.tags) or entry.zip_defective:
+        if size is None or config.delete_reason(entry.tags, entry.tag_groups) or entry.zip_defective:
             continue
         others = [other for other in entries if other is not entry and other.content_size() is not None]
         if not others:
@@ -815,7 +829,7 @@ def analyze_group(entries: list[Entry], config: Config) -> GroupResult:
 
     # Save files are no ROMs: they never compete with them (a delete keyword still applies).
     saves = [entry for entry in entries
-             if save_file_stem(entry.path) is not None and not config.delete_reason(entry.tags)]
+             if save_file_stem(entry.path) is not None and not config.delete_reason(entry.tags, entry.tag_groups)]
     entries = [entry for entry in entries if not any(entry is save for save in saves)]
     suspected = _suspected_save_files(entries, config)
     entries = [entry for entry in entries if not any(entry is other for other in suspected)]
@@ -824,7 +838,7 @@ def analyze_group(entries: list[Entry], config: Config) -> GroupResult:
     candidates: list[Entry] = []
     unreadable: list[Entry] = []
     for entry in entries:
-        reason = config.delete_reason(entry.tags)
+        reason = config.delete_reason(entry.tags, entry.tag_groups)
         if reason:
             entry.notes.append(Note("extra_info", reason=reason))
             marked.append(entry)
