@@ -262,12 +262,30 @@ class SettingsPanel:
     """
 
     def __init__(self, window: "ReviewWindow"):
+        from workbench_db import settings_for
+
         self.window = window
-        self.values = window.config_file.read()  # A broken file raises ValueError before anything opens.
+        # A platform of a collection may have settings of its own (stored in the database).
+        self.root_folder, self.platform = window.settings_platform()
+        # A broken file raises ValueError before anything opens.
+        self.values, own = settings_for(window.config_file, self.root_folder, self.platform)
+        self.own_before = own
         frame = self.frame = ttk.Frame(window.middle, padding=(16, 8, 16, 8))
         frame.columnconfigure(0, weight=1, uniform="half")
         frame.columnconfigure(1, weight=1, uniform="half")
-        frame.rowconfigure(1, weight=1)
+        frame.rowconfigure(2, weight=1)
+        self.own = tk.BooleanVar(frame, own)
+        if self.platform is not None:
+            scope = ttk.Frame(frame)
+            scope.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(0, 8))
+            ttk.Label(scope, text=tr("settings.scope_label")).pack(side="left", padx=(0, 16))
+            self.scope_buttons = [
+                ttk.Radiobutton(scope, text=text, variable=self.own, value=value, command=self._scope_changed)
+                for text, value in ((tr("settings.scope_default"), False),
+                                    (tr("settings.scope_own", platform=self.platform), True))
+            ]
+            for button in self.scope_buttons:
+                button.pack(side="left", padx=(0, 16))
         heading = ttk.Frame(frame)
         heading.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 8))
         # Save and Cancel at the top, so that they stay visible even in a low window.
@@ -278,7 +296,7 @@ class SettingsPanel:
 
         # Two columns side by side, so that the region list keeps its height in a low window.
         left = ttk.Frame(frame)
-        left.grid(row=1, column=0, sticky="nsew", padx=(0, 16))
+        left.grid(row=2, column=0, sticky="nsew", padx=(0, 16))
         left.columnconfigure(0, weight=1)
         left.rowconfigure(1, weight=1, minsize=4 * window._row_height())
         # Wraps like the labels on the right: the text names the keywords after none and is long.
@@ -307,7 +325,7 @@ class SettingsPanel:
         ttk.Button(left, text=tr("settings.add"), command=self.add).grid(row=2, column=1, sticky="ew", padx=(8, 0), pady=(8, 0))
 
         right = ttk.Frame(frame)
-        right.grid(row=1, column=1, sticky="nsew")
+        right.grid(row=2, column=1, sticky="nsew")
         right.columnconfigure(0, weight=1)
         right.rowconfigure(8, weight=1)
         ttk.Label(right, text=tr("settings.language")).grid(row=0, column=0, sticky="w", pady=(0, 4))
@@ -359,6 +377,17 @@ class SettingsPanel:
 
     def prefers_zip(self) -> bool:
         return bool(self.prefer_zip.get())
+
+    def _scope_changed(self) -> None:
+        """Default or own: the fields show the values of that choice (own starts from the default)."""
+        from workbench_db import settings_for
+
+        values, _own = settings_for(self.window.config_file, self.root_folder, self.platform, own=self.own.get())
+        self.regions.delete(0, "end")
+        for region in values["region_priority"]:
+            self.regions.insert("end", region)
+        self.tags.set(", ".join(values["delete_tags"]))
+        self.prefer_zip.set(bool(values["prefer_zip"]))
 
     def _select(self, index: int) -> None:
         self.regions.selection_clear(0, "end")
@@ -441,7 +470,7 @@ class OverviewPanel:
         scrollbar = ttk.Scrollbar(frame, orient="vertical", command=self.tree.yview)
         scrollbar.grid(row=1, column=1, sticky="ns")
         self.tree.configure(yscrollcommand=scrollbar.set)
-        hint = ttk.Label(frame, text=tr("overview.hint"))
+        hint = ttk.Label(frame, text=tr("overview.hint") + " " + tr("overview.own_hint"))
         hint.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(8, 0))
         hint.bind("<Configure>", lambda event: hint.configure(wraplength=max(event.width, 1)))
 
@@ -451,7 +480,7 @@ class OverviewPanel:
             values = [row.files, row.games, row.marked, row.problematic]
             for index, value in enumerate(values):
                 totals[index] += value or 0
-            self.tree.insert("", "end", row.folder, text=row.folder, values=(
+            self.tree.insert("", "end", row.folder, text=row.folder + (" *" if row.has_own_config else ""), values=(
                 *(_count(value) for value in values),
                 _when(row.last_scan), tr(f"overview.state.{row.state}"),
             ))
@@ -1438,17 +1467,28 @@ class ReviewWindow:
         self.settings_panel = None
         self._hide_panel()
 
+    def settings_platform(self) -> tuple[Path | None, str | None]:
+        """(roms folder, platform) while a platform of a collection is open; else (None, None)."""
+        root, directory = self.collection_root, self.directory
+        if root is not None and directory is not None and directory != root and directory.parent == root:
+            return root, directory.name
+        return None, None
+
     def save_settings(self, panel: SettingsPanel) -> None:
         """Writes the settings; new rules (priority, tags, ZIP or plain) take effect at once through a new analysis."""
+        from workbench_db import save_settings_for
+
         language, regions, tags = panel.language_code(), panel.region_list(), panel.tag_list()
         prefer_zip = panel.prefers_zip()
+        own = panel.own.get()
         before = panel.values
         rules_changed = (regions != before["region_priority"] or tags != before["delete_tags"]
-                         or prefer_zip != before["prefer_zip"])
+                         or prefer_zip != before["prefer_zip"] or own != panel.own_before)
         if rules_changed and not self._may_discard_changes(tr("settings.discard")):
             return
         try:
-            self.config_file.write(language, regions, tags, prefer_zip)
+            save_settings_for(self.config_file, panel.root_folder, panel.platform, own, language, regions, tags,
+                              prefer_zip)
         except (OSError, ValueError) as error:
             messagebox.showerror(tr("settings.error_title"), str(error), parent=self.root)
             return

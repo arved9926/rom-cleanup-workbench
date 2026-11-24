@@ -1516,11 +1516,12 @@ def main(argv: list[str] | None = None) -> int:
         if args.delete_tag is not None:
             config = replace(config, delete_tags=args.delete_tag)
         source = "--priority" if args.priority else str(config_path or "")
-        from workbench_db import collection_root, open_platform
+        from workbench_db import collection_root, open_platform, platform_config
 
         root = collection_root(directory)
         if root is None:
             return Review(scan_directory(directory, config, progress), config, source)
+        config = platform_config(root, directory, config)  # a platform's own settings, if it has them
         results = open_platform(root, directory, config, progress, rescan=rescan, full=full)
         return Review(results, config, source, collection_root=root, directory=directory)
 

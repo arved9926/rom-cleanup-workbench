@@ -513,15 +513,16 @@ class OverviewRow:
 def overview(root: Path, config: Config) -> list[OverviewRow]:
     """The platforms of a collection; numbers computed with other settings are computed again (no scan)."""
     rows = []
-    key = config_key(config)
     with Collection(root) as collection:
         for directory in collection.platform_folders():
             name = directory.name
             state = collection.state(directory)
             row = collection.platform(name)
+            effective = with_own_settings(config, collection.own_config(name))
+            key = config_key(effective)
             if state != NOT_SCANNED and row.summary_key != key:
                 facts = collection.load_facts(name)
-                results = decide(directory, facts, config)
+                results = decide(directory, facts, effective)
                 collection.save_summary(name, *summary_of(results), key=key)
                 row = collection.platform(name)
             rows.append(OverviewRow(name, state, row.files, row.games, row.marked, row.problematic,
@@ -576,3 +577,64 @@ def add_confirmed_saves_to(root: Path, directory: Path, files: dict[str, int]) -
     """Remembers confirmed files (keyed as save_file_key does) in the platform's database."""
     with Collection(root) as collection:
         collection.add_confirmed(Path(directory).name, {Path(key).name: size for key, size in files.items()})
+
+
+# A platform's own settings --------------------------------------------------------------------
+
+OWN_KEYS = ("region_priority", "delete_tags", "prefer_zip")
+
+
+def with_own_settings(config: Config, own: dict | None) -> Config:
+    """The default configuration with the platform's own priority, delete keywords and ZIP choice."""
+    if not own:
+        return config
+    from dataclasses import replace
+
+    return replace(config, **{key: own[key] for key in OWN_KEYS if key in own})
+
+
+def platform_config(root: Path, directory: Path, config: Config) -> Config:
+    with Collection(root) as collection:
+        return with_own_settings(config, collection.own_config(Path(directory).name))
+
+
+def settings_for(config_file, root: Path | None, platform: str | None, own: bool | None = None) -> tuple[dict, bool]:
+    """The values the settings show: the default file, or a platform's own values.
+
+    own None: as stored; True/False: show those values (a new own configuration starts from the default).
+    Returns (values, own).
+    """
+    values = config_file.read()
+    if root is None or platform is None:
+        return values, False
+    with Collection(root) as collection:
+        stored = collection.own_config(platform)
+    if own is None:
+        own = stored is not None
+    if own and stored:
+        values = dict(values, **{key: stored[key] for key in OWN_KEYS if key in stored})
+    return values, bool(own)
+
+
+def save_settings_for(config_file, root: Path | None, platform: str | None, own: bool, language: str,
+                      region_priority: list[str], delete_tags: list[str], prefer_zip: bool) -> None:
+    """Saves the settings: into the default file, or as the platform's own (the language always into the file)."""
+    from rom_cleanup_workbench import Config, _clean_names
+    from translations import tr
+
+    if root is None or platform is None or not own:
+        config_file.write(language, region_priority, delete_tags, prefer_zip)
+        if root is not None and platform is not None:
+            with Collection(root) as collection:
+                collection.set_own_config(platform, None)
+        return
+    regions = _clean_names(region_priority)
+    if not regions:
+        raise ValueError(tr("settings.no_regions"))
+    tags = _clean_names(delete_tags)
+    Config(regions, {}, tags, [], prefer_zip=bool(prefer_zip))  # the same checks as for the file
+    current = config_file.read()
+    config_file.write(language, current["region_priority"], current["delete_tags"], current["prefer_zip"])
+    with Collection(root) as collection:
+        collection.set_own_config(platform, {"region_priority": regions, "delete_tags": tags,
+                                             "prefer_zip": bool(prefer_zip)})

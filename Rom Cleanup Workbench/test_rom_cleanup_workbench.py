@@ -1784,6 +1784,121 @@ class ConfirmedSavesInDatabaseTests(PlatformFromDatabaseTests):
         self.assertFalse((self.roms / ".rom_cleanup_workbench").exists())
 
 
+class OwnPlatformSettingsTests(OverviewWindowTests):
+    """Step 7: a default configuration plus, if wished, a platform's own priority, keywords and ZIP choice."""
+
+    def config_file(self):
+        path = self.roms.parent / "redundanz_config.json"
+        if not path.exists():
+            path.write_text('{"language": "en", "region_priority": ["USA", "none", "Japan"]}', encoding="utf-8")
+        return rf.ConfigFile(path)
+
+    def test_own_settings_are_stored_for_the_platform_only(self):
+        import workbench_db
+
+        self.fill()
+        config_file = self.config_file()
+        workbench_db.Collection(self.roms).close()
+        values, own = workbench_db.settings_for(config_file, self.roms, "nes")
+        self.assertFalse(own)
+        workbench_db.save_settings_for(config_file, self.roms, "nes", True, "en", ["Japan", "none", "USA"], [], False)
+        self.assertEqual(config_file.read()["region_priority"], ["USA", "none", "Japan"])  # the default stays
+        values, own = workbench_db.settings_for(config_file, self.roms, "nes")
+        self.assertTrue(own)
+        self.assertEqual(values["region_priority"], ["Japan", "none", "USA"])
+        self.assertEqual(workbench_db.settings_for(config_file, self.roms, "snes")[0]["region_priority"],
+                         ["USA", "none", "Japan"])
+        # back to the default: the own values are gone
+        workbench_db.save_settings_for(config_file, self.roms, "nes", False, "en", ["USA", "none", "Japan"], [], False)
+        self.assertFalse(workbench_db.settings_for(config_file, self.roms, "nes")[1])
+
+    def test_a_new_own_configuration_starts_from_the_default(self):
+        import workbench_db
+
+        config_file = self.config_file()
+        workbench_db.Collection(self.roms).close()
+        values, own = workbench_db.settings_for(config_file, self.roms, "nes", own=True)
+        self.assertTrue(own)
+        self.assertEqual(values["region_priority"], ["USA", "none", "Japan"])
+
+    def test_the_platform_and_the_overview_decide_with_the_own_settings(self):
+        import workbench_db
+
+        self.fill()
+        with workbench_db.Collection(self.roms) as collection:
+            collection.set_own_config("nes", {"region_priority": ["Japan", "none", "USA"]})
+        config = workbench_db.platform_config(self.roms, self.roms / "nes", self.config)
+        results = workbench_db.open_platform(self.roms, self.roms / "nes", config)
+        self.assertEqual([e.path.name for e in results[0].keep], ["Title (Japan).nes"])
+        rows = {row.folder: row for row in workbench_db.overview(self.roms, self.config)}
+        self.assertTrue(rows["nes"].has_own_config)
+        self.assertFalse(rows["snes"].has_own_config)
+
+    def test_the_window_offers_default_or_own_and_saves_own(self):
+        self.fill()
+        window = self.make_window(self.roms)
+        window.config_file = self.config_file()
+        window.open_folder(self.roms)
+        window.overview_panel.tree.selection_set("nes")
+        window.overview_panel.open()
+        self.wait(window)
+        window.open_settings()
+        panel = window.settings_panel
+        self.assertEqual(panel.platform, "nes")
+        self.assertEqual([button.cget("text") for button in panel.scope_buttons], ["Use the default", "Own for nes"])
+        panel.own.set(True)
+        panel._scope_changed()
+        panel.regions.delete(0, "end")
+        for region in ("Japan", "none", "USA"):
+            panel.regions.insert("end", region)
+        with mock.patch.object(window, "start_analysis") as analysis:
+            window.save_settings(panel)
+        analysis.assert_called_once()
+        import workbench_db
+
+        with workbench_db.Collection(self.roms) as collection:
+            self.assertEqual(collection.own_config("nes")["region_priority"], ["Japan", "none", "USA"])
+        self.assertEqual(window.config_file.read()["region_priority"], ["USA", "none", "Japan"])
+        window.show_overview()
+        self.assertEqual(window.overview_panel.tree.item("nes", "text"), "nes *")
+
+    def test_a_folder_on_its_own_has_no_choice(self):
+        self.write("nes", "Title (USA).nes", b"usa")
+        window = self.make_window(self.roms / "nes")
+        window.config_file = self.config_file()
+        window.open_folder(self.roms / "nes")
+        self.wait(window)
+        window.open_settings()
+        self.assertIsNone(window.settings_panel.platform)
+
+
+class OwnPlatformSettingsTerminalTests(OverviewTerminalTests):
+    async def test_the_terminal_settings_offer_default_or_own(self):
+        import workbench_db
+
+        config = self.roms.parent / "redundanz_config.json"
+        config.write_text('{"language": "en", "region_priority": ["USA", "none", "Japan"]}', encoding="utf-8")
+        app = self.tui.WorkbenchApp(self.analyze, self.roms, "all", config_file=rf.ConfigFile(config),
+                                    settings_path=self.settings, config_loader=lambda: self.config)
+        async with app.run_test(size=(140, 40)) as pilot:
+            await self.settle(app, pilot)
+            await pilot.press("enter")  # open nes
+            await self.settle(app, pilot)
+            await pilot.press("s")
+            await self.settle(app, pilot)
+            screen = app.screen
+            self.assertEqual(screen.platform, "nes")
+            screen.query_one("#scope-own").value = True
+            await pilot.pause()
+            self.assertTrue(screen.own)
+            screen.regions = ["Japan", "none", "USA"]
+            await pilot.press("ctrl+s")
+            await self.settle(app, pilot)
+            with workbench_db.Collection(self.roms) as collection:
+                self.assertEqual(collection.own_config("nes")["region_priority"], ["Japan", "none", "USA"])
+            self.assertEqual(rf.ConfigFile(config).read()["region_priority"], ["USA", "none", "Japan"])
+
+
 class RescanFlagTests(unittest.TestCase):
     """F5 asks for a new scan; analyses without the parameter (as in many tests) still work."""
 

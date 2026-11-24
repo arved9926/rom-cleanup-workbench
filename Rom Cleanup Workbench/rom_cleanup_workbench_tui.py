@@ -684,7 +684,8 @@ class OverviewScreen(Screen):
             yield Button(tr("overview.scan_all"), id="overview-scan-all", compact=True)
             yield Checkbox(tr("overview.full"), id="overview-full", compact=True)
             yield Button(tr("settings.cancel"), id="overview-cancel", compact=True)
-        yield Static(tr("overview.hint") + "  " + tr("overview.tui_keys"), id="overview-hint", markup=False)
+        yield Static(tr("overview.hint") + " " + tr("overview.own_hint") + "  " + tr("overview.tui_keys"),
+                     id="overview-hint", markup=False)
         yield Static("", id="overview-status", markup=False)
 
     def on_mount(self) -> None:
@@ -697,7 +698,8 @@ class OverviewScreen(Screen):
             values = [row.files, row.games, row.marked, row.problematic]
             for index, value in enumerate(values):
                 totals[index] += value or 0
-            table.add_row(Text(row.folder), *(Text(_count(value), justify="right") for value in values),
+            table.add_row(Text(row.folder + (" *" if row.has_own_config else "")),
+                          *(Text(_count(value), justify="right") for value in values),
                           Text(_when(row.last_scan)), Text(tr(f"overview.state.{row.state}")), key=row.folder)
         table.add_row(Text(tr("overview.total"), style="bold"),
                       *(Text(_count(value), justify="right", style="bold") for value in totals),
@@ -795,10 +797,15 @@ class SettingsScreen(Screen):
         Binding("ctrl+s", "save", show=False, priority=True),
     ]
 
-    def __init__(self, config_file):
+    def __init__(self, config_file, root_folder=None, platform=None):
         super().__init__()
         self.config_file = config_file
-        self.values = config_file.read()
+        from workbench_db import settings_for
+
+        # A platform of a collection may have settings of its own (stored in the database).
+        self.root_folder, self.platform = root_folder, platform
+        self.values, self.own = settings_for(config_file, root_folder, platform)
+        self.own_before = self.own
         self.regions = list(self.values["region_priority"])
         language = self.values["language"]
         self.language = language if language in LANGUAGE_NAMES else current_language()
@@ -809,6 +816,14 @@ class SettingsScreen(Screen):
             yield Static(tr("settings.file", path=self.config_file.path), id="settings-file", markup=False)
             yield Button(tr("settings.save"), id="settings-save", compact=True)
             yield Button(tr("settings.cancel"), id="settings-cancel", compact=True)
+        if self.platform is not None:
+            with Horizontal(id="scope-row"):
+                yield Static(tr("settings.scope_label"), id="scope-label", markup=False)
+                with RadioSet(id="scope"):
+                    for value, text in ((False, tr("settings.scope_default")),
+                                        (True, tr("settings.scope_own", platform=self.platform))):
+                        button = RadioButton(text, value=value == self.own, id=f"scope-{'own' if value else 'default'}")
+                        yield _plain_radio(button) if getattr(self.app, "ascii", False) else button
         with Horizontal(id="settings-columns"):
             with Vertical(id="settings-left"):
                 yield Static(tr("settings.regions"), id="regions-label", markup=False)
@@ -907,6 +922,20 @@ class SettingsScreen(Screen):
         event.stop()  # not the app's views
         if event.radio_set.id == "languages":
             self.language = event.pressed.id.removeprefix("language-")
+        elif event.radio_set.id == "scope":
+            self._scope_changed(event.pressed.id == "scope-own")
+
+    def _scope_changed(self, own: bool) -> None:
+        """Default or own: the fields show the values of that choice (own starts from the default)."""
+        from workbench_db import settings_for
+
+        self.own = own
+        values, _own = settings_for(self.config_file, self.root_folder, self.platform, own=own)
+        self.regions = list(values["region_priority"])
+        self._show_regions(0 if self.regions else None)
+        self.query_one("#tags", Input).value = ", ".join(values["delete_tags"])
+        self.query_one("#prefer-true", RadioButton).value = bool(values["prefer_zip"])
+        self.query_one("#prefer-false", RadioButton).value = not values["prefer_zip"]
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         event.stop()
@@ -1028,6 +1057,10 @@ class WorkbenchApp(App):
     #overview-hint { height: auto; margin-top: 1; color: #aaaaaa; }
     #overview-status { height: 1; margin-top: 1; }
     #prefer-label { margin-top: 1; margin-bottom: 1; }
+    #scope-row { height: auto; margin-bottom: 1; }
+    #scope-label { width: auto; padding: 0 2 0 0; }
+    #scope { height: auto; layout: horizontal; border: none; background: #000000; }
+    #scope > RadioButton { background: #000000; margin-right: 2; }
     #settings-hint { height: auto; margin-top: 1; }
 
     /* 16 colors and the Linux console (class -colors16, see wants_16_colors). The values are
@@ -1620,6 +1653,13 @@ class WorkbenchApp(App):
 
     # The overview -----------------------------------------------------------------------------
 
+    def _settings_platform(self):
+        """(roms folder, platform) while a platform of a collection is open; else (None, None)."""
+        root, directory = self.collection_root, self.directory
+        if root is not None and directory is not None and directory != root and directory.parent == root:
+            return root, directory.name
+        return None, None
+
     def overview_open(self) -> bool:
         return isinstance(self.screen, OverviewScreen)
 
@@ -1705,7 +1745,7 @@ class WorkbenchApp(App):
         if self.config_file is None or self.settings_open() or self.folder_open() or self.deleting:
             return
         try:
-            screen = SettingsScreen(self.config_file)
+            screen = SettingsScreen(self.config_file, *self._settings_platform())
         except ValueError as error:
             # A broken file is not overwritten: It may contain entries the settings do not know.
             self.show_message("error", tr("settings.error_title"), str(error))
@@ -1714,15 +1754,18 @@ class WorkbenchApp(App):
 
     def save_settings(self, screen: SettingsScreen) -> None:
         """Writes the settings, as the window does; a new priority or new tags take effect at once."""
+        from workbench_db import save_settings_for
+
         language, regions, tags = screen.language_code(), screen.region_list(), screen.tag_list()
         prefer_zip = screen.prefers_zip()
         before = screen.values
         rules_changed = (regions != before["region_priority"] or tags != before["delete_tags"]
-                         or prefer_zip != before["prefer_zip"])
+                         or prefer_zip != before["prefer_zip"] or screen.own != screen.own_before)
 
         def write() -> None:
             try:
-                self.config_file.write(language, regions, tags, prefer_zip)
+                save_settings_for(self.config_file, screen.root_folder, screen.platform, screen.own, language,
+                                  regions, tags, prefer_zip)
             except (OSError, ValueError) as error:
                 self.show_message("error", tr("settings.error_title"), str(error))  # the settings stay open
                 return
