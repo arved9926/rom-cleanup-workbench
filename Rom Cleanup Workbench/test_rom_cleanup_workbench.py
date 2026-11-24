@@ -240,8 +240,8 @@ class AnalyzeTests(RedundanzTestCase):
             "Katz und Maus (game name)\n"
             "+ Katz und Maus (USA).abc\n"
             "  + Marked for deletion\n"
-            "    - Katz und Maus (Europa).abc\n"
-            "    - Katz und Maus.abc (Japan).abc\n"
+            "    - Katz und Maus (Europa).abc  [Content differs from the kept files]\n"
+            "    - Katz und Maus.abc (Japan).abc  [Content differs from the kept files]\n"
             "    - Katz und Maus.zip  [Content identical to Katz und Maus (USA).abc]",
         )
 
@@ -335,8 +335,8 @@ class AnalyzeTests(RedundanzTestCase):
             "Title (USA) (Hacks).bin",
         ])
         notes = {entry.path.name: entry.notes for entry in result.marked}
-        self.assertIn("Extra info: Hack", notes["Title (USA) (Hack).bin"])
-        self.assertIn("Extra info: Hacks", notes["Title (USA) (Hacks).bin"])
+        self.assertIn("Deleted according to delete keyword (Hack) - as requested", notes["Title (USA) (Hack).bin"])
+        self.assertIn("Deleted according to delete keyword (Hacks) - as requested", notes["Title (USA) (Hacks).bin"])
 
     def test_proto_is_no_longer_deleted_by_default(self):
         self.write("Title (USA) (Proto).bin")
@@ -374,7 +374,7 @@ class AnalyzeTests(RedundanzTestCase):
         self.write("Title (USA) (v1.10).bin")
         result = self.single()
         self.assertEqual(self.names(result.keep), ["Title (USA) (v1.10).bin"])
-        self.assertEqual(result.marked[0].notes, ["Older version"])
+        self.assertEqual(result.marked[0].notes, ["Older version", "Content identical to Title (USA) (v1.10).bin"])
 
     def test_versions_in_game_name_are_grouped(self):
         self.write("Title v1.0.bin")
@@ -782,7 +782,7 @@ class NumberInFrontTests(RedundanzTestCase):
         self.write("Batman (USA).sfc", b"usa")
         result = self.single()
         self.assertEqual(self.names(result.keep), ["Batman (USA).sfc"])
-        self.assertIn("Extra info: Hack", result.marked[0].notes)
+        self.assertIn("Deleted according to delete keyword (Hack) - as requested", result.marked[0].notes)
 
     def test_newer_version_wins_over_the_number(self):
         self.write("073 Batman (USA).sfc", b"old")
@@ -924,6 +924,60 @@ class RenameNumberTests(RedundanzTestCase):
         return path
 
 
+class PlainContentNoteTests(RedundanzTestCase):
+    """A marked plain file says whether its content is kept elsewhere (information, no problem)."""
+
+    def test_athena_numbered_file_names_the_identical_kept_zip(self):
+        self.config = replace(self.config, prefer_zip=True)
+        rom = b"athena" * 1000
+        self.write_zip("Athena (USA).zip", {"Athena (USA).nes": rom})
+        self.write("Athena (USA).nes", rom)
+        self.write("168 Athena.nes", rom)
+        result = self.single()
+        self.assertEqual(self.names(result.keep), ["Athena (USA).zip"])
+        notes = {entry.path.name: list(entry.notes) for entry in result.marked}
+        self.assertIn("Content identical to Athena (USA).zip", notes["168 Athena.nes"])
+        self.assertIn("Content identical to Athena (USA).zip", notes["Athena (USA).nes"])
+
+    def test_a_different_region_says_its_content_differs_without_a_problem(self):
+        self.write("Title (USA).bin", b"usa!")
+        self.write("Title (Europe).bin", b"eur!")
+        result = self.single()
+        self.assertEqual(list(result.marked[0].notes), ["Content differs from the kept files"])
+        self.assertEqual(result.problems, [])
+
+    def test_the_same_content_under_another_region_is_named(self):
+        self.write("Title (USA).bin", b"same")
+        self.write("Title (World).bin", b"same")
+        result = self.single()
+        self.assertEqual(list(result.marked[0].notes), ["Content identical to Title (USA).bin"])
+
+    def test_no_checksum_without_a_kept_file_of_the_same_size(self):
+        self.write("Title (USA).bin", b"usa")
+        self.write("Title (Europe).bin", b"europe")
+        with mock.patch.object(rf.Entry, "sha256", side_effect=AssertionError("checksum computed")):
+            result = self.single()
+        self.assertEqual(list(result.marked[0].notes), ["Content differs from the kept files"])
+
+
+class DeleteKeywordNoteTests(RedundanzTestCase):
+    def test_a_game_only_of_keyword_files_gets_no_content_warning(self):
+        self.write_zip("Bubble Bobble by John's Program (Bubble Bobble Hack).zip", {"a.nes": b"hack"})
+        result = self.single()
+        self.assertEqual(result.keep, [])
+        self.assertEqual(list(result.marked[0].notes),
+                         ["Deleted according to delete keyword (Hack) - as requested"])
+        self.assertEqual(result.problems, ["No file is kept"])
+
+    def test_a_keyword_zip_next_to_kept_files_gets_no_warning_either(self):
+        self.write("Title (USA).bin", b"usa")
+        self.write_zip("Title (USA) (Hack).zip", {"a.bin": b"hack"})
+        result = self.single()
+        self.assertEqual(list(result.marked[0].notes),
+                         ["Deleted according to delete keyword (Hack) - as requested"])
+        self.assertEqual(result.problems, [])
+
+
 class DeleteKeywordAnywhereTests(RedundanzTestCase):
     """A delete keyword counts as a whole word anywhere inside a bracket."""
 
@@ -936,7 +990,7 @@ class DeleteKeywordAnywhereTests(RedundanzTestCase):
         self.assertEqual(self.names(result.keep), ["Title (USA).nes"])
         self.assertEqual(len(result.marked), 4)
         for entry in result.marked:
-            self.assertIn("Extra info: Hack", entry.notes)
+            self.assertIn("Deleted according to delete keyword (Hack) - as requested", entry.notes)
 
     def test_only_the_whole_word_counts(self):
         self.write("Title (USA).nes", b"u")
@@ -944,7 +998,7 @@ class DeleteKeywordAnywhereTests(RedundanzTestCase):
         self.write("Title (Shack).nes", b"s")
         result = self.single()
         notes = [note for entry in result.keep + result.marked for note in entry.notes]
-        self.assertFalse(any(note.startswith("Extra info") for note in notes))
+        self.assertFalse(any(note.startswith("Deleted according to delete keyword") for note in notes))
 
     def test_outside_brackets_nothing_counts(self):
         self.write("Hack Attack (USA).nes", b"h")
@@ -3835,7 +3889,7 @@ class TerminalVersionTests(unittest.IsolatedAsyncioTestCase):
             japan = next(row for row in rows if row[0].strip() == "- Title (Japan).bin")
             self.assertEqual(japan[1], "3 KB")
             proto = next(row for row in rows if row[0].strip() == "- Other (USA) (Hack).bin")
-            self.assertEqual(proto[2], "Extra info: Hack")
+            self.assertEqual(" ".join(proto[2].split()), "Deleted according to delete keyword (Hack) - as requested")
             self.assertIn("Showing: 2 of 2 games", self.text(app, "#status"))
             self.assertIn("Priority: USA > Europe", self.text(app, "#info"))
             self.assertEqual(len(app.files), 3)

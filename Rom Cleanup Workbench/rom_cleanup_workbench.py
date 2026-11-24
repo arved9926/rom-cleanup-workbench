@@ -636,6 +636,29 @@ def _covering_entries(entry: Entry, others: list[Entry]) -> list[Entry]:
     return covering
 
 
+def _plain_covered_by(entry: Entry, kept: list[Entry]) -> list[Entry] | None:
+    """The kept files that hold the content of a plain file; None if it cannot be read.
+
+    Sizes are compared first, so that a checksum is only computed when a kept file (or a file
+    inside a kept ZIP) has the same size: large collections stay fast.
+    """
+    size = entry.size()
+    if size is None:
+        return None
+    candidates = [
+        other for other in kept
+        if (other.is_zip and any(member.size == size for member in other.members or []))
+        or (not other.is_zip and other.size() == size)
+    ]
+    if not candidates:
+        return []
+    digest = entry.sha256()
+    if digest is None:
+        return None
+    content = ZipMember(entry.path.name, size, digest)
+    return [other for other in candidates if other.contains(content)]
+
+
 def _names(entries: list[Entry]) -> str:
     return ", ".join(entry.path.name for entry in entries)
 
@@ -846,6 +869,9 @@ def analyze_group(entries: list[Entry], config: Config) -> GroupResult:
     for entry in marked:
         if not entry.is_zip or entry.zip_error or not entry.members:
             continue
+        # Marked by a delete keyword: deleted as requested, its content is meant to go.
+        if _has_note(entry.notes, "extra_info"):
+            continue
         if _has_note(entry.notes, "identical"):
             continue
         covering = _covering_entries(entry, keep)
@@ -863,6 +889,17 @@ def analyze_group(entries: list[Entry], config: Config) -> GroupResult:
             entry.notes.append(Note("identical", names=_names(covering[:1])))
         else:
             entry.notes.append(Note("warning_plain"))
+
+    # Every other marked plain file: is its content kept? Information only, no problem:
+    # a regional version usually differs. Files marked by a delete keyword go as requested.
+    for entry in marked:
+        if entry.is_zip or entry in replaced_plain or _has_note(entry.notes, "extra_info"):
+            continue
+        covering = _plain_covered_by(entry, keep)
+        if covering:
+            entry.notes.append(Note("identical", names=_names(covering[:1])))
+        elif covering is not None:
+            entry.notes.append(Note("content_differs"))
 
     keep.extend(unreadable)
     keep.extend(suspected)
