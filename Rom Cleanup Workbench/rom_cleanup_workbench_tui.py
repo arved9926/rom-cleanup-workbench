@@ -950,11 +950,12 @@ class SettingsScreen(Screen):
                 yield Static(tr("settings.scope_label"), id="scope-label", markup=False)
                 with RadioSet(id="scope"):
                     for value, text in ((False, tr("settings.scope_default")),
-                                        (True, tr("settings.scope_own", platform=self.platform))):
+                                        (True, tr("settings.scope_own", platform=self.platform.upper()))):
                         button = RadioButton(text, value=value == self.own, id=f"scope-{'own' if value else 'default'}")
                         yield _plain_radio(button) if getattr(self.app, "ascii", False) else button
             # What "own" means, in a line of its own below the two choices.
-            yield Static(tr("settings.scope_own_hint", platform=self.platform), id="scope-hint", markup=False)
+            yield Static(tr("settings.scope_own_hint", platform=self.platform.upper()), id="scope-hint",
+                         markup=False)
         with Horizontal(id="settings-columns"):
             with Vertical(id="settings-left"):
                 yield Static(tr("settings.regions"), id="regions-label", markup=False)

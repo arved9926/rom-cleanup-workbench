@@ -2125,7 +2125,7 @@ class OwnPlatformSettingsTests(OverviewWindowBase):
         window.open_settings()
         panel = window.settings_panel
         self.assertEqual(panel.platform, "nes")
-        self.assertEqual([button.cget("text") for button in panel.scope_buttons], ["Use the default", "Own for nes"])
+        self.assertEqual([button.cget("text") for button in panel.scope_buttons], ["General settings", "NES platform-specific settings"])
         self.assertTrue(panel.location_label.cget("text").startswith("File: "))
         panel.own.set(True)
         panel._scope_changed()

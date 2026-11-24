@@ -285,12 +285,12 @@ class SettingsPanel:
             self.scope_buttons = [
                 ttk.Radiobutton(scope, text=text, variable=self.own, value=value, command=self._scope_changed)
                 for text, value in ((tr("settings.scope_default"), False),
-                                    (tr("settings.scope_own", platform=self.platform), True))
+                                    (tr("settings.scope_own", platform=self.platform.upper()), True))
             ]
             for column, button in enumerate(self.scope_buttons, start=1):
                 button.grid(row=0, column=column, sticky="w", padx=(0, 16))
             # What "own" means, in a line of its own below the two choices.
-            scope_hint = ttk.Label(scope, text=tr("settings.scope_own_hint", platform=self.platform),
+            scope_hint = ttk.Label(scope, text=tr("settings.scope_own_hint", platform=self.platform.upper()),
                                    foreground=_LIGHT_GRAY)
             scope_hint.grid(row=1, column=1, columnspan=3, sticky="ew", pady=(4, 0))
             scope_hint.bind("<Configure>", lambda event: scope_hint.configure(wraplength=max(event.width, 1)))
