@@ -693,14 +693,9 @@ class OverviewScreen(Screen):
         table.add_column(tr("overview.platform"), key="platform")
         for column in ("files", "games", "marked", "problematic", "last_scan", "state"):
             table.add_column(tr(f"overview.{column}"), key=column)
-        totals = [0, 0, 0, 0]
         for row in self.rows.values():
-            values = [row.files, row.games, row.marked, row.problematic]
-            for index, value in enumerate(values):
-                totals[index] += value or 0
-            table.add_row(Text(row.folder + (" *" if row.has_own_config else "")),
-                          *(Text(_count(value), justify="right") for value in values),
-                          Text(_when(row.last_scan)), Text(tr(f"overview.state.{row.state}")), key=row.folder)
+            table.add_row(Text(row.folder + (" *" if row.has_own_config else "")), *self._cells(row), key=row.folder)
+        totals = self._totals()
         table.add_row(Text(tr("overview.total"), style="bold"),
                       *(Text(_count(value), justify="right", style="bold") for value in totals),
                       Text(""), Text(""), key=self.TOTAL)
@@ -708,6 +703,28 @@ class OverviewScreen(Screen):
         self.query_one("#overview-status", Static).update(
             self.message or tr("overview.status", platforms=len(self.rows), files=_count(totals[0])))
         table.focus()
+
+    _NUMBERS = ("files", "games", "marked", "problematic")
+
+    @staticmethod
+    def _cells(row) -> list[Text]:
+        return [*(Text(_count(getattr(row, name)), justify="right") for name in OverviewScreen._NUMBERS),
+                Text(_when(row.last_scan)), Text(tr(f"overview.state.{row.state}"))]
+
+    def _totals(self) -> list[int]:
+        return [sum(getattr(row, name) or 0 for row in self.rows.values()) for name in self._NUMBERS]
+
+    def set_row(self, row) -> None:
+        """A platform's new numbers, for example as soon as scan all has finished it."""
+        if row.folder not in self.rows:
+            return
+        self.rows[row.folder] = row
+        table = self.query_one("#overview-table", DataTable)
+        columns = (*self._NUMBERS, "last_scan", "state")
+        for column, cell in zip(columns, self._cells(row)):
+            table.update_cell(row.folder, column, cell)
+        for column, value in zip(self._NUMBERS, self._totals()):
+            table.update_cell(self.TOTAL, column, Text(_count(value), justify="right", style="bold"))
 
     def selected(self) -> str | None:
         table = self.query_one("#overview-table", DataTable)
@@ -1709,6 +1726,13 @@ class WorkbenchApp(App):
         self._batch = cancel
         screen.set_scanning(True)
         root = self.collection_root
+        try:
+            config = self.config_loader()
+        except (OSError, ValueError) as error:
+            self._batch = None
+            screen.set_scanning(False)
+            screen.show_status(tr("window.analysis_failed", error=str(error) or type(error).__name__))
+            return
 
         def report(platform, number, count, done, total):
             if cancel.is_set():
@@ -1718,7 +1742,8 @@ class WorkbenchApp(App):
 
         def work() -> None:
             try:
-                finished = scan_all(root, full=full, progress=report)
+                finished = scan_all(root, full=full, progress=report, config=config,
+                                    finished_row=lambda row: self.call_from_thread(screen.set_row, row))
                 message = tr("overview.scan_finished", count=len(finished))
             except ScanCancelled:
                 message = tr("overview.scan_cancelled")

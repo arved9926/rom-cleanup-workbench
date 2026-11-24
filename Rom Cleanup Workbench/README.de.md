@@ -197,7 +197,7 @@ Meist liegen die Spiele nach Plattformen getrennt in einem gemeinsamen Ordner, e
 | --- | --- | --- |
 | `Öffnen` | `Enter` | die markierte Plattform in der gewohnten Liste öffnen (auch Doppelklick) |
 | `Scannen` | `r` | die markierte Plattform scannen und öffnen |
-| `Alle scannen` | `a` | alle Plattformen nacheinander scannen; jede wird sofort gespeichert; `Abbrechen` behält die fertigen; löscht nichts |
+| `Alle scannen` | `a` | alle Plattformen nacheinander scannen; jede wird sofort gespeichert und ihre Zahlen erscheinen gleich in der Übersicht; `Abbrechen` behält die fertigen; löscht nichts |
 | `Vollständig` | `v` | Häkchen für Scannen und Alle scannen: jede Datei neu lesen statt nur neue und geänderte |
 | `Ordner...` | `f` | einen anderen `roms`-Ordner wählen |
 

@@ -512,32 +512,36 @@ class OverviewRow:
 
 def overview(root: Path, config: Config) -> list[OverviewRow]:
     """The platforms of a collection; numbers computed with other settings are computed again (no scan)."""
-    rows = []
     with Collection(root) as collection:
-        for directory in collection.platform_folders():
-            name = directory.name
-            state = collection.state(directory)
-            row = collection.platform(name)
-            effective = with_own_settings(config, collection.own_config(name))
-            key = config_key(effective)
-            if state != NOT_SCANNED and row.summary_key != key:
-                facts = collection.load_facts(name)
-                results = decide(directory, facts, effective)
-                collection.save_summary(name, *summary_of(results), key=key)
-                row = collection.platform(name)
-            rows.append(OverviewRow(name, state, row.files, row.games, row.marked, row.problematic,
-                                    row.last_scan, row.has_own_config))
-    return rows
+        return [_overview_row(collection, directory, config) for directory in collection.platform_folders()]
+
+
+def _overview_row(collection: "Collection", directory: Path, config: Config) -> OverviewRow:
+    """One platform's row; numbers computed with other settings are computed again (no scan)."""
+    name = directory.name
+    state = collection.state(directory)
+    row = collection.platform(name)
+    effective = with_own_settings(config, collection.own_config(name))
+    key = config_key(effective)
+    if state != NOT_SCANNED and row.summary_key != key:
+        results = decide(directory, collection.load_facts(name), effective)
+        collection.update_checksums(name, known_checksums(results))
+        collection.save_summary(name, *summary_of(results), key=key)
+        row = collection.platform(name)
+    return OverviewRow(name, state, row.files, row.games, row.marked, row.problematic,
+                       row.last_scan, row.has_own_config)
 
 
 class ScanCancelled(Exception):
     """Raised by a progress callback to stop a batch scan; finished platforms stay saved."""
 
 
-def scan_all(root: Path, full: bool = False, progress=None) -> list[tuple[str, int, int]]:
+def scan_all(root: Path, full: bool = False, progress=None, config: Config | None = None,
+             finished_row=None) -> list[tuple[str, int, int]]:
     """Scans every platform folder one after the other and saves each at once.
 
     progress(platform, number, count, done, total) reports the state; it may raise ScanCancelled.
+    With a configuration, finished_row(OverviewRow) gets each platform's numbers as soon as it is done.
     Returns (platform, files, files read) for every finished platform. Never deletes anything.
     """
     finished = []
@@ -550,6 +554,10 @@ def scan_all(root: Path, full: bool = False, progress=None) -> list[tuple[str, i
 
             read = scan_platform(collection, directory, report, full=full)
             finished.append((directory.name, collection.platform(directory.name).files or 0, read))
+            if config is not None:
+                row = _overview_row(collection, directory, config)
+                if finished_row is not None:
+                    finished_row(row)
     return finished
 
 

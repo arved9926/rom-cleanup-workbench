@@ -1565,6 +1565,31 @@ class ScanAllTests(OverviewWindowBase):
         self.assertEqual(window.overview_panel.tree.item("nes", "values")[-1], "current")
         self.assertFalse(window.overview_panel.cancel_button.winfo_manager())
 
+    def test_each_finished_platform_reports_its_numbers_at_once(self):
+        import workbench_db
+
+        self.fill()
+        rows = []
+        workbench_db.scan_all(self.roms, config=self.config, finished_row=rows.append)
+        self.assertEqual([(r.folder, r.state, r.files, r.games, r.marked, r.problematic) for r in rows],
+                         [("nes", "current", 2, 1, 1, 0), ("snes", "current", 1, 1, 0, 0)])
+        with workbench_db.Collection(self.roms) as collection:  # the overview needs no new decision
+            self.assertEqual(collection.platform("nes").summary_key, workbench_db.config_key(self.config))
+
+    def test_the_window_fills_in_a_row_and_the_total(self):
+        import workbench_db
+
+        self.fill()
+        window = self.make_window(self.roms)
+        window.open_folder(self.roms)
+        panel = window.overview_panel
+        panel.set_row(workbench_db.OverviewRow("nes", "current", 2, 1, 1, 0, "2026-11-24T20:15:00"))
+        self.assertEqual(panel.tree.item("nes", "values")[:4], ("2", "1", "1", "0"))
+        self.assertEqual(panel.tree.item("nes", "values")[-2:], ("2026-11-24 20:15", "current"))
+        self.assertEqual(panel.tree.item(panel._TOTAL, "values")[:4], ("2", "1", "1", "0"))
+        panel.set_row(workbench_db.OverviewRow("snes", "current", 1, 1, 0, 0, "2026-11-24T20:16:00"))
+        self.assertEqual(panel.tree.item(panel._TOTAL, "values")[:4], ("3", "2", "1", "0"))
+
     def test_scan_all_on_the_command_line(self):
         self.fill()
         output = io.StringIO()
@@ -1669,6 +1694,18 @@ class OverviewTerminalTests(OverviewTerminalBase):
             rows = self.overview_rows(app)
             self.assertEqual((rows["nes"][-1], rows["snes"][-1]), ("current", "current"))
             self.assertEqual(str(app.screen.query_one("#overview-status").render()), "2 platform(s) scanned.")
+
+    async def test_a_finished_platform_is_filled_in_with_the_total(self):
+        import workbench_db
+
+        app = self.app(self.roms)
+        async with app.run_test(size=(140, 30)) as pilot:
+            await self.settle(app, pilot)
+            app.screen.set_row(workbench_db.OverviewRow("nes", "current", 2, 1, 1, 0, "2026-11-24T20:15:00"))
+            await pilot.pause()
+            rows = self.overview_rows(app)
+            self.assertEqual(rows["nes"][1:], ["2", "1", "1", "0", "2026-11-24 20:15", "current"])
+            self.assertEqual(rows["*total*"][1:5], ["2", "1", "1", "0"])
 
     async def test_the_last_collection_opens_at_the_start(self):
         self.tui.save_last_collection(self.settings, self.roms)

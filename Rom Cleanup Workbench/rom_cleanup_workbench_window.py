@@ -475,17 +475,11 @@ class OverviewPanel:
         hint.bind("<Configure>", lambda event: hint.configure(wraplength=max(event.width, 1)))
 
         self._fit_columns(rows)
-        totals = [0, 0, 0, 0]
         for row in rows:
-            values = [row.files, row.games, row.marked, row.problematic]
-            for index, value in enumerate(values):
-                totals[index] += value or 0
-            self.tree.insert("", "end", row.folder, text=row.folder + (" *" if row.has_own_config else ""), values=(
-                *(_count(value) for value in values),
-                _when(row.last_scan), tr(f"overview.state.{row.state}"),
-            ))
-        self.tree.insert("", "end", self._TOTAL, text=tr("overview.total"),
-                         values=(*(_count(value) for value in totals), "", ""), tags=("total",))
+            self.tree.insert("", "end", row.folder, text=row.folder + (" *" if row.has_own_config else ""),
+                             values=self._values(row))
+        self.tree.insert("", "end", self._TOTAL, text=tr("overview.total"), tags=("total",))
+        totals = self._update_total()
         self.tree.tag_configure("total", font=window.bold_font)
         self.tree.bind("<Double-Button-1>", self._open_clicked)
         self.tree.bind("<Return>", lambda _event: self.open() or "break")
@@ -497,6 +491,25 @@ class OverviewPanel:
         window.status.set(tr("overview.status", platforms=len(rows), files=_count(totals[0])))
 
     _TOTAL = "*total*"  # no folder name: * is not allowed in Windows names
+
+    @staticmethod
+    def _values(row) -> tuple:
+        return (*(_count(value) for value in (row.files, row.games, row.marked, row.problematic)),
+                _when(row.last_scan), tr(f"overview.state.{row.state}"))
+
+    def _update_total(self) -> list[int]:
+        totals = [sum(getattr(row, name) or 0 for row in self.rows.values())
+                  for name in ("files", "games", "marked", "problematic")]
+        self.tree.item(self._TOTAL, values=(*(_count(value) for value in totals), "", ""))
+        return totals
+
+    def set_row(self, row) -> None:
+        """A platform's new numbers, for example as soon as scan all has finished it."""
+        if row.folder not in self.rows:
+            return
+        self.rows[row.folder] = row
+        self.tree.item(row.folder, values=self._values(row))
+        self._update_total()
 
     def _fit_columns(self, rows) -> None:
         """Every column as wide as its heading and its longest value, in the window's font."""
@@ -790,10 +803,16 @@ class ReviewWindow:
         panel = self.overview_panel
         if panel is None or self._batch is not None:
             return
-        answer, cancel, state = queue.Queue(), threading.Event(), {}
+        answer, cancel, state = queue.Queue(), threading.Event(), {"rows": queue.Queue()}
         self._batch = (answer, cancel)
         full = panel.full.get()
         root = self.collection_root
+        try:
+            config = self.config_loader()
+        except (OSError, ValueError) as error:
+            self._batch = None
+            messagebox.showerror(tr("window.analysis_failed_title"), str(error), parent=self.root)
+            return
 
         def report(platform, number, count, done, total):
             if cancel.is_set():
@@ -802,7 +821,8 @@ class ReviewWindow:
 
         def work():
             try:
-                answer.put(("done", scan_all(root, full=full, progress=report)))
+                answer.put(("done", scan_all(root, full=full, progress=report, config=config,
+                                             finished_row=state["rows"].put)))
             except ScanCancelled:
                 answer.put(("cancelled", None))
             except Exception as error:  # every error must reach the window
@@ -825,6 +845,10 @@ class ReviewWindow:
     def _poll_scan_all(self, answer: queue.Queue, state: dict) -> None:
         if self._batch is None or self._batch[0] is not answer:
             return
+        while not state["rows"].empty():  # each finished platform at once
+            row = state["rows"].get_nowait()
+            if self.overview_panel is not None:
+                self.overview_panel.set_row(row)
         try:
             outcome, value = answer.get_nowait()
         except queue.Empty:
