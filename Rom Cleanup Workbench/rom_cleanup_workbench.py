@@ -144,9 +144,31 @@ def has_leading_number(game: str) -> bool:
     return bool(_LEADING_NUMBER_RE.match(normalize(_SEPARATOR_RE.sub(" ", game))))
 
 
-def game_title(entry: "Entry") -> str:
-    """The name shown for a game: without a number in front ("073 Batman" -> "Batman")."""
-    if has_leading_number(entry.game):
+# Evidently a list number: with a leading zero ("057 Robocop") or a separator after it ("057 - Robocop",
+# "283. Dynamite Bowl", "283_Dynamite Bowl").
+_LIST_NUMBER_RE = re.compile(r"^(?:0\d*\s|\d+\s*[-._])")
+
+
+def list_numbered(entries: list["Entry"]) -> list["Entry"]:
+    """The files of a game whose number in front of the name is a list number, not part of the title.
+
+    They are if the same game also has a file without the number ("283 Dynamite Bowl" next to
+    "Dynamite Bowl (J)"), or if one of the numbers looks like one (leading zero or a separator
+    after it: "073 Batman" next to "112 Batman"). Otherwise the number belongs to the title:
+    "1080 Snowboarding", "720 Degrees".
+    """
+    numbered = [entry for entry in entries if has_leading_number(entry.game)]
+    if len(numbered) < len(entries) or any(_LIST_NUMBER_RE.match(entry.game) for entry in numbered):
+        return numbered
+    return []
+
+
+def game_title(entry: "Entry", group: list["Entry"] | None = None) -> str:
+    """The name shown for a game: without a list number in front ("073 Batman" -> "Batman").
+
+    group: all files of the game, to tell a list number from a number of the title (list_numbered).
+    """
+    if any(other is entry for other in list_numbered(group if group is not None else [entry])):
         return _FILE_NUMBER_RE.sub("", entry.game, count=1)
     return entry.game
 
@@ -971,7 +993,7 @@ def analyze_group(entries: list[Entry], config: Config) -> GroupResult:
             marked.append(save)
     keep.extend(suspected)
     marked.sort(key=sort_key)
-    title = game_title((keep or marked)[0])
+    title = game_title((keep or marked)[0], keep + marked)
     return GroupResult(title, keep, marked, find_problems(keep, marked))
 
 
@@ -1146,7 +1168,8 @@ def rename_plan(results: list[GroupResult]) -> tuple[list[tuple[Entry, Path]], l
     marked = {os.path.normcase(os.path.abspath(entry.path)) for result in results for entry in result.marked}
     renames, skipped, taken = [], [], set()
     for result in results:
-        numbered = [entry for entry in result.keep if has_leading_number(entry.game)]
+        listed = list_numbered(result.keep + result.marked)
+        numbered = [entry for entry in result.keep if any(entry is other for other in listed)]
         if not numbered:
             continue
         if any(entry.path.suffix.casefold() in _INDEX_SUFFIXES for entry in result.keep):
@@ -1231,7 +1254,7 @@ class Review:
             entry.game = _FILE_NUMBER_RE.sub("", entry.game, count=1)
             self.renamed += 1
         for result in self.results:
-            result.title = game_title((result.keep or result.marked)[0])
+            result.title = game_title((result.keep or result.marked)[0], result.keep + result.marked)
         if self.collection_root is not None and self.directory is not None:
             from workbench_db import record_changes  # only for a collection
 
@@ -1262,7 +1285,7 @@ class Review:
             for entry in result.keep:
                 entry.moved = False
             if result.keep or result.marked:
-                result.title = game_title((result.keep or result.marked)[0])
+                result.title = game_title((result.keep or result.marked)[0], result.keep + result.marked)
                 result.problems = find_problems(result.keep, result.marked)
                 remaining.append(result)
         self.results = remaining
@@ -1326,7 +1349,7 @@ class Review:
         )
         result.keep.insert(position, entry)
         entry.moved = not entry.moved
-        result.title = game_title((result.keep or result.marked)[0])  # the spelling of the first kept file
+        result.title = game_title((result.keep or result.marked)[0], result.keep + result.marked)  # the spelling of the first kept file
         self._record_move(entry, kept=True)
         return True
 
@@ -1337,7 +1360,7 @@ class Review:
         result.keep.remove(entry)
         result.marked.append(entry)
         entry.moved = not entry.moved
-        result.title = game_title((result.keep or result.marked)[0])
+        result.title = game_title((result.keep or result.marked)[0], result.keep + result.marked)
         self._record_move(entry, kept=False)
         return True
 

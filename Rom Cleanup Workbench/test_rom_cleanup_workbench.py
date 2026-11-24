@@ -890,6 +890,25 @@ class RenameNumberTests(RedundanzTestCase):
         self.assertEqual(self.files(), ["073 Batman (USA).sfc", "Batman (USA).sfc"])
         self.assertEqual((self.dir / "Batman (USA).sfc").read_bytes(), b"two")
 
+    def test_a_number_of_the_title_stays(self):
+        self.write("1080 Snowboarding (Japan, USA) (En,Ja).n64", b"rom")
+        self.write("720 Degrees (USA).nes", b"rom")
+        review = self.review()
+        self.assertEqual(sorted(result.title for result in review.results), ["1080 Snowboarding", "720 Degrees"])
+        self.assertEqual(rf.rename_plan(review.results), ([], []))
+        review.delete()
+        self.assertEqual(self.files(), ["1080 Snowboarding (Japan, USA) (En,Ja).n64", "720 Degrees (USA).nes"])
+
+    def test_an_evident_list_number_is_removed_alone_too(self):
+        for name in ("057 Robocop (USA).md", "058 - Contra (USA).nes", "283. Dynamite Bowl (J).nes", "0 Zero (USA).nes"):
+            self.write(name, b"rom")
+        review = self.review()
+        self.assertEqual(sorted(result.title for result in review.results),
+                         ["Contra", "Dynamite Bowl", "Robocop", "Zero"])
+        review.delete()
+        self.assertEqual(self.files(), ["Contra (USA).nes", "Dynamite Bowl (J).nes", "Robocop (USA).md",
+                                        "Zero (USA).nes"])
+
     def test_two_numbers_for_the_same_name_rename_only_one(self):
         self.write("073 Batman (USA).sfc", b"one")
         self.write("112 Batman (USA).sfc", b"two")
