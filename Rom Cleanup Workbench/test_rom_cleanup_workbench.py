@@ -4072,7 +4072,7 @@ class TerminalVersionTests(unittest.IsolatedAsyncioTestCase):
             files[f"Game {number:02} (USA).bin"] = b"a"
             files[f"Game {number:02} (Japan).bin"] = b"b"
         app = self.app_for(files)
-        async with app.run_test(size=(80, 24)) as pilot:
+        async with app.run_test(size=(140, 24)) as pilot:
             await self.analyzed(app, pilot)
             await pilot.press("shift+down", "shift+down")
             # Row 0 of the table is the header; row 5 of the list is g0f1 ("- Game 00 (Japan).bin").
@@ -5751,7 +5751,7 @@ class TerminalVersionTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_wide_terminal_keeps_one_row_per_file(self):
         app = self.app_for(self.LONG_NAMES, scope="all")
-        async with app.run_test(size=(160, 30)) as pilot:
+        async with app.run_test(size=(220, 30)) as pilot:
             await self.analyzed(app, pilot)
             await pilot.pause()
             self.assertFalse(app.query_one("#games").columns_layout[3])
@@ -5760,7 +5760,7 @@ class TerminalVersionTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_changing_the_width_lays_the_list_out_again_and_keeps_the_place(self):
         app = self.app_for(self.LONG_NAMES, scope="all")
-        async with app.run_test(size=(160, 30)) as pilot:
+        async with app.run_test(size=(220, 30)) as pilot:
             await self.analyzed(app, pilot)
             await pilot.press("tab", "shift+down")
             cursor, selection = app.cursor_key(), app.selected_keys()
@@ -5769,7 +5769,7 @@ class TerminalVersionTests(unittest.IsolatedAsyncioTestCase):
             await pilot.pause()
             self.assertTrue(app.query_one("#games").columns_layout[3])
             self.assertEqual((app.cursor_key(), app.selected_keys()), (cursor, selection))
-            await pilot.resize_terminal(160, 30)
+            await pilot.resize_terminal(220, 30)
             await pilot.pause()
             await pilot.pause()
             self.assertFalse(app.query_one("#games").columns_layout[3])
