@@ -1451,6 +1451,16 @@ class OverviewWindowTests(OverviewWindowBase):
         self.assertEqual(panel.tree.item("nes", "values")[-1], "not scanned")
         self.assertTrue((self.roms / ".rom_cleanup_workbench" / "rom_cleanup_workbench.sqlite").is_file())
 
+    def test_ctrl_and_the_mouse_wheel_change_the_font_size_in_the_overview(self):
+        self.fill()
+        window = self.make_window(self.roms)
+        window.open_folder(self.roms)
+        tree = window.overview_panel.tree
+        before, width = window.font_size, tree.column("files", "width")
+        tree.event_generate("<Control-MouseWheel>", delta=120, when="now")
+        self.assertEqual(window.font_size, before + 1)
+        self.assertGreater(tree.column("files", "width"), width)  # the columns fit the new size
+
     def test_side_files_do_not_hide_a_roms_folder(self):
         import workbench_db
 

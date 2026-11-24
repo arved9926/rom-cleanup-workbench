@@ -483,6 +483,8 @@ class OverviewPanel:
         self.tree.tag_configure("total", font=window.bold_font)
         self.tree.bind("<Double-Button-1>", self._open_clicked)
         self.tree.bind("<Return>", lambda _event: self.open() or "break")
+        # Ctrl+mouse wheel changes the font size here as in the list (the window's binding is not reached).
+        self.tree.bind("<Control-MouseWheel>", window._on_zoom)
         self.tree.bindtags((str(self.tree), self.tree.winfo_class(), "all"))
         first = next(iter(self.rows), None)
         if first is not None:
@@ -934,6 +936,8 @@ class ReviewWindow:
         self._fit_radio_indicator()
         self._fit_size_column()
         self._fit_bottom_row()
+        if self.overview_panel is not None:
+            self.overview_panel._fit_columns(self.overview_panel.rows.values())
 
     def _fit_radio_indicator(self) -> None:
         """The circle grows with the font, so that the red dot stays easy to see."""
