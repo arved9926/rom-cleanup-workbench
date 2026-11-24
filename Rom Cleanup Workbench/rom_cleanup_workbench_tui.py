@@ -939,9 +939,12 @@ class SettingsScreen(Screen):
     def compose(self) -> ComposeResult:
         with Horizontal(id="settings-head"):
             yield Static(tr("settings.title"), id="settings-title", markup=False)
-            yield Static(tr("settings.file", path=self.config_file.path), id="settings-file", markup=False)
             yield Button(tr("settings.save"), id="settings-save", compact=True)
             yield Button(tr("settings.cancel"), id="settings-cancel", compact=True)
+        from workbench_db import settings_location
+
+        # Where the settings are saved, in a line of its own: a long path must not be cut off.
+        yield Static(settings_location(self.config_file, self.root_folder, self.own), id="settings-file", markup=False)
         if self.platform is not None:
             with Horizontal(id="scope-row"):
                 yield Static(tr("settings.scope_label"), id="scope-label", markup=False)
@@ -964,7 +967,7 @@ class SettingsScreen(Screen):
                 with Horizontal(id="new-region-row"):
                     yield Input(id="new-region")
                     yield Button(tr("settings.add"), id="region-add", compact=True)
-            with Vertical(id="settings-right"):
+            with VerticalScroll(id="settings-right"):
                 yield Static(tr("settings.language"), markup=False)
                 with RadioSet(id="languages"):
                     for code, name in LANGUAGE_NAMES.items():
@@ -1057,8 +1060,11 @@ class SettingsScreen(Screen):
         """Default or own: the fields show the values of that choice (own starts from the default)."""
         from workbench_db import settings_for
 
+        from workbench_db import settings_location
+
         self.own = own
         values, _own = settings_for(self.config_file, self.root_folder, self.platform, own=own)
+        self.query_one("#settings-file", Static).update(settings_location(self.config_file, self.root_folder, own))
         self.regions = list(values["region_priority"])
         self._show_regions(0 if self.regions else None)
         self.query_one("#tags", Input).value = ", ".join(values["delete_tags"])
@@ -1161,12 +1167,12 @@ class WorkbenchApp(App):
     SettingsScreen Input { height: 1; border: none; padding: 0 1; background: #222222; color: #ffffff; }
     SettingsScreen Input:focus { border: none; background: #333333; }
     #settings-head { height: 1; margin-bottom: 1; }
-    #settings-title { width: auto; text-style: bold; margin-right: 2; }
-    #settings-file { width: 1fr; color: #aaaaaa; }
+    #settings-title { width: 1fr; text-style: bold; margin-right: 2; }
+    #settings-file { height: auto; margin-bottom: 1; color: #aaaaaa; }
     #settings-head > Button { margin-left: 2; }
     #settings-columns { height: 1fr; }
     #settings-left { width: 1fr; margin-right: 2; }
-    #settings-right { width: 1fr; }
+    #settings-right { width: 1fr; height: 1fr; }
     #regions-row { height: auto; margin-top: 1; }
     #regions { width: 1fr; max-width: 26; height: auto; min-height: 5; max-height: 9; border: none; background: #222222; }
     #regions:focus { border: none; }

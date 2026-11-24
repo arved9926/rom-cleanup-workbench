@@ -659,3 +659,12 @@ def save_settings_for(config_file, root: Path | None, platform: str | None, own:
     with Collection(root) as collection:
         collection.set_own_config(platform, {"region_priority": regions, "delete_tags": tags,
                                              "prefer_zip": bool(prefer_zip)})
+
+
+def settings_location(config_file, root: Path | None, own: bool) -> str:
+    """Where the settings are saved: the configuration file, or a platform's own in the database."""
+    from translations import tr
+
+    if own and root is not None:
+        return tr("settings.saved_in_db", folder=Path(root) / DATABASE_FOLDER, file=Path(config_file.path).name)
+    return tr("settings.file", path=config_file.path)

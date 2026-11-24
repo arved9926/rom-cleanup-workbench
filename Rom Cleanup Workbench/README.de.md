@@ -211,7 +211,7 @@ Die Tasten gelten im Fenster und in der Terminal-Version gleich. Die Zeile über
 
 **Änderungen von Hand** (`k`/`x`) bleiben gespeichert, auch nach dem Schließen, bis du ausführst oder die Plattform neu scannst. Ändert sich eine Datei, verfällt ihre Änderung von Hand.
 
-**Eigene Einstellungen je Plattform.** Ist eine Plattform geöffnet, zeigen die Einstellungen oben `Standard verwenden` oder `Eigene für nes`. Mit `Eigene` gelten Priorität, Löschwörter und die Wahl zwischen normaler Datei und ZIP nur für diese Plattform; sie liegen in der Datenbank, `redundanz_config.json` bleibt der Standard für alle anderen. Eine neue eigene Einstellung beginnt mit den Werten des Standards; zurück auf `Standard` verwirft sie. Die Sprache gilt immer für alles. In der Übersicht steht hinter solchen Plattformen ein `*`.
+**Eigene Einstellungen je Plattform.** Ist eine Plattform geöffnet, zeigen die Einstellungen oben `Standard verwenden` oder `Eigene für nes`. Mit `Eigene` gelten Priorität, Löschwörter und die Wahl zwischen normaler Datei und ZIP nur für diese Plattform; sie liegen in der Datenbank, `redundanz_config.json` bleibt der Standard für alle anderen. Eine neue eigene Einstellung beginnt mit den Werten des Standards; zurück auf `Standard` verwirft sie. Die Zeile unter der Überschrift der Einstellungen nennt, wo gespeichert wird: `redundanz_config.json` oder, bei `Eigene`, die Datenbank der Sammlung (die Sprache bleibt in `redundanz_config.json`). Die Sprache gilt immer für alles. In der Übersicht steht hinter solchen Plattformen ein `*`.
 
 **Ohne Fenster** scannt `--scan-all` alle Plattformen, etwa über Nacht:
 

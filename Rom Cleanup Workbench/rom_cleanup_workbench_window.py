@@ -300,7 +300,14 @@ class SettingsPanel:
         ttk.Button(heading, text=tr("settings.cancel"), command=self.close).pack(side="right")
         ttk.Button(heading, text=tr("settings.save"), command=lambda: window.save_settings(self)).pack(side="right", padx=8)
         ttk.Label(heading, text=tr("settings.title"), font=window.bold_font).pack(side="left", padx=(0, 16))
-        ttk.Label(heading, text=tr("settings.file", path=window.config_file.path)).pack(side="left")
+        from workbench_db import settings_location
+
+        # Where the settings are saved, in a line of its own below: a long path must not hide behind the buttons.
+        self.location_label = ttk.Label(heading, text=settings_location(window.config_file, self.root_folder, own),
+                                        foreground=_LIGHT_GRAY)
+        self.location_label.pack(side="bottom", fill="x", anchor="w", pady=(8, 0), before=heading.winfo_children()[0])
+        self.location_label.bind("<Configure>", lambda event: self.location_label.configure(
+            wraplength=max(event.width, 1)))
 
         # Two columns side by side, so that the region list keeps its height in a low window.
         left = ttk.Frame(frame)
@@ -390,7 +397,11 @@ class SettingsPanel:
         """Default or own: the fields show the values of that choice (own starts from the default)."""
         from workbench_db import settings_for
 
+        from workbench_db import settings_location
+
         values, _own = settings_for(self.window.config_file, self.root_folder, self.platform, own=self.own.get())
+        self.location_label.configure(text=settings_location(self.window.config_file, self.root_folder, self.own.get()))
+        self.window.root.after_idle(self.window._grow_to_fit)  # the longer line may wrap
         self.regions.delete(0, "end")
         for region in values["region_priority"]:
             self.regions.insert("end", region)
@@ -990,7 +1001,10 @@ class ReviewWindow:
         self.list_frame.pack_forget()
         frame.pack(fill="both", expand=True)
         self._refresh_locks()
-        # A low window grows until every field fits; closing restores the old minimum.
+        self._grow_to_fit()
+
+    def _grow_to_fit(self) -> None:
+        """A low window grows until every field of a panel fits; closing the panel restores the old minimum."""
         self.root.update_idletasks()
         width, height = self.root.minsize()
         self.root.minsize(width, max(height, min(self.root.winfo_reqheight(), self.root.winfo_screenheight())))
@@ -1343,10 +1357,7 @@ class ReviewWindow:
             self.overview_panel.frame.pack_forget()  # comes back when the keys close
             panel.frame.pack(fill="both", expand=True)
             self._refresh_locks()
-            # As for the settings: a low window grows until everything fits; closing restores the minimum.
-            self.root.update_idletasks()
-            width, height = self.root.minsize()
-            self.root.minsize(width, max(height, min(self.root.winfo_reqheight(), self.root.winfo_screenheight())))
+            self._grow_to_fit()
         else:
             self._show_panel(panel.frame)
 

@@ -2126,8 +2126,12 @@ class OwnPlatformSettingsTests(OverviewWindowBase):
         panel = window.settings_panel
         self.assertEqual(panel.platform, "nes")
         self.assertEqual([button.cget("text") for button in panel.scope_buttons], ["Use the default", "Own for nes"])
+        self.assertTrue(panel.location_label.cget("text").startswith("File: "))
         panel.own.set(True)
         panel._scope_changed()
+        self.assertEqual(panel.location_label.cget("text"),
+                         f"Saved in: the collection's database ({self.roms / '.rom_cleanup_workbench'}); "
+                         "the language in redundanz_config.json")
         panel.regions.delete(0, "end")
         for region in ("Japan", "none", "USA"):
             panel.regions.insert("end", region)
@@ -2168,9 +2172,12 @@ class OwnPlatformSettingsTerminalTests(OverviewTerminalBase):
             await self.settle(app, pilot)
             screen = app.screen
             self.assertEqual(screen.platform, "nes")
+            self.assertTrue(str(screen.query_one("#settings-file").render()).startswith("File: "))
             screen.query_one("#scope-own").value = True
             await pilot.pause()
             self.assertTrue(screen.own)
+            self.assertTrue(str(screen.query_one("#settings-file").render()).startswith(
+                "Saved in: the collection's database"))
             screen.regions = ["Japan", "none", "USA"]
             await pilot.press("ctrl+s")
             await self.settle(app, pilot)
