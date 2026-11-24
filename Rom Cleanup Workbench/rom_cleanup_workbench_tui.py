@@ -1143,7 +1143,7 @@ class WorkbenchApp(App):
     """
     BINDINGS = [
         Binding("q", "quit", show=False),
-        Binding("escape", "quit", show=False),
+        Binding("escape", "escape", show=False),
         # priority: otherwise Tab would move the focus to the next widget, as usual in Textual.
         Binding("tab", "move_game(1)", show=False, priority=True),
         Binding("shift+tab", "move_game(-1)", show=False, priority=True),
@@ -1679,6 +1679,13 @@ class WorkbenchApp(App):
 
     def overview_open(self) -> bool:
         return isinstance(self.screen, OverviewScreen)
+
+    async def action_escape(self) -> None:
+        """Esc: from a platform of a collection back to the overview (Esc there ends); otherwise like q."""
+        if self.collection_root is not None and not self.question_open() and len(self.screen_stack) == 1:
+            self.action_overview()
+        else:
+            await self.action_quit()
 
     def action_overview(self) -> None:
         """o: the platforms of the collection; after changes by hand it asks first."""

@@ -1461,6 +1461,80 @@ class OverviewWindowTests(OverviewWindowBase):
         self.assertEqual(window.font_size, before + 1)
         self.assertGreater(tree.column("files", "width"), width)  # the columns fit the new size
 
+    def test_escape_goes_from_a_platform_to_the_overview_and_then_closes(self):
+        self.fill()
+        window = self.make_window(self.roms)
+        window.open_folder(self.roms)
+        window.overview_panel.open()
+        self.wait(window)
+        self.assertIsNone(window.overview_panel)
+        with mock.patch.object(window, "close") as close:
+            window._on_escape()
+            self.assertIsNotNone(window.overview_panel)
+            close.assert_not_called()
+            window._on_escape()
+            close.assert_called_once()
+
+    def test_the_overview_has_its_own_help_line(self):
+        self.fill()
+        window = self.make_window(self.roms)
+        window.open_folder(self.roms)
+        help_text = window.help_label.cget("text")
+        self.assertEqual(help_text, translations.tr("window.help_overview"))
+        for word in ("a: Scan all", "v: Full", "q or Esc: Close"):
+            self.assertIn(word, help_text)
+        self.assertNotIn("x: delete", help_text)
+        window.overview_panel.open()
+        self.wait(window)
+        self.assertEqual(window.help_label.cget("text"), translations.tr("window.help"))
+
+    def test_the_keys_of_the_help_line_work_in_the_overview(self):
+        self.fill()
+        window = self.make_window(self.roms)
+        window.open_folder(self.roms)
+        tree = window.overview_panel.tree
+        # Tk sends keys only to a window with the focus, which a test cannot rely on: the list passes
+        # its keys on to the window's bindings, and those call these methods.
+        self.assertIn(str(window.root), tree.bindtags())
+        keys = {"<KeyPress-v>": "_toggle_full_key", "<KeyPress-a>": "_scan_all_key", "<KeyPress-c>": "show_credits",
+                "<KeyPress-q>": "_quit_key", "<Escape>": "_on_escape", "<KeyPress-r>": "reanalyze",
+                "<KeyPress-s>": "toggle_settings", "<KeyPress-f>": "choose_directory"}
+
+        def press(key):
+            getattr(window, keys[key])()  # looked up now, so that the mocks below take effect
+            window.root.update()
+
+        press("<KeyPress-v>")
+        self.assertTrue(window.overview_panel.full.get())
+        press("<KeyPress-v>")
+        self.assertFalse(window.overview_panel.full.get())
+        with mock.patch.object(window, "scan_all") as scan_all:
+            press("<KeyPress-a>")
+        scan_all.assert_called_once()
+        with mock.patch.object(window, "show_credits") as credits:
+            press("<KeyPress-c>")
+        credits.assert_called_once()
+        with mock.patch.object(window, "close") as close:
+            press("<KeyPress-q>")
+            press("<Escape>")
+        self.assertEqual(close.call_count, 2)
+        with mock.patch.object(window, "open_platform") as open_platform:
+            press("<KeyPress-r>")
+        open_platform.assert_called_once_with("nes", rescan=True, full=False)
+        press("<KeyPress-s>")  # no settings in the overview
+        self.assertIsNone(window.settings_panel)
+        press("<KeyPress-f>")
+        self.assertIsNotNone(window.folder_panel)
+
+    def test_escape_closes_a_folder_on_its_own(self):
+        self.fill()
+        window = self.make_window(self.roms / "nes")
+        window.open_folder(self.roms / "nes")
+        self.wait(window)
+        with mock.patch.object(window, "close") as close:
+            window._on_escape()
+        close.assert_called_once()
+
     def test_side_files_do_not_hide_a_roms_folder(self):
         import workbench_db
 
@@ -1702,6 +1776,21 @@ class OverviewTerminalTests(OverviewTerminalBase):
             rows = self.overview_rows(app)
             self.assertEqual(rows["nes"][1:5], ["2", "1", "1", "0"])
             self.assertEqual(rows["nes"][-1], "current")
+
+    async def test_escape_goes_back_to_the_overview_and_ends_there(self):
+        app = self.app(self.roms)
+        async with app.run_test(size=(140, 30)) as pilot:
+            await self.settle(app, pilot)
+            await pilot.press("enter")
+            await self.settle(app, pilot)
+            self.assertFalse(app.overview_open())
+            await pilot.press("escape")
+            await self.settle(app, pilot)
+            self.assertTrue(app.overview_open())
+            self.assertTrue(app.is_running)
+            await pilot.press("escape")
+            await pilot.pause()
+            self.assertFalse(app.is_running)
 
     async def test_a_scans_all_platforms(self):
         app = self.app(self.roms)

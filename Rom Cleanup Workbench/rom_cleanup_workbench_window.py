@@ -485,7 +485,7 @@ class OverviewPanel:
         self.tree.bind("<Return>", lambda _event: self.open() or "break")
         # Ctrl+mouse wheel changes the font size here as in the list (the window's binding is not reached).
         self.tree.bind("<Control-MouseWheel>", window._on_zoom)
-        self.tree.bindtags((str(self.tree), self.tree.winfo_class(), "all"))
+        self.tree.bindtags((str(self.tree), self.tree.winfo_class(), str(window.root), "all"))
         first = next(iter(self.rows), None)
         if first is not None:
             self.tree.selection_set(first)
@@ -728,7 +728,9 @@ class ReviewWindow:
         return messagebox.askyesno(tr("window.discard_title"), question, default="no", parent=self.root)
 
     def reanalyze(self) -> None:
-        if not self._list_locked() and self._may_discard_changes(tr("window.discard_reanalyze")):
+        if self._overview_keys_work():  # r and F5 in the overview scan the highlighted platform
+            self.overview_panel.open(rescan=True, full=self.overview_panel.full.get())
+        elif not self._list_locked() and self._may_discard_changes(tr("window.discard_reanalyze")):
             self.start_analysis(rescan=True)
 
     def show_credits(self) -> None:
@@ -787,6 +789,7 @@ class ReviewWindow:
             return
         self.close_overview()
         panel = self.overview_panel = OverviewPanel(self, rows)
+        self.help_label.configure(text=tr("window.help_overview"))
         self._show_panel(panel.frame)
         self._refresh_overview_button()
         panel.tree.focus_set()
@@ -796,6 +799,7 @@ class ReviewWindow:
             return
         self.overview_panel.frame.destroy()
         self.overview_panel = None
+        self.help_label.configure(text=tr("window.help"))
         self._hide_panel()
 
     def scan_all(self) -> None:
@@ -1052,7 +1056,7 @@ class ReviewWindow:
         )
 
         # Wraps with a large font instead of being cut off on the right.
-        help_label = ttk.Label(self.root, text=tr("window.help"), padding=8)
+        help_label = self.help_label = ttk.Label(self.root, text=tr("window.help"), padding=8)
         help_label.pack(fill="x")
         help_label.bind("<Configure>", lambda event: help_label.configure(wraplength=event.width - 16))
         info_label = ttk.Label(self.root, textvariable=self.info, padding=(8, 0, 8, 8))
@@ -1137,6 +1141,7 @@ class ReviewWindow:
         keys = {
             "x": self.demote_selected, "k": self.promote_selected, "s": self.toggle_settings,
             "f": self.choose_directory, "r": self.reanalyze, "c": self.show_credits, "q": self._quit_key,
+            "a": self._scan_all_key, "v": self._toggle_full_key,
         }
         for key, action in keys.items():
             for variant in (key, key.upper()):
@@ -1191,8 +1196,21 @@ class ReviewWindow:
 
     def _quit_key(self) -> None:
         """q closes the window like Esc, but not while the settings, the folder choice or a question is open."""
-        if not self._list_locked():
+        if not self._list_locked() or self._overview_keys_work():
             self.close()
+
+    def _overview_keys_work(self) -> bool:
+        """The overview is shown and nothing lies on top of it."""
+        return (self.overview_panel is not None and self.settings_panel is None and self.folder_panel is None
+                and not self._questions)
+
+    def _scan_all_key(self) -> None:
+        if self._overview_keys_work():
+            self.scan_all()
+
+    def _toggle_full_key(self) -> None:
+        if self._overview_keys_work() and self._batch is None:
+            self.overview_panel.full.set(not self.overview_panel.full.get())
 
     def _close_settings_key(self) -> None:
         if self.settings_panel is not None and not self._questions:
@@ -1476,8 +1494,8 @@ class ReviewWindow:
         return "break"
 
     def open_settings(self) -> None:
-        if self.config_file is None or self.settings_panel is not None:
-            return
+        if self.config_file is None or self.settings_panel is not None or self.overview_panel is not None:
+            return  # in the overview there are no settings, as in the terminal version
         try:
             panel = SettingsPanel(self)
         except ValueError as error:
@@ -1644,6 +1662,8 @@ class ReviewWindow:
             self.close_folder_panel()
         elif self.settings_panel is not None:
             self.close_settings()
+        elif self.collection_root is not None and self.overview_panel is None:
+            self.show_overview()  # a platform of a collection: back to the overview; Esc there closes
         else:
             self.close()
 

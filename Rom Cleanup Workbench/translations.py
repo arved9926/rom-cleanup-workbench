@@ -102,7 +102,7 @@ _EN = {
     "window.help": (
         "x: delete file  |  k: keep file  |  Tab / Shift+Tab: next / previous game  |  1-3: view\n"
         "Arrow keys: select row (Shift: several)  |  Ctrl+mouse wheel: font size  |  "
-        "/: Filter (* and ?)  |  Enter: Proceed  |  s: Settings  |  f: Folder  |  r or F5: Analyze again  |  c or F1: Credits  |  q or Esc: Close"
+        "/: Filter (* and ?)  |  Enter: Proceed  |  s: Settings  |  f: Folder  |  r or F5: Analyze again  |  c or F1: Credits  |  q: Close  |  Esc: Overview or Close"
     ),
     "window.folder": "Folder: {directory}",
     "window.no_folder": "Folder: none chosen yet (f)",
@@ -134,6 +134,7 @@ _EN = {
     "overview.hint": "Enter or a double click opens a platform. Changed: files were added, removed or changed since the last scan. Scan reads only new and changed files; with Full, every file is read again. Scan all goes through every platform and deletes nothing.",
     "overview.status": "{platforms} platform(s), {files} file(s) scanned",
     "window.button.overview": "Overview",
+    "window.help_overview": 'Arrow keys: select platform  |  Enter or double click: Open  |  r or F5: Scan  |  a: Scan all  |  v: Full on/off\nCtrl+mouse wheel: font size  |  f: Folder  |  c or F1: Credits  |  q or Esc: Close',
     "overview.scan_all": "Scan all",
     "overview.full": "Full",
     "overview.scanning": "{platform}: {done} of {total} files (platform {number} of {count})",
@@ -142,7 +143,7 @@ _EN = {
     "terminal.scan_platform": "{platform}: {files} file(s), {read} read",
     "terminal.scan_done": "{count} platform(s) scanned; nothing was deleted.",
     "terminal.not_collection": "{directory} is no roms folder with platform folders.",
-    "overview.tui_keys": "Keys: Enter open, r scan, a scan all, v full, f folder, q close; o in the list comes back here.",
+    "overview.tui_keys": "Keys: Enter open, r scan, a scan all, v full, f folder, q close; o or Esc in the list comes back here.",
     "settings.scope_label": "Settings for this platform:",
     "settings.scope_default": "Use the default",
     "settings.scope_own": "Own for {platform}",
@@ -293,7 +294,7 @@ _DE = {
     "window.help": (
         "x: Datei löschen  |  k: Datei behalten  |  Tab / Umschalt+Tab: nächstes / voriges Spiel  |  1-3: Ansicht\n"
         "Pfeiltasten: Zeile wählen (Umschalt: mehrere)  |  Strg+Scrollrad: Schriftgröße  |  "
-        "/: Filter (* und ?)  |  Enter: Ausführen  |  s: Einstellungen  |  f: Ordner  |  r oder F5: Neu analysieren  |  c oder F1: Credits  |  q oder Esc: Schließen"
+        "/: Filter (* und ?)  |  Enter: Ausführen  |  s: Einstellungen  |  f: Ordner  |  r oder F5: Neu analysieren  |  c oder F1: Credits  |  q: Schließen  |  Esc: Übersicht oder Schließen"
     ),
     "window.folder": "Ordner: {directory}",
     "window.no_folder": "Ordner: noch keiner gewählt (f)",
@@ -325,6 +326,7 @@ _DE = {
     "overview.hint": "Enter oder Doppelklick öffnet eine Plattform. Geändert: Seit dem letzten Scan kamen Dateien hinzu, fielen weg oder haben sich geändert. Scannen liest nur neue und geänderte Dateien, mit Vollständig jede Datei neu. Alle scannen geht durch alle Plattformen und löscht nichts.",
     "overview.status": "{platforms} Plattform(en), {files} Datei(en) gescannt",
     "window.button.overview": "Übersicht",
+    "window.help_overview": 'Pfeiltasten: Plattform wählen  |  Enter oder Doppelklick: Öffnen  |  r oder F5: Scannen  |  a: Alle scannen  |  v: Vollständig an/aus\nStrg+Mausrad: Schriftgröße  |  f: Ordner  |  c oder F1: Credits  |  q oder Esc: Schließen',
     "overview.scan_all": "Alle scannen",
     "overview.full": "Vollständig",
     "overview.scanning": "{platform}: {done} von {total} Dateien (Plattform {number} von {count})",
@@ -333,7 +335,7 @@ _DE = {
     "terminal.scan_platform": "{platform}: {files} Datei(en), {read} gelesen",
     "terminal.scan_done": "{count} Plattform(en) gescannt; nichts wurde gelöscht.",
     "terminal.not_collection": "{directory} ist kein roms-Ordner mit Plattform-Ordnern.",
-    "overview.tui_keys": "Tasten: Enter öffnen, r scannen, a alle scannen, v vollständig, f Ordner, q beenden; o in der Liste führt hierher zurück.",
+    "overview.tui_keys": "Tasten: Enter öffnen, r scannen, a alle scannen, v vollständig, f Ordner, q beenden; o oder Esc in der Liste führt hierher zurück.",
     "settings.scope_label": "Einstellungen für diese Plattform:",
     "settings.scope_default": "Standard verwenden",
     "settings.scope_own": "Eigene für {platform}",
@@ -482,7 +484,7 @@ _IT = {
     "window.help": (
         "x: elimina file  |  k: mantieni file  |  Tab / Maiusc+Tab: gioco successivo / precedente  |  1-3: vista\n"
         "Frecce: seleziona riga (Maiusc: più righe)  |  Ctrl+rotellina: dimensione del testo  |  "
-        "/: Filtro (* e ?)  |  Invio: Esegui  |  s: Impostazioni  |  f: Cartella  |  r o F5: Analizza di nuovo  |  c o F1: Riconoscimenti  |  q o Esc: Chiudi"
+        "/: Filtro (* e ?)  |  Invio: Esegui  |  s: Impostazioni  |  f: Cartella  |  r o F5: Analizza di nuovo  |  c o F1: Riconoscimenti  |  q: Chiudi  |  Esc: Panoramica o Chiudi"
     ),
     "window.folder": "Cartella: {directory}",
     "window.no_folder": "Cartella: nessuna scelta (f)",
@@ -514,6 +516,7 @@ _IT = {
     "overview.hint": "Invio o un doppio clic apre una piattaforma. Modificata: dall'ultima scansione sono stati aggiunti, tolti o modificati dei file. Scansiona legge solo i file nuovi e modificati, con Completa rilegge ogni file. Scansiona tutto passa per tutte le piattaforme e non elimina nulla.",
     "overview.status": "{platforms} piattaforme, {files} file scansionati",
     "window.button.overview": "Panoramica",
+    "window.help_overview": 'Frecce: scegli piattaforma  |  Invio o doppio clic: Apri  |  r o F5: Scansiona  |  a: Scansiona tutto  |  v: Completa sì/no\nCtrl+rotellina: dimensione carattere  |  f: Cartella  |  c o F1: Riconoscimenti  |  q o Esc: Chiudi',
     "overview.scan_all": "Scansiona tutto",
     "overview.full": "Completa",
     "overview.scanning": "{platform}: {done} di {total} file (piattaforma {number} di {count})",
@@ -522,7 +525,7 @@ _IT = {
     "terminal.scan_platform": "{platform}: {files} file, {read} letti",
     "terminal.scan_done": "{count} piattaforme scansionate; non è stato eliminato nulla.",
     "terminal.not_collection": "{directory} non è una cartella roms con cartelle di piattaforme.",
-    "overview.tui_keys": "Tasti: Invio apri, r scansiona, a scansiona tutto, v completa, f cartella, q chiudi; o nell'elenco torna qui.",
+    "overview.tui_keys": "Tasti: Invio apri, r scansiona, a scansiona tutto, v completa, f cartella, q chiudi; o o Esc nell'elenco torna qui.",
     "settings.scope_label": "Impostazioni per questa piattaforma:",
     "settings.scope_default": "Usa le predefinite",
     "settings.scope_own": "Proprie per {platform}",
@@ -671,7 +674,7 @@ _ES = {
     "window.help": (
         "x: eliminar archivo  |  k: conservar archivo  |  Tab / Mayús+Tab: juego siguiente / anterior  |  1-3: vista\n"
         "Flechas: elegir fila (Mayús: varias)  |  Ctrl+rueda: tamaño de letra  |  "
-        "/: Filtro (* y ?)  |  Intro: Ejecutar  |  s: Ajustes  |  f: Carpeta  |  r o F5: Analizar de nuevo  |  c o F1: Créditos  |  q o Esc: Cerrar"
+        "/: Filtro (* y ?)  |  Intro: Ejecutar  |  s: Ajustes  |  f: Carpeta  |  r o F5: Analizar de nuevo  |  c o F1: Créditos  |  q: Cerrar  |  Esc: Resumen o Cerrar"
     ),
     "window.folder": "Carpeta: {directory}",
     "window.no_folder": "Carpeta: ninguna elegida (f)",
@@ -703,6 +706,7 @@ _ES = {
     "overview.hint": "Intro o un doble clic abre una plataforma. Cambiada: desde el último análisis se añadieron, quitaron o cambiaron archivos. Analizar lee solo los archivos nuevos y cambiados; con Completo vuelve a leer todos. Analizar todo recorre todas las plataformas y no elimina nada.",
     "overview.status": "{platforms} plataforma(s), {files} archivo(s) analizados",
     "window.button.overview": "Resumen",
+    "window.help_overview": 'Flechas: elegir plataforma  |  Intro o doble clic: Abrir  |  r o F5: Analizar  |  a: Analizar todo  |  v: Completo sí/no\nCtrl+rueda: tamaño de letra  |  f: Carpeta  |  c o F1: Créditos  |  q o Esc: Cerrar',
     "overview.scan_all": "Analizar todo",
     "overview.full": "Completo",
     "overview.scanning": "{platform}: {done} de {total} archivos (plataforma {number} de {count})",
@@ -711,7 +715,7 @@ _ES = {
     "terminal.scan_platform": "{platform}: {files} archivo(s), {read} leídos",
     "terminal.scan_done": "{count} plataforma(s) analizadas; no se eliminó nada.",
     "terminal.not_collection": "{directory} no es una carpeta roms con carpetas de plataformas.",
-    "overview.tui_keys": "Teclas: Intro abrir, r analizar, a analizar todo, v completo, f carpeta, q cerrar; o en la lista vuelve aquí.",
+    "overview.tui_keys": "Teclas: Intro abrir, r analizar, a analizar todo, v completo, f carpeta, q cerrar; o o Esc en la lista vuelve aquí.",
     "settings.scope_label": "Ajustes para esta plataforma:",
     "settings.scope_default": "Usar los predeterminados",
     "settings.scope_own": "Propios para {platform}",
@@ -858,7 +862,7 @@ _FR = {
     "window.help": (
         "x : supprimer le fichier  |  k : garder le fichier  |  Tab / Maj+Tab : jeu suivant / précédent  |  1-3 : vue\n"
         "Flèches : choisir la ligne (Maj : plusieurs)  |  Ctrl+molette : taille du texte  |  "
-        "/ : Filtre (* et ?)  |  Entrée : Exécuter  |  s : Paramètres  |  f : Dossier  |  r ou F5 : Analyser à nouveau  |  c ou F1 : Crédits  |  q ou Échap : Fermer"
+        "/ : Filtre (* et ?)  |  Entrée : Exécuter  |  s : Paramètres  |  f : Dossier  |  r ou F5 : Analyser à nouveau  |  c ou F1 : Crédits  |  q : Fermer  |  Échap : Vue d'ensemble ou Fermer"
     ),
     "window.folder": "Dossier : {directory}",
     "window.no_folder": "Dossier : aucun choisi (f)",
@@ -890,6 +894,7 @@ _FR = {
     "overview.hint": "Entrée ou un double-clic ouvre une plateforme. Modifiée : depuis la dernière analyse, des fichiers ont été ajoutés, retirés ou modifiés. Analyser ne lit que les fichiers nouveaux et modifiés ; avec Complète, chaque fichier est relu. Tout analyser parcourt toutes les plateformes et ne supprime rien.",
     "overview.status": "{platforms} plateforme(s), {files} fichier(s) analysés",
     "window.button.overview": "Vue d'ensemble",
+    "window.help_overview": 'Flèches : choisir la plateforme  |  Entrée ou double clic : Ouvrir  |  r ou F5 : Analyser  |  a : Tout analyser  |  v : Complète oui/non\nCtrl+molette : taille du texte  |  f : Dossier  |  c ou F1 : Crédits  |  q ou Échap : Fermer',
     "overview.scan_all": "Tout analyser",
     "overview.full": "Complète",
     "overview.scanning": "{platform} : {done} sur {total} fichiers (plateforme {number} sur {count})",
@@ -898,7 +903,7 @@ _FR = {
     "terminal.scan_platform": "{platform} : {files} fichier(s), {read} lu(s)",
     "terminal.scan_done": "{count} plateforme(s) analysée(s) ; rien n'a été supprimé.",
     "terminal.not_collection": "{directory} n'est pas un dossier roms avec des dossiers de plateformes.",
-    "overview.tui_keys": "Touches : Entrée ouvrir, r analyser, a tout analyser, v complète, f dossier, q fermer ; o dans la liste revient ici.",
+    "overview.tui_keys": "Touches : Entrée ouvrir, r analyser, a tout analyser, v complète, f dossier, q fermer ; o ou Échap dans la liste revient ici.",
     "settings.scope_label": "Paramètres pour cette plateforme :",
     "settings.scope_default": "Utiliser les paramètres par défaut",
     "settings.scope_own": "Propres à {platform}",
@@ -1047,7 +1052,7 @@ _JA = {
     "window.help": (
         "x: ファイルを削除  |  k: ファイルを保持  |  Tab / Shift+Tab: 次 / 前のゲーム  |  1-3: 表示\n"
         "矢印キー: 行を選択 (Shift: 複数)  |  Ctrl+ホイール: 文字サイズ  |  "
-        "/: フィルター (* と ?)  |  Enter: 実行  |  s: 設定  |  f: フォルダー  |  r または F5: 再分析  |  c または F1: クレジット  |  q または Esc: 閉じる"
+        "/: フィルター (* と ?)  |  Enter: 実行  |  s: 設定  |  f: フォルダー  |  r または F5: 再分析  |  c または F1: クレジット  |  q: 閉じる  |  Esc: 概要 または 閉じる"
     ),
     "window.folder": "フォルダー: {directory}",
     "window.no_folder": "フォルダー: 未選択 (f)",
@@ -1079,6 +1084,7 @@ _JA = {
     "overview.hint": "Enter またはダブルクリックでプラットフォームを開きます。変更あり: 前回のスキャン以降にファイルが追加、削除、変更されました。スキャンは新しいファイルと変更されたファイルだけを読み、完全にするとすべてのファイルを読み直します。すべてスキャンはすべてのプラットフォームを順に読み、何も削除しません。",
     "overview.status": "{platforms} プラットフォーム、{files} ファイルをスキャン済み",
     "window.button.overview": "概要",
+    "window.help_overview": '矢印キー: プラットフォームを選択  |  Enter またはダブルクリック: 開く  |  r または F5: スキャン  |  a: すべてスキャン  |  v: 完全 オン/オフ\nCtrl+マウスホイール: 文字サイズ  |  f: フォルダー  |  c または F1: クレジット  |  q または Esc: 閉じる',
     "overview.scan_all": "すべてスキャン",
     "overview.full": "完全",
     "overview.scanning": "{platform}: {total} ファイル中 {done} (プラットフォーム {count} 中 {number})",
@@ -1087,7 +1093,7 @@ _JA = {
     "terminal.scan_platform": "{platform}: {files} ファイル、{read} 読み込み",
     "terminal.scan_done": "{count} プラットフォームをスキャンしました。何も削除していません。",
     "terminal.not_collection": "{directory} はプラットフォームフォルダーを含む roms フォルダーではありません。",
-    "overview.tui_keys": "キー: Enter 開く、r スキャン、a すべてスキャン、v 完全、f フォルダー、q 終了。一覧で o を押すとここに戻ります。",
+    "overview.tui_keys": "キー: Enter 開く、r スキャン、a すべてスキャン、v 完全、f フォルダー、q 終了。一覧で o または Esc を押すとここに戻ります。",
     "settings.scope_label": "このプラットフォームの設定:",
     "settings.scope_default": "既定を使う",
     "settings.scope_own": "{platform} 専用",
