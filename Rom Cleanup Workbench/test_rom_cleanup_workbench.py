@@ -1386,6 +1386,120 @@ class PlatformStateAndQuickScanTests(CollectionDatabaseTests):
         self.assertTrue(loaded["Title (USA).nes"])
 
 
+class OverviewWindowTests(CollectionDatabaseTests):
+    """Step 4: the overview of a collection is the window's start page."""
+
+    def analyze(self, directory, progress=None, rescan=False, full=False):
+        import workbench_db
+
+        root = workbench_db.collection_root(directory)
+        if root is None:
+            return rf.Review(rf.scan_directory(directory, self.config, progress), self.config)
+        results = workbench_db.open_platform(root, directory, self.config, progress, rescan=rescan, full=full)
+        return rf.Review(results, self.config, collection_root=root, directory=directory)
+
+    def make_window(self, directory, settings=None):
+        try:
+            import tkinter
+
+            import rom_cleanup_workbench_window
+            window = rom_cleanup_workbench_window.ReviewWindow(
+                self.analyze, directory, "all", settings or self.roms.parent / "settings.json",
+                config_loader=lambda: self.config,
+            )
+        except (ImportError, RuntimeError) as error:
+            self.skipTest(f"No window possible: {error}")
+
+        def close():
+            with contextlib.suppress(tkinter.TclError):
+                window.root.destroy()
+
+        self.addCleanup(close)
+        window.root.withdraw()
+        return window
+
+    def wait(self, window):
+        deadline = time.monotonic() + 10
+        while window._analysis is not None and time.monotonic() < deadline:
+            window.root.update()
+            time.sleep(0.01)
+        for worker in list(window._workers):
+            worker.join(10)
+        window.root.update()
+
+    def fill(self):
+        self.write("nes", "Title (USA).nes", b"usa")
+        self.write("nes", "Title (Japan).nes", b"jap")
+        self.write("snes", "Game (USA).sfc", b"g")
+
+    def test_a_roms_folder_opens_its_overview(self):
+        self.fill()
+        window = self.make_window(self.roms)
+        window.open_folder(self.roms)
+        panel = window.overview_panel
+        self.assertIsNotNone(panel)
+        self.assertEqual(list(panel.rows), ["nes", "snes"])
+        self.assertEqual(panel.tree.item("nes", "values")[-1], "not scanned")
+        self.assertTrue((self.roms / ".rom_cleanup_workbench" / "rom_cleanup_workbench.sqlite").is_file())
+
+    def test_opening_a_platform_scans_it_and_the_overview_shows_the_numbers(self):
+        self.fill()
+        window = self.make_window(self.roms)
+        window.open_folder(self.roms)
+        window.overview_panel.tree.selection_set("nes")
+        window.overview_panel.open()
+        self.wait(window)
+        self.assertIsNone(window.overview_panel)
+        self.assertEqual(window.directory, self.roms / "nes")
+        self.assertEqual(len(window.review.results), 1)
+        self.assertTrue(window.overview_button.winfo_manager())
+        window.show_overview()
+        values = window.overview_panel.tree.item("nes", "values")
+        self.assertEqual(values[:4], ("2", "1", "1", "0"))
+        self.assertEqual(values[-1], "current")
+        total = window.overview_panel.tree.item(window.overview_panel._TOTAL, "values")
+        self.assertEqual(total[0], "2")
+
+    def test_the_last_collection_opens_at_the_start(self):
+        self.fill()
+        settings = self.roms.parent / "settings.json"
+        window = self.make_window(self.roms, settings)
+        window.open_folder(self.roms)
+        window.root.destroy()
+        window = self.make_window(None, settings)
+        window.root.after(200, window.root.quit)
+        window.run()
+        self.assertIsNotNone(window.overview_panel)
+        self.assertEqual(window.collection_root, self.roms)
+
+    def test_a_platform_folder_on_its_own_opens_as_before(self):
+        self.write("nes", "Title (USA).nes", b"usa")
+        self.write("nes", "Title (Japan).nes", b"jap")
+        window = self.make_window(self.roms / "nes")
+        window.open_folder(self.roms / "nes")
+        self.wait(window)
+        self.assertIsNone(window.overview_panel)
+        self.assertIsNone(window.collection_root)
+        self.assertFalse(window.overview_button.winfo_manager())
+        self.assertFalse((self.roms / ".rom_cleanup_workbench").exists())
+
+    def test_full_scan_reads_every_file_again(self):
+        self.fill()
+        window = self.make_window(self.roms)
+        window.open_folder(self.roms)
+        window.overview_panel.tree.selection_set("nes")
+        window.overview_panel.open()
+        self.wait(window)
+        window.show_overview()
+        reads = []
+        original = rf.read_facts
+        with mock.patch("rom_cleanup_workbench.read_facts", side_effect=lambda path: reads.append(path.name) or original(path)):
+            window.overview_panel.tree.selection_set("nes")
+            window.overview_panel.open(rescan=True, full=True)
+            self.wait(window)
+        self.assertEqual(sorted(reads), ["Title (Japan).nes", "Title (USA).nes"])
+
+
 class RescanFlagTests(unittest.TestCase):
     """F5 asks for a new scan; analyses without the parameter (as in many tests) still work."""
 
@@ -3913,7 +4027,7 @@ class MainTests(RedundanzTestCase):
         """Replaces the window and carries out the requested changes directly."""
         self.window_calls = []
 
-        def run(analyze, directory, scope, config_file=None):
+        def run(analyze, directory, scope, config_file=None, _config_loader=None):
             self.window_calls.append((directory, scope))
             self.config_file = config_file
             if directory is None:
@@ -3971,7 +4085,7 @@ class MainTests(RedundanzTestCase):
     def test_missing_directory_reaches_the_window_as_error(self):
         captured = []
 
-        def run(analyze, directory, _only_problems, _config_file=None):
+        def run(analyze, directory, _only_problems, _config_file=None, _config_loader=None):
             with self.assertRaisesRegex(ValueError, "not found"):
                 analyze(directory)
             captured.append(directory)
@@ -3986,7 +4100,7 @@ class MainTests(RedundanzTestCase):
         path = self.write_config("{not json")
         captured = []
 
-        def run(analyze, directory, _only_problems, _config_file=None):
+        def run(analyze, directory, _only_problems, _config_file=None, _config_loader=None):
             with self.assertRaisesRegex(ValueError, "Configuration unreadable"):
                 analyze(directory)
             captured.append(directory)
@@ -4002,7 +4116,7 @@ class MainTests(RedundanzTestCase):
         path = self.write_config('{"region_priority": ["Japan", "USA"]}')
         priorities = []
 
-        def run(analyze, directory, _only_problems, _config_file=None):
+        def run(analyze, directory, _only_problems, _config_file=None, _config_loader=None):
             priorities.append(analyze(directory).config.region_priority)
             path.write_text('{"region_priority": ["USA", "Japan"]}', encoding="utf-8")
             priorities.append(analyze(directory).config.region_priority)

@@ -36,7 +36,7 @@ from translations import LANGUAGE_NAMES, current_language, tr
 # The settings file, the views, sizes and folders are shared with the terminal version.
 from workbench_state import (  # noqa: F401  (SETTINGS_PATH and the scope names belong to this module's interface)
     DEFAULT_SCOPE, SCOPE_ALL_FILES, SCOPE_MARKED, SCOPE_PROBLEMS, SETTINGS_PATH, add_confirmed_saves,
-    format_kb, load_confirmed_saves, load_scope, save_scope,
+    format_kb, load_confirmed_saves, load_last_collection, load_scope, save_last_collection, save_scope,
 )
 from workbench_state import SCOPES as _SCOPES
 from workbench_state import drives as _drives
@@ -75,15 +75,16 @@ _CELL_GAP = "  "  # Treeview cells have no padding: Keeps the right-aligned size
 _SEARCH_DELAY_MS = 200  # Rebuilding a long list on every keystroke would make typing sluggish.
 
 
-def _call_analyze(analyze, directory, progress, rescan: bool):
-    """Passes rescan only to an analysis that knows it (tests hand in simpler ones)."""
+def _call_analyze(analyze, directory, progress, rescan: bool, full: bool = False):
+    """Passes rescan and full only to an analysis that knows them (tests hand in simpler ones)."""
     import inspect
 
     try:
-        takes_rescan = "rescan" in inspect.signature(analyze).parameters
+        parameters = inspect.signature(analyze).parameters
     except (TypeError, ValueError):
-        takes_rescan = False
-    return analyze(directory, progress, rescan=rescan) if takes_rescan else analyze(directory, progress)
+        parameters = {}
+    options = {name: value for name, value in (("rescan", rescan), ("full", full)) if name in parameters}
+    return analyze(directory, progress, **options)
 
 
 class FolderPanel:
@@ -402,16 +403,121 @@ class SettingsPanel:
         return "break"
 
 
+class OverviewPanel:
+    """The collection: one row per platform folder, in place of the file list. The start page."""
+
+    _COLUMNS = ("files", "games", "marked", "problematic", "last_scan", "state")
+
+    def __init__(self, window: "ReviewWindow", rows):
+        self.window = window
+        self.rows = {row.folder: row for row in rows}
+        frame = self.frame = ttk.Frame(window.middle, padding=(16, 8, 16, 8))
+        frame.columnconfigure(0, weight=1)
+        frame.rowconfigure(1, weight=1)
+        heading = ttk.Frame(frame)
+        heading.grid(row=0, column=0, sticky="ew", pady=(0, 8))
+        for key, command in (("overview.full_scan", lambda: self.open(rescan=True, full=True)),
+                             ("overview.scan", lambda: self.open(rescan=True)),
+                             ("overview.open", self.open)):
+            ttk.Button(heading, text=tr(key), command=command).pack(side="right", padx=(8, 0))
+        ttk.Label(heading, text=tr("overview.title"), font=window.bold_font).pack(side="left")
+
+        self.tree = ttk.Treeview(frame, columns=self._COLUMNS, selectmode="browse")
+        self.tree.heading("#0", text=tr("overview.platform"), anchor="w")
+        self.tree.column("#0", width=200, stretch=True)
+        for column in self._COLUMNS:
+            numeric = column in ("files", "games", "marked", "problematic")
+            self.tree.heading(column, text=tr(f"overview.{column}"), anchor="e" if numeric else "w")
+            self.tree.column(column, width=110 if numeric else 200, anchor="e" if numeric else "w",
+                             stretch=not numeric)
+        self.tree.grid(row=1, column=0, sticky="nsew")
+        scrollbar = ttk.Scrollbar(frame, orient="vertical", command=self.tree.yview)
+        scrollbar.grid(row=1, column=1, sticky="ns")
+        self.tree.configure(yscrollcommand=scrollbar.set)
+        hint = ttk.Label(frame, text=tr("overview.hint"))
+        hint.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(8, 0))
+        hint.bind("<Configure>", lambda event: hint.configure(wraplength=max(event.width, 1)))
+
+        self._fit_columns(rows)
+        totals = [0, 0, 0, 0]
+        for row in rows:
+            values = [row.files, row.games, row.marked, row.problematic]
+            for index, value in enumerate(values):
+                totals[index] += value or 0
+            self.tree.insert("", "end", row.folder, text=row.folder, values=(
+                *(_count(value) for value in values),
+                _when(row.last_scan), tr(f"overview.state.{row.state}"),
+            ))
+        self.tree.insert("", "end", self._TOTAL, text=tr("overview.total"),
+                         values=(*(_count(value) for value in totals), "", ""), tags=("total",))
+        self.tree.tag_configure("total", font=window.bold_font)
+        self.tree.bind("<Double-Button-1>", self._open_clicked)
+        self.tree.bind("<Return>", lambda _event: self.open() or "break")
+        self.tree.bindtags((str(self.tree), self.tree.winfo_class(), "all"))
+        first = next(iter(self.rows), None)
+        if first is not None:
+            self.tree.selection_set(first)
+            self.tree.focus(first)
+        window.status.set(tr("overview.status", platforms=len(rows), files=_count(totals[0])))
+
+    _TOTAL = "*total*"  # no folder name: * is not allowed in Windows names
+
+    def _fit_columns(self, rows) -> None:
+        """Every column as wide as its heading and its longest value, in the window's font."""
+        font = tkfont.nametofont("TkDefaultFont")
+        texts = {column: [tr(f"overview.{column}")] for column in self._COLUMNS}
+        texts["#0"] = [tr("overview.platform"), tr("overview.total")] + [row.folder for row in rows]
+        texts["files"].append(_count(999999))
+        for column in ("games", "marked", "problematic"):
+            texts[column].append(_count(99999))
+        texts["last_scan"].append("2026-11-24 13:15")
+        texts["state"] += [tr(f"overview.state.{state}") for state in ("not_scanned", "current", "changed")]
+        for column, values in texts.items():
+            width = max(font.measure(text) for text in values) + (48 if column == "problematic" else 32)
+            self.tree.column(column, width=width, minwidth=width, stretch=column == "#0")
+
+    def selected(self) -> str | None:
+        selection = self.tree.selection()
+        return selection[0] if selection and selection[0] in self.rows else None
+
+    def _open_clicked(self, event) -> str | None:
+        row = self.tree.identify_row(event.y)
+        if row not in self.rows:
+            return None
+        self.tree.selection_set(row)
+        self.open()
+        return "break"
+
+    def open(self, rescan: bool = False, full: bool = False) -> None:
+        folder = self.selected()
+        if folder is not None:
+            self.window.open_platform(folder, rescan=rescan, full=full)
+
+
+def _count(value) -> str:
+    return "–" if value is None else f"{value:,}".replace(",", "\u202f")
+
+
+def _when(moment: str | None) -> str:
+    if not moment:
+        return tr("overview.never")
+    return moment.replace("T", " ")[:16]
+
+
 class ReviewWindow:
     def __init__(
         self, analyze, directory: Path | None, scope: str | None = None, settings_path: Path = SETTINGS_PATH,
-        config_file=None,
+        config_file=None, config_loader=None,
     ):
         self.settings_path = settings_path
         # The ConfigFile from rom_cleanup_workbench.py; without one, the settings are not offered.
         self.config_file = config_file
         self.settings_panel = None
         self.folder_panel = None
+        self.overview_panel = None
+        # The roms folder of the collection; None while a folder is open on its own.
+        self.collection_root = None
+        self.config_loader = config_loader
         self.analyze = analyze
         self.directory = directory
         self.review = None
@@ -462,7 +568,7 @@ class ReviewWindow:
         self._hide_nothing_to_do()
         self._show_directory()
 
-    def start_analysis(self, rescan: bool = False) -> None:
+    def start_analysis(self, rescan: bool = False, full: bool = False) -> None:
         """Analyzes in the background, so that the window does not hang while reading large ZIPs.
 
         If an analysis is already running, it is replaced: Its result no longer counts.
@@ -480,13 +586,14 @@ class ReviewWindow:
         gc.disable()
         answer = queue.Queue()
         self._analysis = answer
-        worker = threading.Thread(target=self._analyze_in_background, args=(self.directory, answer, rescan),
+        worker = threading.Thread(target=self._analyze_in_background, args=(self.directory, answer, rescan, full),
                                   daemon=True)
         self._workers.append(worker)
         worker.start()
         self.root.after(100, self._poll_analysis, answer)
 
-    def _analyze_in_background(self, directory: Path, answer: queue.Queue, rescan: bool = False) -> None:
+    def _analyze_in_background(self, directory: Path, answer: queue.Queue, rescan: bool = False,
+                               full: bool = False) -> None:
         def report(done: int, total: int) -> None:
             if answer is not self._analysis:
                 raise _AnalysisReplaced  # Stops the replaced analysis at the next game.
@@ -494,7 +601,7 @@ class ReviewWindow:
             self._progress = (done, total)
 
         try:
-            answer.put((_call_analyze(self.analyze, directory, report, rescan), None))
+            answer.put((_call_analyze(self.analyze, directory, report, rescan, full), None))
         except Exception as error:  # Every error must reach the window, otherwise it would stay at "Analyzing".
             answer.put((None, str(error) or type(error).__name__))
 
@@ -571,7 +678,9 @@ class ReviewWindow:
 
     def choose_directory(self) -> None:
         """Folder... and f choose the folder in place of the list; the analysis starts once it is chosen."""
-        if self._list_locked() or not self._may_discard_changes(tr("window.discard_folder")):
+        if self.overview_panel is not None and not self._questions and self.folder_panel is None:
+            self.close_overview()
+        elif self._list_locked() or not self._may_discard_changes(tr("window.discard_folder")):
             return
         panel = self.folder_panel = FolderPanel(self, self.directory)
         self._show_panel(panel.frame)
@@ -579,8 +688,68 @@ class ReviewWindow:
 
     def folder_chosen(self, folder: Path) -> None:
         self.close_folder_panel()
-        self.directory = folder
-        self.start_analysis()
+        self.open_folder(folder)
+
+    def open_folder(self, folder: Path) -> None:
+        """A roms folder opens its overview; any other folder is analyzed on its own, as before."""
+        from workbench_db import is_collection
+
+        if self.config_loader is not None and is_collection(folder):
+            self.collection_root = folder
+            save_last_collection(self.settings_path, folder)
+            self.show_overview()
+        else:
+            self.collection_root = None
+            self.directory = folder
+            self._refresh_overview_button()
+            self.start_analysis()
+
+    # The overview -----------------------------------------------------------------------------
+
+    def show_overview(self) -> None:
+        """The platforms of the collection in place of the list; the numbers come from the database."""
+        from workbench_db import overview
+
+        if self.collection_root is None or self._questions:
+            return
+        if self.review is not None and not self._may_discard_changes(tr("window.discard_folder")):
+            return
+        self._analysis = None  # a running analysis no longer counts
+        self.progress_bar.place_forget()
+        self._clear()
+        self.directory = self.collection_root
+        self._show_directory()
+        try:
+            rows = overview(self.collection_root, self.config_loader())
+        except (OSError, ValueError) as error:
+            messagebox.showerror(tr("window.analysis_failed_title"), str(error), parent=self.root)
+            return
+        self.close_overview()
+        panel = self.overview_panel = OverviewPanel(self, rows)
+        self._show_panel(panel.frame)
+        self._refresh_overview_button()
+        panel.tree.focus_set()
+
+    def close_overview(self) -> None:
+        if self.overview_panel is None:
+            return
+        self.overview_panel.frame.destroy()
+        self.overview_panel = None
+        self._hide_panel()
+
+    def open_platform(self, folder: str, rescan: bool = False, full: bool = False) -> None:
+        self.close_overview()
+        self.directory = self.collection_root / folder
+        self._refresh_overview_button()
+        self.start_analysis(rescan=rescan, full=full)
+
+    def _refresh_overview_button(self) -> None:
+        if self.collection_root is not None and self.overview_panel is None:
+            if not self.overview_button.winfo_ismapped():
+                neighbour = self.settings_button if self.settings_button.winfo_manager() else self.folder_button
+                self.overview_button.pack(side="right", padx=(0, 8), before=neighbour)
+        else:
+            self.overview_button.pack_forget()
 
     def close_folder_panel(self) -> None:
         if self.folder_panel is None:
@@ -588,6 +757,8 @@ class ReviewWindow:
         self.folder_panel.frame.destroy()
         self.folder_panel = None
         self._hide_panel()
+        if self.review is None and self._analysis is None and self.collection_root is not None:
+            self.show_overview()  # Cancel from the overview goes back to it
 
     def _show_panel(self, frame) -> None:
         """Puts the settings or the folder choice in place of the list and locks everything that acts on it."""
@@ -764,8 +935,9 @@ class ReviewWindow:
         proceed.pack(side="right", padx=8)
         reanalyze = ttk.Button(bottom, text=tr("window.button.reanalyze"), command=self.reanalyze)
         reanalyze.pack(side="right")
-        folder = ttk.Button(bottom, text=tr("window.button.folder"), command=self.choose_directory)
+        folder = self.folder_button = ttk.Button(bottom, text=tr("window.button.folder"), command=self.choose_directory)
         folder.pack(side="right", padx=8)
+        self.overview_button = ttk.Button(bottom, text=tr("window.button.overview"), command=self.show_overview)
         self.settings_button = ttk.Button(bottom, text=tr("window.button.settings"), command=self.toggle_settings)
         if self.config_file is not None:
             self.settings_button.pack(side="right")
@@ -1329,25 +1501,33 @@ class ReviewWindow:
 
     def _list_locked(self) -> bool:
         """The list is hidden behind the settings, the folder choice or a question: nothing may change it."""
-        return self.settings_panel is not None or self.folder_panel is not None or bool(self._questions)
+        return (self.settings_panel is not None or self.folder_panel is not None or self.overview_panel is not None
+                or bool(self._questions))
 
     def _refresh_locks(self) -> None:
         locked = self._list_locked()
         for widget in self._list_controls:
             widget.state(["disabled"] if locked else ["!disabled"])
-        self.settings_button.state(["disabled"] if self._questions or self.folder_panel else ["!disabled"])
+        self.settings_button.state(["disabled"] if self._questions or self.folder_panel or self.overview_panel
+                                   else ["!disabled"])
+        self.folder_button.state(["disabled"] if self._questions or self.folder_panel or self.settings_panel
+                                 else ["!disabled"])
         self.close_button.state(["disabled"] if self._questions else ["!disabled"])
 
     def run(self) -> int:
-        if self.directory is None:
+        directory = self.directory
+        if directory is None and self.config_loader is not None:
+            directory = load_last_collection(self.settings_path)
+        if directory is None:
             self.status.set(tr("window.choose_folder_status"))
             self.root.after(100, self.choose_directory)
         else:
-            self.start_analysis()
+            self.open_folder(directory)
         self.root.mainloop()
         return 1 if self.had_errors else 0
 
 
-def run_window(analyze, directory: Path | None, scope: str | None = None, config_file=None) -> int:
+def run_window(analyze, directory: Path | None, scope: str | None = None, config_file=None,
+               config_loader=None) -> int:
     """Shows the window and returns the program's exit code."""
-    return ReviewWindow(analyze, directory, scope, config_file=config_file).run()
+    return ReviewWindow(analyze, directory, scope, config_file=config_file, config_loader=config_loader).run()

@@ -399,3 +399,51 @@ def record_changes(root: Path, directory: Path, deleted: list[str], renamed: lis
                 mtime = None
             collection.rename_file(name, old, new, mtime)
         collection.save_summary(name, *summary_of(results), key=config_key(config))
+
+
+# The overview ----------------------------------------------------------------------------------
+
+def is_collection(folder: Path) -> bool:
+    """A roms folder: it has a database, or it holds no ROM files itself but platform folders."""
+    folder = Path(folder)
+    if (folder / DATABASE_FOLDER / DATABASE_NAME).is_file():
+        return True
+    try:
+        if rom_files(folder):
+            return False
+    except OSError:
+        return False
+    return any(child.is_dir() and not _is_hidden(child) for child in folder.iterdir())
+
+
+@dataclass
+class OverviewRow:
+    """One line of the overview: a platform folder and what the database knows about it."""
+
+    folder: str
+    state: str
+    files: int | None = None
+    games: int | None = None
+    marked: int | None = None
+    problematic: int | None = None
+    last_scan: str | None = None
+    has_own_config: bool = False
+
+
+def overview(root: Path, config: Config) -> list[OverviewRow]:
+    """The platforms of a collection; numbers computed with other settings are computed again (no scan)."""
+    rows = []
+    key = config_key(config)
+    with Collection(root) as collection:
+        for directory in collection.platform_folders():
+            name = directory.name
+            state = collection.state(directory)
+            row = collection.platform(name)
+            if state != NOT_SCANNED and row.summary_key != key:
+                facts = collection.load_facts(name)
+                results = decide(directory, facts, config)
+                collection.save_summary(name, *summary_of(results), key=key)
+                row = collection.platform(name)
+            rows.append(OverviewRow(name, state, row.files, row.games, row.marked, row.problematic,
+                                    row.last_scan, row.has_own_config))
+    return rows

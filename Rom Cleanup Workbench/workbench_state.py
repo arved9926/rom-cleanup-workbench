@@ -30,6 +30,7 @@ from translations import tr
 SETTINGS_PATH = Path(__file__).with_name("rom_cleanup_workbench_settings.json")
 _SCOPE_KEY = "scope"
 _CONFIRMED_KEY = "confirmed_save_files"
+_COLLECTION_KEY = "last_collection"
 SCOPE_PROBLEMS = "problems"
 SCOPE_MARKED = "marked"
 SCOPE_ALL_FILES = "all"
@@ -81,6 +82,17 @@ def load_scope(path: Path) -> str:
 
 def save_scope(path: Path, scope: str) -> None:
     _save_settings(path, **{_SCOPE_KEY: scope})
+
+
+def load_last_collection(path: Path) -> Path | None:
+    """The roms folder opened last; None if there is none or it is gone."""
+    value = _load_settings(path).get(_COLLECTION_KEY)
+    folder = Path(value) if isinstance(value, str) and value else None
+    return folder if folder is not None and folder.is_dir() else None
+
+
+def save_last_collection(path: Path, folder: Path) -> None:
+    _save_settings(path, **{_COLLECTION_KEY: str(folder)})
 
 
 def load_confirmed_saves(path: Path) -> dict[str, int]:

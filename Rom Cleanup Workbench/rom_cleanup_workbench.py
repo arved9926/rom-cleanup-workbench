@@ -1436,7 +1436,19 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     _apply_language(args)
 
-    def analyze(directory: Path, progress=None, rescan: bool = False) -> Review:
+    def load_config() -> Config:
+        """The configuration as the analysis uses it, also for the numbers of the overview."""
+        try:
+            config = Config.load(_config_path(args))
+        except (OSError, ValueError, TypeError) as error:
+            raise ValueError(tr("config.unreadable", error=error)) from error
+        if args.priority:
+            config = replace(config, region_priority=config.with_regions(args.priority))
+        if args.delete_tag is not None:
+            config = replace(config, delete_tags=args.delete_tag)
+        return config
+
+    def analyze(directory: Path, progress=None, rescan: bool = False, full: bool = False) -> Review:
         """Reads the configuration again for every analysis and examines the folder.
 
         A platform of a collection is decided from its database; rescan (F5) reads it again.
@@ -1459,7 +1471,7 @@ def main(argv: list[str] | None = None) -> int:
         root = collection_root(directory)
         if root is None:
             return Review(scan_directory(directory, config, progress), config, source)
-        results = open_platform(root, directory, config, progress, rescan=rescan)
+        results = open_platform(root, directory, config, progress, rescan=rescan, full=full)
         return Review(results, config, source, collection_root=root, directory=directory)
 
     if args.report_only or args.yes:
@@ -1483,7 +1495,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         from rom_cleanup_workbench_window import run_window
 
-        return run_window(analyze, args.directory, scope, config_file)
+        return run_window(analyze, args.directory, scope, config_file, load_config)
     except (ImportError, RuntimeError) as error:
         print(tr("terminal.no_window", error=error), file=sys.stderr)
         print(tr("terminal.nothing_deleted"))
