@@ -812,7 +812,9 @@ class ReviewWindow:
                 row = f"g{group_index}f{file_index}"
                 self._file_ids[id(entry)] = row
                 self._files[row] = (result, entry)
-        self._show_directory(self.directory.name if self.directory else None)
+        from workbench_db import platform_label
+
+        self._show_directory(platform_label(self.directory) or None)
         self._show_all_groups()
         self._select_first_file()
 
@@ -1026,6 +1028,10 @@ class ReviewWindow:
     def _row_height(self) -> int:
         return tkfont.nametofont("TkDefaultFont").metrics("linespace") + 6
 
+    def _line_height(self) -> int:
+        """One empty line in the window's font (the blank line before the list)."""
+        return tkfont.nametofont("TkDefaultFont").metrics("linespace")
+
     def change_font_size(self, steps: int) -> None:
         """Changes the font size in the whole window, including the row height of the list."""
         size = min(_MAX_FONT_SIZE, max(_MIN_FONT_SIZE, self.font_size + steps))
@@ -1041,6 +1047,8 @@ class ReviewWindow:
         self._fit_bottom_row()
         if self.overview_panel is not None:
             self.overview_panel._fit_columns(self.overview_panel.rows.values())
+        if getattr(self, "info_row", None) is not None:
+            self.info_row.configure(padding=(8, 8, 8, 8 + self._line_height()))
 
     def _fit_radio_indicator(self) -> None:
         """The circle grows with the font, so that the red dot stays easy to see."""
@@ -1159,7 +1167,7 @@ class ReviewWindow:
             ),
         )
 
-        info_row = self.info_row = ttk.Frame(self.root, padding=8)
+        info_row = self.info_row = ttk.Frame(self.root, padding=(8, 8, 8, 8 + self._line_height()))
         info_row.pack(fill="x")
         info_row.columnconfigure(1, weight=1)
         platform_part = self.platform_part = ttk.Frame(info_row)
@@ -1169,7 +1177,7 @@ class ReviewWindow:
         info_row.bind("<Configure>", lambda _event: self._place_short_keys())
         self.platform_label = ttk.Label(platform_part, text=tr("window.platform"), foreground=_KEEP_TEXT,
                                         font=self.bold_font)
-        self.info_label = ttk.Label(platform_part, textvariable=self.info)
+        self.info_label = ttk.Label(platform_part, textvariable=self.info, font=self.bold_font)
         self.info_label.pack(side="left")
         self._show_short_keys()
 

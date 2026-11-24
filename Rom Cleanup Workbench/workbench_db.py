@@ -674,5 +674,18 @@ def settings_location(config_file, root: Path | None, own: bool) -> str:
     from translations import tr
 
     if own and root is not None:
-        return tr("settings.saved_in_db", folder=Path(root) / DATABASE_FOLDER, file=Path(config_file.path).name)
+        return tr("settings.saved_in_db", file=Path(config_file.path).name)
     return tr("settings.file", path=config_file.path)
+
+
+def platform_label(directory: Path | None) -> str:
+    """The open platform's name for "Platform: ...", with * if it has its own settings (as in the overview)."""
+    if directory is None:
+        return ""
+    directory = Path(directory)
+    root = collection_root(directory)
+    if root is None:
+        return directory.name
+    with Collection(root) as collection:
+        own = collection.own_config(directory.name) is not None
+    return directory.name + (" *" if own else "")

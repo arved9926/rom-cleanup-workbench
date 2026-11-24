@@ -2255,8 +2255,7 @@ class OwnPlatformSettingsTests(OverviewWindowBase):
         panel.own.set(True)
         panel._scope_changed()
         self.assertEqual(panel.location_label.cget("text"),
-                         f"Saved in: the collection's database ({self.roms / '.rom_cleanup_workbench'}); "
-                         "the language in redundanz_config.json")
+                         "Saved in: the collection's database (the language in redundanz_config.json)")
         panel.regions.delete(0, "end")
         for region in ("Japan", "none", "USA"):
             panel.regions.insert("end", region)
@@ -2270,6 +2269,9 @@ class OwnPlatformSettingsTests(OverviewWindowBase):
         self.assertEqual(window.config_file.read()["region_priority"], ["USA", "none", "Japan"])
         window.show_overview()
         self.assertEqual(window.overview_panel.tree.item("nes", "text"), "nes *")
+        window.overview_panel.open()  # the platform page shows the * as well
+        self.wait(window)
+        self.assertEqual(window.info.get(), "nes *")
 
     def test_a_folder_on_its_own_has_no_choice(self):
         self.write("nes", "Title (USA).nes", b"usa")

@@ -1445,9 +1445,11 @@ class WorkbenchApp(App):
             self._game_numbers[id(result)] = game_index
             for file_index, entry in enumerate(result.keep + result.marked):
                 self._file_keys[id(entry)] = f"g{game_index}f{file_index}"
+        from workbench_db import platform_label
+
         green = _green(self)
         self.query_one("#info", Static).update(
-            Text.assemble((tr("window.platform"), f"bold {green}"), " " + (self.directory.name if self.directory else "")))
+            Text.assemble((tr("window.platform"), f"bold {green}"), " ", (platform_label(self.directory), "bold")))
         self.show_games()
 
     # The list ---------------------------------------------------------------------------------
