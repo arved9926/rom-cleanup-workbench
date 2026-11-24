@@ -1511,7 +1511,8 @@ def main(argv: list[str] | None = None) -> int:
             print(tr("terminal.nothing_deleted"))
             return 1
         # None: the terminal version finds out itself whether it may draw more than ASCII.
-        return run_tui(analyze, args.directory, scope, config_file, True if args.ascii else None)
+        return run_tui(analyze, args.directory, scope, config_file, True if args.ascii else None,
+                       config_loader=load_config)
 
     # Loaded only here: Without the window the program also runs without tkinter.
     try:

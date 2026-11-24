@@ -42,13 +42,14 @@ from textual.renderables.bar import Bar as BarRenderable
 from textual.screen import ModalScreen, Screen
 from textual.scrollbar import ScrollBar, ScrollBarRender
 from textual.widgets import (
-    Button, DataTable, Input, OptionList, ProgressBar, RadioButton, RadioSet, Static, Tree,
+    Button, Checkbox, DataTable, Input, OptionList, ProgressBar, RadioButton, RadioSet, Static, Tree,
 )
 from textual.widgets.data_table import ColumnKey
 
 from translations import LANGUAGE_NAMES, current_language, tr
 from workbench_state import (
-    SCOPES, SETTINGS_PATH, add_confirmed_saves, drives, format_kb, load_confirmed_saves, load_scope, save_scope,
+    SCOPES, SETTINGS_PATH, add_confirmed_saves, drives, format_kb, load_confirmed_saves, load_last_collection,
+    load_scope, save_last_collection, save_scope,
     scope_flags, subfolders,
 )
 
@@ -234,15 +235,16 @@ def _cell(text: str, **options) -> Text:
     return Text(f" {text} ", **options)
 
 
-def _call_analyze(analyze, directory, progress, rescan: bool):
-    """Passes rescan only to an analysis that knows it (tests hand in simpler ones)."""
+def _call_analyze(analyze, directory, progress, rescan: bool, full: bool = False):
+    """Passes rescan and full only to an analysis that knows them (tests hand in simpler ones)."""
     import inspect
 
     try:
-        takes_rescan = "rescan" in inspect.signature(analyze).parameters
+        parameters = inspect.signature(analyze).parameters
     except (TypeError, ValueError):
-        takes_rescan = False
-    return analyze(directory, progress, rescan=rescan) if takes_rescan else analyze(directory, progress)
+        parameters = {}
+    options = {name: value for name, value in (("rescan", rescan), ("full", full)) if name in parameters}
+    return analyze(directory, progress, **options)
 
 
 class GameTable(DataTable):
@@ -647,6 +649,128 @@ class FolderScreen(Screen):
         self.dismiss(None)
 
 
+class OverviewScreen(Screen):
+    """The collection: one row per platform folder, as in the window. The start page.
+
+    dismiss() hands (platform, rescan, full) to the app, or "folder" for the folder choice.
+    """
+
+    BINDINGS = [
+        Binding("escape,q", "app.quit", show=False),
+        Binding("enter", "open", show=False, priority=True),
+        Binding("r,R,f5", "scan", show=False),
+        Binding("a,A", "scan_all", show=False),
+        Binding("v,V", "toggle_full", show=False),
+        Binding("f,F", "folder", show=False),
+    ]
+    TOTAL = "*total*"
+
+    def __init__(self, root: Path, rows, message: str | None = None):
+        super().__init__()
+        self.message = message  # shown instead of the counts, for example after scanning all
+        self.root_folder = root
+        self.rows = {row.folder: row for row in rows}
+        self.scanning = False
+
+    def compose(self) -> ComposeResult:
+        with Horizontal(id="overview-head"):
+            yield Static(tr("overview.title"), id="overview-title", markup=False)
+            yield Static(tr("window.folder", directory=self.root_folder), id="overview-folder", markup=False)
+        table = DataTable(id="overview-table", cursor_type="row", zebra_stripes=False)
+        yield table
+        with Horizontal(id="overview-buttons"):
+            yield Button(tr("overview.open"), id="overview-open", compact=True)
+            yield Button(tr("overview.scan"), id="overview-scan", compact=True)
+            yield Button(tr("overview.scan_all"), id="overview-scan-all", compact=True)
+            yield Checkbox(tr("overview.full"), id="overview-full", compact=True)
+            yield Button(tr("settings.cancel"), id="overview-cancel", compact=True)
+        yield Static(tr("overview.hint") + "  " + tr("overview.tui_keys"), id="overview-hint", markup=False)
+        yield Static("", id="overview-status", markup=False)
+
+    def on_mount(self) -> None:
+        table = self.query_one("#overview-table", DataTable)
+        table.add_column(tr("overview.platform"), key="platform")
+        for column in ("files", "games", "marked", "problematic", "last_scan", "state"):
+            table.add_column(tr(f"overview.{column}"), key=column)
+        totals = [0, 0, 0, 0]
+        for row in self.rows.values():
+            values = [row.files, row.games, row.marked, row.problematic]
+            for index, value in enumerate(values):
+                totals[index] += value or 0
+            table.add_row(Text(row.folder), *(Text(_count(value), justify="right") for value in values),
+                          Text(_when(row.last_scan)), Text(tr(f"overview.state.{row.state}")), key=row.folder)
+        table.add_row(Text(tr("overview.total"), style="bold"),
+                      *(Text(_count(value), justify="right", style="bold") for value in totals),
+                      Text(""), Text(""), key=self.TOTAL)
+        self.query_one("#overview-cancel", Button).display = False
+        self.query_one("#overview-status", Static).update(
+            self.message or tr("overview.status", platforms=len(self.rows), files=_count(totals[0])))
+        table.focus()
+
+    def selected(self) -> str | None:
+        table = self.query_one("#overview-table", DataTable)
+        if not table.row_count:
+            return None
+        key = table.coordinate_to_cell_key(table.cursor_coordinate).row_key.value
+        return key if key in self.rows else None
+
+    def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
+        event.stop()
+        self.action_open()
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        event.stop()
+        actions = {"overview-open": self.action_open, "overview-scan": self.action_scan,
+                   "overview-scan-all": self.action_scan_all, "overview-cancel": self.app.cancel_scan_all}
+        actions[event.button.id]()
+
+    def _full(self) -> bool:
+        return self.query_one("#overview-full", Checkbox).value
+
+    def action_toggle_full(self) -> None:
+        box = self.query_one("#overview-full", Checkbox)
+        box.value = not box.value
+
+    def action_open(self, rescan: bool = False) -> None:
+        platform = self.selected()
+        if platform is not None and not self.scanning:
+            self.dismiss((platform, rescan, self._full() if rescan else False))
+
+    def action_scan(self) -> None:
+        self.action_open(rescan=True)
+
+    def action_scan_all(self) -> None:
+        if not self.scanning:
+            self.app.scan_all(self, self._full())
+
+    def action_folder(self) -> None:
+        if not self.scanning:
+            self.dismiss("folder")
+
+    def set_scanning(self, scanning: bool) -> None:
+        self.scanning = scanning
+        for widget_id in ("#overview-open", "#overview-scan", "#overview-scan-all", "#overview-full"):
+            self.query_one(widget_id).disabled = scanning
+        self.query_one("#overview-cancel", Button).display = scanning
+
+    def show_status(self, text: str) -> None:
+        self.query_one("#overview-status", Static).update(text)
+
+
+def _count(value) -> str:
+    return "–" if value is None else f"{value:,}".replace(",", ".")
+
+
+def _is_collection(folder: Path) -> bool:
+    from workbench_db import is_collection
+
+    return is_collection(folder)
+
+
+def _when(moment: str | None) -> str:
+    return moment.replace("T", " ")[:16] if moment else tr("overview.never")
+
+
 class RegionList(OptionList):
     """The region priority, best first. Shift+Up/Down move the highlighted region, Delete removes it."""
 
@@ -895,6 +1019,14 @@ class WorkbenchApp(App):
     #languages > RadioButton.-on > .toggle--button, #prefer > RadioButton.-on > .toggle--button { color: #e5383b; background: #222222; }
     #language-hint { margin: 1 0 1 0; color: #aaaaaa; }
     #tags-label { margin-bottom: 1; }
+    #overview-head { height: 1; margin-bottom: 1; }
+    #overview-title { width: auto; text-style: bold; padding: 0 2 0 0; }
+    #overview-folder { width: 1fr; }
+    #overview-table { height: 1fr; }
+    #overview-buttons { height: 1; margin-top: 1; }
+    #overview-buttons > Button, #overview-buttons > Checkbox { margin-right: 2; }
+    #overview-hint { height: auto; margin-top: 1; color: #aaaaaa; }
+    #overview-status { height: 1; margin-top: 1; }
     #prefer-label { margin-top: 1; margin-bottom: 1; }
     #settings-hint { height: auto; margin-top: 1; }
 
@@ -968,6 +1100,7 @@ class WorkbenchApp(App):
         # The keys of the user's concept (2026-11-22): x delete, k keep, Enter execute, s settings,
         # f folder; the old d, p, x (proceed), e, o and the Ctrl keys of the window are gone here.
         Binding("x,X", "demote", show=False),
+        Binding("o,O", "overview", show=False),
         Binding("k,K", "promote", show=False),
         Binding("1", "choose_view(0)", show=False),
         Binding("2", "choose_view(1)", show=False),
@@ -987,8 +1120,12 @@ class WorkbenchApp(App):
     ]
 
     def __init__(self, analyze, directory: Path | None, scope: str | None = None, config_file=None,
-                 settings_path: Path = SETTINGS_PATH, ascii: bool = False, colors16: bool = False):
+                 settings_path: Path = SETTINGS_PATH, ascii: bool = False, colors16: bool = False,
+                 config_loader=None):
         super().__init__()
+        self.config_loader = config_loader
+        self.collection_root = None  # the roms folder of the collection; None for a folder on its own
+        self._batch = None  # the running scan of all platforms: its cancel flag
         # run_tui finds both out for the terminal; tests choose them.
         self.ascii = ascii  # only ASCII characters: Linux console, terminals without UTF-8, --ascii
         self.colors16 = colors16  # ANSI colors instead of the window's: 16 colors, Linux console
@@ -1047,11 +1184,16 @@ class WorkbenchApp(App):
         # Not focusable: the keys must keep acting on the list after a view was clicked.
         self.query_one("#views", RadioSet).can_focus = False
         self.query_one("#games", GameTable).focus()
-        if self.directory is None:
+        directory = self.directory
+        if directory is None and self.config_loader is not None:
+            directory = load_last_collection(self.settings_path)
+        if directory is None:
             self._set_status(tr("window.choose_folder_status"))
             self.call_after_refresh(self.action_choose_folder)  # as the window does at the start
+        elif self.config_loader is not None and _is_collection(directory):
+            self.call_after_refresh(self.open_folder, directory)  # the overview, once the list is built
         else:
-            self.start_analysis()
+            self.open_folder(directory)  # at once, as before: the analysis starts right away
 
     def on_unmount(self) -> None:
         if self._scrollbar_renderer is not None:
@@ -1060,7 +1202,7 @@ class WorkbenchApp(App):
 
     # Analysis ---------------------------------------------------------------------------------
 
-    def start_analysis(self, rescan: bool = False) -> None:
+    def start_analysis(self, rescan: bool = False, full: bool = False) -> None:
         """Analyzes in a background thread, so that the terminal does not hang while reading large ZIPs."""
         self._analysis += 1
         number = self._analysis
@@ -1078,7 +1220,7 @@ class WorkbenchApp(App):
 
         def work() -> None:
             try:
-                review = _call_analyze(self.analyze, directory, report, rescan)
+                review = _call_analyze(self.analyze, directory, report, rescan, full)
             except Exception as error:  # Every error must reach the screen, otherwise it would stay at "Analyzing".
                 self.call_from_thread(self._finish_analysis, number, None, str(error) or type(error).__name__)
             else:
@@ -1456,11 +1598,105 @@ class WorkbenchApp(App):
     def folder_chosen(self, folder: Path | None) -> None:
         """The analysis starts once a folder is chosen; Cancel leaves everything as it was."""
         if folder is None:
+            if self.review is None and self.collection_root is not None:
+                self.action_overview()  # Cancel from the overview goes back to it
             return
+        self.open_folder(folder)
+
+    def open_folder(self, folder: Path) -> None:
+        """A roms folder opens its overview; any other folder is analyzed on its own, as before."""
+        from workbench_db import is_collection
+
+        if self.config_loader is not None and is_collection(folder):
+            self.collection_root = folder
+            save_last_collection(self.settings_path, folder)
+            self.action_overview()
+            return
+        self.collection_root = None
         self.directory = folder
         self.query_one("#folder", Static).update(self._folder_text())
         self.query_one("#games", GameTable).focus()
         self.start_analysis()
+
+    # The overview -----------------------------------------------------------------------------
+
+    def overview_open(self) -> bool:
+        return isinstance(self.screen, OverviewScreen)
+
+    def action_overview(self) -> None:
+        """o: the platforms of the collection; after changes by hand it asks first."""
+        if self.collection_root is None or self.overview_open() or self.deleting or len(self.screen_stack) > 1:
+            return
+        if self.review is not None and self.review.moved_count():
+            self.ask("question", tr("window.discard_title"), tr("window.discard_folder"),
+                     then=lambda yes: self._show_overview() if yes else None)
+        else:
+            self._show_overview()
+
+    def _show_overview(self, message: str | None = None) -> None:
+        from workbench_db import overview
+
+        self._analysis += 1  # a running analysis no longer counts
+        self.query_one("#progress", ProgressBar).display = False
+        self.review = None
+        self._clear_list()
+        self.directory = self.collection_root
+        self.query_one("#folder", Static).update(self._folder_text())
+        try:
+            rows = overview(self.collection_root, self.config_loader())
+        except (OSError, ValueError) as error:
+            self.show_message("error", tr("window.analysis_failed_title"), str(error))
+            return
+        self.push_screen(OverviewScreen(self.collection_root, rows, message), self._overview_closed)
+
+    def _overview_closed(self, choice) -> None:
+        if choice == "folder":
+            self._open_folder_choice()
+        elif choice:
+            platform, rescan, full = choice
+            self.directory = self.collection_root / platform
+            self.query_one("#folder", Static).update(self._folder_text())
+            self.query_one("#games", GameTable).focus()
+            self.start_analysis(rescan=rescan, full=full)
+
+    def scan_all(self, screen: OverviewScreen, full: bool) -> None:
+        """Scans every platform in a background thread; each is saved at once; nothing is deleted."""
+        import threading
+
+        from workbench_db import ScanCancelled, scan_all
+
+        cancel = threading.Event()
+        self._batch = cancel
+        screen.set_scanning(True)
+        root = self.collection_root
+
+        def report(platform, number, count, done, total):
+            if cancel.is_set():
+                raise ScanCancelled
+            self.call_from_thread(screen.show_status, tr("overview.scanning", platform=platform, done=done,
+                                                         total=total, number=number, count=count))
+
+        def work() -> None:
+            try:
+                finished = scan_all(root, full=full, progress=report)
+                message = tr("overview.scan_finished", count=len(finished))
+            except ScanCancelled:
+                message = tr("overview.scan_cancelled")
+            except Exception as error:  # every error must reach the screen
+                message = tr("window.analysis_failed", error=str(error) or type(error).__name__)
+            self.call_from_thread(self._scan_all_finished, screen, message)
+
+        self.run_worker(work, thread=True, group="scan-all", exit_on_error=False)
+
+    def cancel_scan_all(self) -> None:
+        if self._batch is not None:
+            self._batch.set()
+
+    def _scan_all_finished(self, screen: OverviewScreen, message: str) -> None:
+        self._batch = None
+        if self.screen is screen:
+            self.pop_screen()
+        self._show_overview(message)
 
     # Settings ---------------------------------------------------------------------------------
 
@@ -1646,12 +1882,12 @@ class WorkbenchApp(App):
 
 
 def run_tui(analyze, directory: Path | None, scope: str | None = None, config_file=None,
-            ascii: bool | None = None) -> int:
+            ascii: bool | None = None, config_loader=None) -> int:
     """Shows the terminal version and returns the program's exit code.
 
     ascii: True for --ascii; None finds out from the terminal and the locale (wants_ascii).
     """
-    app = WorkbenchApp(analyze, directory, scope, config_file)
+    app = WorkbenchApp(analyze, directory, scope, config_file, config_loader=config_loader)
     app.ascii = wants_ascii() if ascii is None else ascii
     # The app has already asked the terminal how many colors it has (Rich's detection).
     app.colors16 = wants_16_colors(app.console.color_system)

@@ -1577,6 +1577,104 @@ class ScanAllTests(OverviewWindowTests):
         self.assertIn("is no roms folder", error.getvalue())
 
 
+class OverviewTerminalTests(unittest.IsolatedAsyncioTestCase):
+    """Step 6: the overview and the scan of all platforms in the terminal version."""
+
+    def setUp(self):
+        try:
+            import rom_cleanup_workbench_tui as tui
+        except ImportError as error:
+            self.skipTest(f"Textual missing: {error}")
+        self.tui = tui
+        translations.set_language("en")
+        self.addCleanup(translations.set_language, "en")
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        self.roms = Path(temp.name) / "roms"
+        for platform, names in {"nes": {"Title (USA).nes": b"u", "Title (Japan).nes": b"j"},
+                                "snes": {"Game (USA).sfc": b"g"}}.items():
+            (self.roms / platform).mkdir(parents=True)
+            for name, content in names.items():
+                (self.roms / platform / name).write_bytes(content)
+        self.config = rules_config()
+        self.settings = Path(temp.name) / "settings.json"
+
+    def analyze(self, directory, progress=None, rescan=False, full=False):
+        import workbench_db
+
+        root = workbench_db.collection_root(directory)
+        if root is None:
+            return rf.Review(rf.scan_directory(directory, self.config, progress), self.config)
+        results = workbench_db.open_platform(root, directory, self.config, progress, rescan=rescan, full=full)
+        return rf.Review(results, self.config, collection_root=root, directory=directory)
+
+    def app(self, directory):
+        return self.tui.WorkbenchApp(self.analyze, directory, "all", settings_path=self.settings,
+                                     config_loader=lambda: self.config)
+
+    async def settle(self, app, pilot):
+        for _ in range(3):
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+
+    def overview_rows(self, app):
+        table = app.screen.query_one("#overview-table")
+        return {key.value: [str(cell) for cell in table.get_row(key)] for key in table.rows}
+
+    async def test_a_roms_folder_starts_with_the_overview(self):
+        app = self.app(self.roms)
+        async with app.run_test(size=(140, 30)) as pilot:
+            await self.settle(app, pilot)
+            self.assertTrue(app.overview_open())
+            rows = self.overview_rows(app)
+            self.assertEqual(list(rows), ["nes", "snes", "*total*"])
+            self.assertEqual(rows["nes"][-1], "not scanned")
+
+    async def test_enter_opens_a_platform_and_o_comes_back(self):
+        app = self.app(self.roms)
+        async with app.run_test(size=(140, 30)) as pilot:
+            await self.settle(app, pilot)
+            await pilot.press("enter")
+            await self.settle(app, pilot)
+            self.assertFalse(app.overview_open())
+            self.assertEqual(app.directory, self.roms / "nes")
+            self.assertEqual(len(app.review.results), 1)
+            await pilot.press("o")
+            await self.settle(app, pilot)
+            self.assertTrue(app.overview_open())
+            rows = self.overview_rows(app)
+            self.assertEqual(rows["nes"][1:5], ["2", "1", "1", "0"])
+            self.assertEqual(rows["nes"][-1], "current")
+
+    async def test_a_scans_all_platforms(self):
+        app = self.app(self.roms)
+        async with app.run_test(size=(140, 30)) as pilot:
+            await self.settle(app, pilot)
+            await pilot.press("a")
+            await self.settle(app, pilot)
+            self.assertTrue(app.overview_open())
+            self.assertIsNone(app._batch)
+            rows = self.overview_rows(app)
+            self.assertEqual((rows["nes"][-1], rows["snes"][-1]), ("current", "current"))
+            self.assertEqual(str(app.screen.query_one("#overview-status").render()), "2 platform(s) scanned.")
+
+    async def test_the_last_collection_opens_at_the_start(self):
+        self.tui.save_last_collection(self.settings, self.roms)
+        app = self.app(None)
+        async with app.run_test(size=(140, 30)) as pilot:
+            await self.settle(app, pilot)
+            self.assertTrue(app.overview_open())
+            self.assertEqual(app.collection_root, self.roms)
+
+    async def test_a_platform_folder_on_its_own_opens_as_before(self):
+        app = self.app(self.roms / "nes")
+        async with app.run_test(size=(140, 30)) as pilot:
+            await self.settle(app, pilot)
+            self.assertFalse(app.overview_open())
+            self.assertIsNone(app.collection_root)
+            self.assertFalse((self.roms / ".rom_cleanup_workbench").exists())
+
+
 class RescanFlagTests(unittest.TestCase):
     """F5 asks for a new scan; analyses without the parameter (as in many tests) still work."""
 
@@ -4050,8 +4148,8 @@ class MainTests(RedundanzTestCase):
         chosen = []
         environment = environment if environment is not None else {}
         with mock.patch.object(rf.sys, "platform", platform), mock.patch.dict(os.environ, environment), mock.patch(
-            "rom_cleanup_workbench_window.run_window", lambda *a: chosen.append("window") or 0
-        ), mock.patch("rom_cleanup_workbench_tui.run_tui", lambda *a: chosen.append(("tui", a[1:])) or 0):
+            "rom_cleanup_workbench_window.run_window", lambda *a, **_k: chosen.append("window") or 0
+        ), mock.patch("rom_cleanup_workbench_tui.run_tui", lambda *a, **_k: chosen.append(("tui", a[1:])) or 0):
             for name in ("DISPLAY", "WAYLAND_DISPLAY"):
                 if name not in environment:
                     os.environ.pop(name, None)
