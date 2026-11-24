@@ -1319,6 +1319,73 @@ class PlatformFromDatabaseTests(CollectionDatabaseTests):
         self.assertEqual(self.open().platform("nes").files, 2)
 
 
+class PlatformStateAndQuickScanTests(CollectionDatabaseTests):
+    """Step 3: changed since the last scan; the quick scan reads only changes, the full scan everything."""
+
+    def scan(self, full=False):
+        import workbench_db
+
+        with workbench_db.Collection(self.roms) as collection:
+            return workbench_db.scan_platform(collection, self.roms / "nes", full=full)
+
+    def state(self):
+        import workbench_db
+
+        with workbench_db.Collection(self.roms) as collection:
+            return collection.state(self.roms / "nes")
+
+    def test_states(self):
+        self.write("nes", "A (USA).nes", b"a")
+        self.assertEqual(self.state(), "not_scanned")
+        self.scan()
+        self.assertEqual(self.state(), "current")
+        self.write("nes", "B (USA).nes", b"b")
+        self.assertEqual(self.state(), "changed")
+        self.scan()
+        self.assertEqual(self.state(), "current")
+        (self.roms / "nes" / "A (USA).nes").unlink()
+        self.assertEqual(self.state(), "changed")
+
+    def test_a_changed_size_or_time_counts_as_changed(self):
+        self.write("nes", "A (USA).nes", b"a")
+        self.scan()
+        path = self.roms / "nes" / "A (USA).nes"
+        stat = path.stat()
+        os.utime(path, ns=(stat.st_atime_ns, stat.st_mtime_ns + 10_000_000_000))
+        self.assertEqual(self.state(), "changed")
+
+    def test_the_quick_scan_reads_only_new_and_changed_files(self):
+        self.write_zip("nes", "A (USA).zip", {"a.nes": b"a"})
+        self.write_zip("nes", "B (USA).zip", {"b.nes": b"b"})
+        self.assertEqual(self.scan(), 2)
+        self.write_zip("nes", "C (USA).zip", {"c.nes": b"c"})
+        (self.roms / "nes" / "B (USA).zip").unlink()
+        reads = []
+        original = rf.read_facts
+        with mock.patch("workbench_db.read_facts", side_effect=lambda path: reads.append(path.name) or original(path)):
+            self.assertEqual(self.scan(), 1)
+        self.assertEqual(reads, ["C (USA).zip"])
+        names = [item.name for item in self.open().load_facts("nes")]
+        self.assertEqual(names, ["A (USA).zip", "C (USA).zip"])
+
+    def test_the_full_scan_reads_everything(self):
+        self.write("nes", "A (USA).nes", b"a")
+        self.write("nes", "B (USA).nes", b"b")
+        self.scan()
+        self.assertEqual(self.scan(full=True), 2)
+
+    def test_the_quick_scan_keeps_known_checksums(self):
+        import workbench_db
+
+        self.write("nes", "Title (USA).nes", b"same")
+        self.write("nes", "Title (World).nes", b"same")
+        workbench_db.open_platform(self.roms, self.roms / "nes", self.config)
+        self.write("nes", "Other (USA).nes", b"o")
+        self.scan()
+        loaded = {item.name: item.sha256 for item in self.open().load_facts("nes")}
+        self.assertTrue(loaded["Title (USA).nes"])
+
+
 class RescanFlagTests(unittest.TestCase):
     """F5 asks for a new scan; analyses without the parameter (as in many tests) still work."""
 

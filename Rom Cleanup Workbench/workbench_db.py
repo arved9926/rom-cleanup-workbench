@@ -29,8 +29,14 @@ from datetime import datetime
 from pathlib import Path
 
 from rom_cleanup_workbench import (
-    Config, FileFacts, GroupResult, ZipMember, _is_hidden, decide, known_checksums, scan_facts,
+    Config, FileFacts, GroupResult, ZipMember, _is_hidden, decide, known_checksums, read_facts, rom_files,
+    scan_facts,
 )
+
+# The state of a platform in the overview.
+NOT_SCANNED = "not_scanned"
+CURRENT = "current"
+CHANGED = "changed"
 
 DATABASE_FOLDER = ".rom_cleanup_workbench"
 DATABASE_NAME = "rom_cleanup_workbench.sqlite"
@@ -221,6 +227,21 @@ class Collection:
             facts.append(item)
         return sorted(facts, key=lambda item: item.name.casefold())
 
+    def file_stamps(self, folder: str) -> dict[str, tuple[int | None, int | None]]:
+        """Name -> (size, change time) of the files of the last scan."""
+        platform_id = self._platform_id(folder, create=False)
+        if platform_id is None:
+            return {}
+        return {name: (size, mtime) for name, size, mtime in self._db.execute(
+            "SELECT name, size, mtime_ns FROM files WHERE platform_id = ?", (platform_id,))}
+
+    def state(self, directory: Path) -> str:
+        """not_scanned, current or changed: compares names, sizes and change times only (fast)."""
+        directory = Path(directory)
+        if self.platform(directory.name).last_scan is None:
+            return NOT_SCANNED
+        return CURRENT if _stamps(directory) == self.file_stamps(directory.name) else CHANGED
+
     def update_checksums(self, folder: str, checksums: dict[str, str]) -> None:
         """Keeps checksums of plain files that were computed while deciding."""
         platform_id = self._platform_id(folder, create=False)
@@ -296,15 +317,69 @@ def summary_of(results: list[GroupResult]) -> tuple[int, int, int]:
             sum(1 for result in results if result.problems))
 
 
+def _stamps(directory: Path) -> dict[str, tuple[int | None, int | None]]:
+    stamps = {}
+    for path in rom_files(directory):
+        try:
+            stat = path.stat()
+            stamps[path.name] = (stat.st_size, stat.st_mtime_ns)
+        except OSError:
+            stamps[path.name] = (None, None)
+    return stamps
+
+
+def quick_scan_facts(directory: Path, old: list[FileFacts], progress=None) -> tuple[list[FileFacts], int]:
+    """Reads only new and changed files; unchanged ones (name, size, change time) keep their facts.
+
+    Returns the facts and how many files were read. progress(done, total) counts all files.
+    """
+    known = {item.name: item for item in old}
+    files = rom_files(directory)
+    if progress:
+        progress(0, len(files))
+    facts, read = [], 0
+    for done, path in enumerate(files, 1):
+        try:
+            stat = path.stat()
+            stamp = (stat.st_size, stat.st_mtime_ns)
+        except OSError:
+            stamp = (None, None)
+        item = known.get(path.name)
+        if item is not None and (item.size, item.mtime_ns) == stamp and stamp != (None, None):
+            facts.append(item)
+        else:
+            facts.append(read_facts(path))
+            read += 1
+        if progress:
+            progress(done, len(files))
+    return facts, read
+
+
+def scan_platform(collection: "Collection", directory: Path, progress=None, full: bool = False) -> int:
+    """Scans a platform and stores the facts: quickly (only changes) or fully. Returns the files read."""
+    name = Path(directory).name
+    old = None if full else collection.load_facts(name)
+    if old is None:
+        facts = scan_facts(directory, progress)
+        read = len(facts)
+    else:
+        facts, read = quick_scan_facts(directory, old, progress)
+    collection.save_facts(name, facts)
+    return read
+
+
 def open_platform(root: Path, directory: Path, config: Config, progress=None,
-                  rescan: bool = False) -> list[GroupResult]:
-    """Decides a platform from the database; scans it first if it was never scanned or rescan is set."""
+                  rescan: bool = False, full: bool = False) -> list[GroupResult]:
+    """Decides a platform from the database; scans it first if it was never scanned or rescan is set.
+
+    A rescan is quick (only new and changed files) unless full is set.
+    """
     name = Path(directory).name
     with Collection(root) as collection:
         facts = None if rescan else collection.load_facts(name)
         if facts is None:
-            facts = scan_facts(directory, progress)
-            collection.save_facts(name, facts)
+            scan_platform(collection, directory, progress, full=full)
+            facts = collection.load_facts(name)
         results = decide(directory, facts, config)
         collection.update_checksums(name, known_checksums(results))
         collection.save_summary(name, *summary_of(results), key=config_key(config))
