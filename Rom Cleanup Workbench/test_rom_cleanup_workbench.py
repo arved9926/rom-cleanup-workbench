@@ -1117,7 +1117,7 @@ class GameTitleTests(RedundanzTestCase):
         self.assertEqual(self.single().title, "1942")
 
 
-class CollectionDatabaseTests(unittest.TestCase):
+class CollectionDatabaseBase(unittest.TestCase):
     """The database of a roms folder (workbench_db): created on opening, keeps the facts of a scan."""
 
     def setUp(self):
@@ -1150,6 +1150,9 @@ class CollectionDatabaseTests(unittest.TestCase):
         return [(result.title, [e.path.name for e in result.keep], [e.path.name for e in result.marked],
                  [[str(note) for note in e.notes] for e in result.keep + result.marked], list(result.problems))
                 for result in results]
+
+
+class CollectionDatabaseTests(CollectionDatabaseBase):
 
     def test_opening_creates_a_hidden_database_folder(self):
         import workbench_db
@@ -1251,13 +1254,16 @@ class CollectionDatabaseTests(unittest.TestCase):
             workbench_db.Collection(self.roms)
 
 
-class PlatformFromDatabaseTests(CollectionDatabaseTests):
+class PlatformFromDatabaseBase(CollectionDatabaseBase):
     """Step 2: a platform of a collection is decided from its database; F5 scans again."""
 
     def open_platform(self, platform="nes", config=None, rescan=False):
         import workbench_db
 
         return workbench_db.open_platform(self.roms, self.roms / platform, config or self.config, rescan=rescan)
+
+
+class PlatformFromDatabaseTests(PlatformFromDatabaseBase):
 
     def test_without_a_database_a_folder_stays_on_its_own(self):
         import workbench_db
@@ -1319,7 +1325,7 @@ class PlatformFromDatabaseTests(CollectionDatabaseTests):
         self.assertEqual(self.open().platform("nes").files, 2)
 
 
-class PlatformStateAndQuickScanTests(CollectionDatabaseTests):
+class PlatformStateAndQuickScanTests(CollectionDatabaseBase):
     """Step 3: changed since the last scan; the quick scan reads only changes, the full scan everything."""
 
     def scan(self, full=False):
@@ -1386,7 +1392,7 @@ class PlatformStateAndQuickScanTests(CollectionDatabaseTests):
         self.assertTrue(loaded["Title (USA).nes"])
 
 
-class OverviewWindowTests(CollectionDatabaseTests):
+class OverviewWindowBase(CollectionDatabaseBase):
     """Step 4: the overview of a collection is the window's start page."""
 
     def analyze(self, directory, progress=None, rescan=False, full=False):
@@ -1431,6 +1437,9 @@ class OverviewWindowTests(CollectionDatabaseTests):
         self.write("nes", "Title (USA).nes", b"usa")
         self.write("nes", "Title (Japan).nes", b"jap")
         self.write("snes", "Game (USA).sfc", b"g")
+
+
+class OverviewWindowTests(OverviewWindowBase):
 
     def test_a_roms_folder_opens_its_overview(self):
         self.fill()
@@ -1500,7 +1509,7 @@ class OverviewWindowTests(CollectionDatabaseTests):
         self.assertEqual(sorted(reads), ["Title (Japan).nes", "Title (USA).nes"])
 
 
-class ScanAllTests(OverviewWindowTests):
+class ScanAllTests(OverviewWindowBase):
     """Step 5: scan every platform (window and --scan-all), quick or full; nothing is deleted."""
 
     def test_scan_all_saves_every_platform(self):
@@ -1577,7 +1586,7 @@ class ScanAllTests(OverviewWindowTests):
         self.assertIn("is no roms folder", error.getvalue())
 
 
-class OverviewTerminalTests(unittest.IsolatedAsyncioTestCase):
+class OverviewTerminalBase(unittest.IsolatedAsyncioTestCase):
     """Step 6: the overview and the scan of all platforms in the terminal version."""
 
     def setUp(self):
@@ -1620,6 +1629,9 @@ class OverviewTerminalTests(unittest.IsolatedAsyncioTestCase):
     def overview_rows(self, app):
         table = app.screen.query_one("#overview-table")
         return {key.value: [str(cell) for cell in table.get_row(key)] for key in table.rows}
+
+
+class OverviewTerminalTests(OverviewTerminalBase):
 
     async def test_a_roms_folder_starts_with_the_overview(self):
         app = self.app(self.roms)
@@ -1675,7 +1687,7 @@ class OverviewTerminalTests(unittest.IsolatedAsyncioTestCase):
             self.assertFalse((self.roms / ".rom_cleanup_workbench").exists())
 
 
-class ManualMovesTests(PlatformFromDatabaseTests):
+class ManualMovesTests(PlatformFromDatabaseBase):
     """Step 7: k and x stay in the database until Proceed or a new scan; a changed file forgets them."""
 
     def review(self):
@@ -1734,7 +1746,7 @@ class ManualMovesTests(PlatformFromDatabaseTests):
         self.assertEqual(self.open().moves("nes"), {})
 
 
-class ConfirmedSavesInDatabaseTests(PlatformFromDatabaseTests):
+class ConfirmedSavesInDatabaseTests(PlatformFromDatabaseBase):
     """Step 7: confirmed status or save files of a collection live in its database."""
 
     def save_game(self):
@@ -1784,7 +1796,7 @@ class ConfirmedSavesInDatabaseTests(PlatformFromDatabaseTests):
         self.assertFalse((self.roms / ".rom_cleanup_workbench").exists())
 
 
-class OwnPlatformSettingsTests(OverviewWindowTests):
+class OwnPlatformSettingsTests(OverviewWindowBase):
     """Step 7: a default configuration plus, if wished, a platform's own priority, keywords and ZIP choice."""
 
     def config_file(self):
@@ -1872,7 +1884,7 @@ class OwnPlatformSettingsTests(OverviewWindowTests):
         self.assertIsNone(window.settings_panel.platform)
 
 
-class OwnPlatformSettingsTerminalTests(OverviewTerminalTests):
+class OwnPlatformSettingsTerminalTests(OverviewTerminalBase):
     async def test_the_terminal_settings_offer_default_or_own(self):
         import workbench_db
 
