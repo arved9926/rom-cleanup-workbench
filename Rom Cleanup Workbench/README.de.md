@@ -203,7 +203,7 @@ Meist liegen die Spiele nach Plattformen getrennt in einem gemeinsamen Ordner, e
 | `Ordner...` | `f` | einen anderen `roms`-Ordner wählen |
 | | `q` oder `Esc` | das Programm schließen |
 
-Die Tasten gelten im Fenster und in der Terminal-Version gleich; die Hilfezeile oben zeigt in der Übersicht nur sie.
+Die Tasten gelten im Fenster und in der Terminal-Version gleich. Die Zeile über der Tabelle nennt die wichtigsten, `F1` oder `?` zeigt alle.
 
 **Scannen.** Ein Scan ist normalerweise schnell: Er liest nur neue und geänderte Dateien (erkannt an Name, Größe und Änderungszeit) und übernimmt alles andere aus der Datenbank. Mit `Tiefenscan` wird jede Datei neu gelesen. `F5` in der Liste scannt die geöffnete Plattform schnell. Ausführen trägt gelöschte und umbenannte Dateien sofort ein, ein neuer Scan ist danach nicht nötig.
 
@@ -225,7 +225,7 @@ Mit `--deep-scan` wird jede Datei neu gelesen (Tiefenscan). Gelöscht wird dabei
 
 Da die ZIP-Dateien entpackt werden müssen, um Größe, SHA-256-Prüfsumme und Namen ihres Inhalts zu erhalten, kann es nach der Auswahl eines Verzeichnisses einen Moment dauern, bis die Ergebnisse angezeigt werden.
 
-Die grüne Zeile oben zeigt links `Rom Cleanup Workbench` und rechts den Ordner; darunter steht in Grün `Plattform:` mit dem Namen des geöffneten Ordners. Die geltende Priorität zeigen die Einstellungen. In der Übersicht steht das Wort `Sammlung` ebenfalls in Grün. Die grüne vorletzte Zeile zeigt den Status, während der Analyse zum Beispiel `Analysiere: 120 von 2007 Dateien`. Solange erscheint auch ein Fortschrittsbalken in der Mitte. Das Fenster zeigt auch Fehler, etwa in der Konfiguration, und solange die Analyse scheitert, lässt sich nichts löschen. Beim Löschen erscheint der Fortschrittsbalken in der Mitte, und die grüne Zeile zeigt zum Beispiel `Lösche: 120 von 500 Dateien`; das Fenster nimmt keine Eingaben an, bis das Löschen fertig ist. Danach meldet es das Ergebnis und entfernt die gelöschten Dateien aus der Liste, ohne den Ordner neu zu analysieren; Dateien, die sich nicht löschen ließen, bleiben markiert. `F5` analysiert den Ordner neu, wenn du das willst.
+Die grüne Zeile oben zeigt links `Rom Cleanup Workbench` und rechts den Ordner; darunter steht in Grün `Plattform:` mit dem Namen des geöffneten Ordners. Rechts daneben stehen die wichtigsten Tasten der Ansicht, in der Liste `x Löschen`, `k Behalten` und `F1 / ? Alle Tasten`. `F1` oder `?` zeigt an der Stelle der Liste alle Tasten, nach Themen geordnet; `Esc`, `F1` oder `?` schließt sie wieder. In der Übersicht zeigen beide die Tasten der Übersicht. Die geltende Priorität zeigen die Einstellungen. In der Übersicht steht das Wort `Sammlung` ebenfalls in Grün. Die grüne vorletzte Zeile zeigt den Status, während der Analyse zum Beispiel `Analysiere: 120 von 2007 Dateien`. Solange erscheint auch ein Fortschrittsbalken in der Mitte. Das Fenster zeigt auch Fehler, etwa in der Konfiguration, und solange die Analyse scheitert, lässt sich nichts löschen. Beim Löschen erscheint der Fortschrittsbalken in der Mitte, und die grüne Zeile zeigt zum Beispiel `Lösche: 120 von 500 Dateien`; das Fenster nimmt keine Eingaben an, bis das Löschen fertig ist. Danach meldet es das Ergebnis und entfernt die gelöschten Dateien aus der Liste, ohne den Ordner neu zu analysieren; Dateien, die sich nicht löschen ließen, bleiben markiert. `F5` analysiert den Ordner neu, wenn du das willst.
 
 Ist im ganzen Ordner nichts markiert und keine Datei als Status- oder Spielstanddatei verdächtig, blinkt `Nichts zu tun.` in der Mitte des Fensters.
 
@@ -250,7 +250,8 @@ Das Fenster merkt sich die zuletzt gewählte Ansicht und die bestätigten Status
 | `Enter` | wie die Schaltfläche `Ausführen...`: nach einer Bestätigung löschen, die Nummer vor den behaltenen Dateinamen entfernen (Regel 10) und die vermuteten Status- oder Spielstanddateien bestätigen (Regel 9) |
 | `f` | einen anderen Ordner wählen, im Fenster an der Stelle der Liste: Ordner mit dem Pfeil öffnen, mit Doppelklick sofort auswählen, oder einen Pfad in `Pfad:` tippen, dann `Auswählen` oder `Enter`; `Abbrechen` oder `Esc` behalten den aktuellen Ordner |
 | `r` oder `F5` | neu analysieren, liest auch die Konfiguration neu |
-| `c` oder `F1` | die Credits zeigen |
+| `c` | die Credits zeigen |
+| `F1` oder `?` | alle Tasten zeigen oder wieder ausblenden |
 | `q` oder `Esc` | schließen, ohne etwas zu löschen; in einer Plattform der Sammlung führen beide erst zurück zur Übersicht; nach Änderungen von Hand fragt das Programm vorher |
 
 Waagerechte Linien trennen die Spiele, und jedes zweite Spiel hat einen dunkelgrauen Hintergrund. Dateien, die erhalten bleiben, stehen in Grün, Dateien, die zum Löschen markiert sind, in Rot. Die Spalte `Größe` zeigt die Größe jeder Datei in KB, aufgerundet wie im Windows-Explorer (`1.234 KB`); `?` heißt, dass sich die Größe nicht lesen ließ. Die Größe wird bei der Analyse gelesen. Behaltene Dateien stehen fett unter `Bleibt erhalten:`, zu löschende Dateien in normaler Schrift unter `Zum Löschen markiert`. Das Fenster zeigt weiße Schrift in Lucida Sans Typewriter 11 pt auf schwarzem Grund. Ist die Schrift nicht installiert, nimmt Windows stillschweigend einen Ersatz. Von Hand verschobene Dateien haben einen braunen Hintergrund und tragen den Hinweis `Von Hand`; solange die Zeile gewählt ist, erscheint sie blau. Die Hinweise des Programms bleiben unverändert, auch wenn sie sich auf eine Datei beziehen, die du verschoben hast.
@@ -305,9 +306,9 @@ Unter Linux startet sie von selbst, wenn es keine grafische Anzeige gibt (weder 
 
 Sie braucht [Textual](https://textual.textualize.io/) (getestet mit 8.2.8). Wie du es installierst und das Programm startest, steht unter [Installation](#installation) und [Aufruf](#aufruf).
 
-Ohne Textual sagt das Programm das und löscht nichts. Der Bildschirm hat die Zeilen des Fensters von oben nach unten: die grüne Titelzeile mit dem Ordner, eine Hilfezeile, die Plattform, die Liste, das Filterfeld, die drei Ansichten und die grüne Statuszeile. In der Liste beginnt jedes Spiel mit seinem Namen in Fettschrift, gefolgt von Strichen bis zum rechten Rand; ein Hinweis wie `Unterschiedliche Schreibweisen des Namens` steht in dieser Zeile. In einem schmalen Terminal, etwa den 80 Spalten von PuTTY, brechen lange Dateinamen und Hinweise in ihrer Spalte um, statt den Bildschirm zu verlassen. `Nichts zu tun.` blinkt mit dem eigenen Blinken des Terminals; in PuTTY muss blinkender Text eventuell erst eingeschaltet werden. Fragen und Meldungen erscheinen in einem Rahmen über der Liste, mit Schaltflächen in der Sprache des Programms; `Nein` ist vorgewählt.
+Ohne Textual sagt das Programm das und löscht nichts. Der Bildschirm hat die Zeilen des Fensters von oben nach unten: die grüne Titelzeile mit dem Ordner, die Plattform mit den wichtigsten Tasten, die Liste, das Filterfeld, die drei Ansichten und die grüne Statuszeile. In der Liste beginnt jedes Spiel mit seinem Namen in Fettschrift, gefolgt von Strichen bis zum rechten Rand; ein Hinweis wie `Unterschiedliche Schreibweisen des Namens` steht in dieser Zeile. In einem schmalen Terminal, etwa den 80 Spalten von PuTTY, brechen lange Dateinamen und Hinweise in ihrer Spalte um, statt den Bildschirm zu verlassen. `Nichts zu tun.` blinkt mit dem eigenen Blinken des Terminals; in PuTTY muss blinkender Text eventuell erst eingeschaltet werden. Fragen und Meldungen erscheinen in einem Rahmen über der Liste, mit Schaltflächen in der Sprache des Programms; `Nein` ist vorgewählt.
 
-Die Hilfezeile zeigt die Tasten als `Taste:Aktion`, zum Beispiel `x:löschen  k:behalten`. Fenster und Terminal-Version haben dieselben Tasten.
+Rechts neben der Plattform stehen die wichtigsten Tasten, `F1` oder `?` zeigt alle, nach Themen geordnet. Fenster und Terminal-Version haben dieselben Tasten.
 
 | Taste | Wirkung |
 | --- | --- |
@@ -320,7 +321,8 @@ Die Hilfezeile zeigt die Tasten als `Taste:Aktion`, zum Beispiel `x:löschen  k:
 | `f` | einen anderen Ordner wählen: `Rechts` oder `Leertaste` öffnet einen Ordner, `Links` schließt ihn, `Enter` oder ein Doppelklick wählt; ein Pfad lässt sich auch eintippen |
 | `s` | Einstellungen: `Umschalt+Hoch`/`Umschalt+Runter` verschieben eine Region, `Entf` entfernt sie, `Strg+S` speichert, `Esc` bricht ab |
 | `r` oder `F5` | neu analysieren |
-| `c` oder `F1` | die Credits zeigen (auch `c`, weil manche Terminals `F1` für ihre eigene Hilfe behalten) |
+| `c` | die Credits zeigen |
+| `F1` oder `?` | alle Tasten zeigen oder wieder ausblenden (auch `?`, weil manche Terminals `F1` für ihre eigene Hilfe behalten) |
 | `q` oder `Esc` | schließen, ohne etwas zu löschen; in einer Plattform der Sammlung führen beide erst zurück zur Übersicht; nach Änderungen von Hand fragt das Programm vorher |
 | In einer Frage | `Links`/`Rechts` wählen eine Schaltfläche, `Enter` drückt sie, `Esc` antwortet `Nein` |
 

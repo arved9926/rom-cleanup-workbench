@@ -144,35 +144,6 @@ def _game_of(key: str) -> int | None:
     return int(digits) if digits else None
 
 
-class HelpLine:
-    """The help row: entries such as "r:analyze again", separated by two spaces.
-
-    A narrow terminal breaks the row only between entries, never inside one. str() gives the text.
-    """
-
-    def __init__(self, text: str):
-        self.text = text
-
-    def __str__(self) -> str:
-        return self.text
-
-    def __rich_measure__(self, console, options) -> Measurement:
-        return Measurement(1, cell_len(self.text))
-
-    def __rich_console__(self, console, options):
-        width = max(1, options.max_width)
-        line = ""
-        for entry in (part.strip() for part in self.text.split("  ")):
-            if not entry:
-                continue
-            candidate = f"{line}  {entry}" if line else entry
-            if line and cell_len(candidate) > width:
-                yield from Text(line).wrap(console, width)
-                candidate = entry
-            line = candidate
-        yield from Text(line).wrap(console, width)  # an entry longer than the row still wraps
-
-
 class DashLine:
     """A cell of a game's title row: its text, then "-" up to the right end of the column.
 
@@ -683,6 +654,7 @@ class OverviewScreen(Screen):
         with Horizontal(id="overview-head"):
             yield Static(tr("overview.title"), id="overview-title", markup=False)
             yield Static(tr("window.folder", directory=self.root_folder), id="overview-folder", markup=False)
+        yield Static(_short_keys_text("overview", self.app), id="overview-keys")
         table = DataTable(id="overview-table", cursor_type="row", zebra_stripes=False)
         yield table
         with Horizontal(id="overview-buttons"):
@@ -694,8 +666,7 @@ class OverviewScreen(Screen):
                                      id="overview-hide", compact=True)):
                 yield _plain_radio(switch) if getattr(self.app, "ascii", False) else switch
             yield Button(tr("settings.cancel"), id="overview-cancel", compact=True)
-        yield Static(tr("overview.hint") + " " + tr("overview.own_hint") + "  " + tr("overview.tui_keys"),
-                     id="overview-hint", markup=False)
+        yield Static(tr("overview.hint") + " " + tr("overview.own_hint"), id="overview-hint", markup=False)
         yield Static("", id="overview-status", markup=False)
 
     def on_mount(self) -> None:
@@ -835,6 +806,68 @@ class RegionList(OptionList):
         Binding("shift+down", "screen.move_region(1)", show=False),
         Binding("delete", "screen.remove_region", show=False),
     ]
+
+
+class KeysScreen(Screen):
+    """All keys of the current view, grouped, in place of the list or the overview (F1 or ?)."""
+
+    BINDINGS = [Binding("escape,f1,question_mark", "close", show=False)]
+
+    def __init__(self, context: str, collection: bool):
+        super().__init__()
+        self.context = context
+        self.collection = collection
+
+    def compose(self) -> ComposeResult:
+        from workbench_keys import key_sections, keys_title
+
+        ascii = getattr(self.app, "ascii", False)
+        green = _green(self.app)
+        title = keys_title(self.context)
+        with Horizontal(id="keys-head"):
+            yield Static(Text(title.replace("–", "-") if ascii else title, style=f"bold {green}"), id="keys-title")
+            yield Static(tr("keys.close_hint"), id="keys-hint", markup=False)
+        sections = key_sections(self.context, window=False, collection=self.collection, ascii=ascii)
+        left = (len(sections) + 1) // 2
+        with Horizontal(id="keys-columns"):
+            for part in (sections[:left], sections[left:]):
+                yield Static(self._column(part, green), classes="keys-column")
+
+    @staticmethod
+    def _column(sections, green: str) -> Text:
+        width = max(cell_len(key) for _title, rows in sections for key, _text in rows)
+        text = Text()
+        for index, (title, rows) in enumerate(sections):
+            if index:
+                text.append("\n")
+            text.append(title.upper() + "\n", style="bold")
+            for key, description in rows:
+                text.append("  ")
+                text.append(key + " " * (width - cell_len(key) + 3), style=f"bold {green}")
+                text.append(description + "\n")
+        text.rstrip()
+        return text
+
+    def action_close(self) -> None:
+        self.dismiss(None)
+
+
+def _green(app) -> str:
+    """The green of the kept files: in 16 colors the standard green."""
+    return "#00aa00" if getattr(app, "colors16", False) else "#3fb950"
+
+
+def _short_keys_text(context: str, app) -> Text:
+    """The few keys of a view for the line above the list: key in green, then what it does."""
+    from workbench_keys import short_keys
+
+    text = Text()
+    for index, (key, description) in enumerate(short_keys(context)):
+        if index:
+            text.append("   ")
+        text.append(key, style=f"bold {_green(app)}")
+        text.append(" " + description)
+    return text
 
 
 class SettingsScreen(Screen):
@@ -1029,8 +1062,14 @@ class WorkbenchApp(App):
     #title-row { height: 1; background: #1a7f37; color: #ffffff; }
     #title { width: auto; text-style: bold; padding: 0 1; }
     #folder { width: 1fr; text-align: right; padding: 0 1; }
-    #help, #info { padding: 0 1; }
-    #info { margin-bottom: 1; }
+    #info-row { height: 1; margin-bottom: 1; }
+    #info { width: 1fr; padding: 0 1; }
+    #short-keys { width: auto; padding: 0 1; }
+    #keys-head { height: 1; margin: 1 1 1 1; }
+    #keys-title { width: 1fr; }
+    #keys-hint { width: auto; color: #aaaaaa; }
+    #keys-columns { height: auto; }
+    .keys-column { width: auto; padding: 0 6 0 1; }
     #games { height: 1fr; background: #000000; }
     #games > .datatable--header { background: #222222; color: #ffffff; text-style: bold; }
     #games > .datatable--cursor { background: #0a4a8a; color: #ffffff; }
@@ -1102,7 +1141,8 @@ class WorkbenchApp(App):
     #languages > RadioButton.-on > .toggle--button, #prefer > RadioButton.-on > .toggle--button { color: #e5383b; background: #222222; }
     #language-hint { margin: 1 0 1 0; color: #aaaaaa; }
     #tags-label { margin-bottom: 1; }
-    #overview-head { height: 1; margin-bottom: 1; }
+    #overview-head { height: 1; }
+    #overview-keys { height: 1; margin-bottom: 1; text-align: right; }
     #overview-title { width: auto; text-style: bold; padding: 0 2 0 0; color: #3fb950; }
     .-colors16 #overview-title { color: #00aa00; }
     #overview-folder { width: 1fr; }
@@ -1210,8 +1250,9 @@ class WorkbenchApp(App):
         Binding("f,F", "choose_folder", show=False),
         Binding("s,S", "open_settings", show=False),
         Binding("r,R,f5", "reanalyze", show=False),
-        # c as well: some terminals keep F1 for their own help.
-        Binding("c,C,f1", "credits", show=False),
+        Binding("c,C", "credits", show=False),
+        # ? as well: some terminals keep F1 for their own help.
+        Binding("f1,question_mark", "show_keys", show=False),
     ]
 
     def __init__(self, analyze, directory: Path | None, scope: str | None = None, config_file=None,
@@ -1246,8 +1287,9 @@ class WorkbenchApp(App):
         with Horizontal(id="title-row"):
             yield Static(APP_NAME, id="title")
             yield Static(self._folder_text(), id="folder", markup=False)
-        yield Static(HelpLine(tr("tui.help")), id="help")
-        yield Static("", id="info", markup=False)
+        with Horizontal(id="info-row"):
+            yield Static("", id="info", markup=False)
+            yield Static(_short_keys_text("list", self), id="short-keys")
         table = GameTable(id="games", cursor_type="row", zebra_stripes=False)
         table.add_column(_cell(tr("window.column.file")), key="file")
         table.add_column(_cell(tr("window.column.size"), justify="right"), key="size")
@@ -1349,7 +1391,7 @@ class WorkbenchApp(App):
             self._game_numbers[id(result)] = game_index
             for file_index, entry in enumerate(result.keep + result.marked):
                 self._file_keys[id(entry)] = f"g{game_index}f{file_index}"
-        green = "#00aa00" if self.colors16 else "#3fb950"
+        green = _green(self)
         self.query_one("#info", Static).update(
             Text.assemble((tr("window.platform"), f"bold {green}"), " " + (self.directory.name if self.directory else "")))
         self.show_games()
@@ -1661,7 +1703,7 @@ class WorkbenchApp(App):
     # Credits ----------------------------------------------------------------------------------
 
     def action_credits(self) -> None:
-        """c and F1: who had the idea and who programmed it, the license and the warning."""
+        """c: who had the idea and who programmed it, the license and the warning."""
         self.show_message("info", tr("credits.title"), tr("credits.text") + "\n\n" + tr("credits.license"))
 
     # Analyze again ----------------------------------------------------------------------------
@@ -1970,9 +2012,21 @@ class WorkbenchApp(App):
     def settings_open(self) -> bool:
         return any(isinstance(screen, SettingsScreen) for screen in self.screen_stack)
 
+    def keys_open(self) -> bool:
+        return isinstance(self.screen, KeysScreen)
+
+    def action_show_keys(self) -> None:
+        """F1 and ?: all keys of the list or the overview; F1, ? or Esc close them again."""
+        context = "overview" if self.overview_open() else "list"
+        self.push_screen(KeysScreen(context, self.collection_root is not None))
+
     def check_action(self, action: str, parameters) -> bool | None:
+        if self.keys_open():
+            return False  # the key overview closes itself; nothing acts behind it
         # In the folder choice or the settings, a "d" or "x" must not act on the list behind them.
         locked = self.question_open() or self.deleting or self.folder_open() or self.settings_open()
+        if action == "show_keys" and (locked or self._filter_focused()):
+            return False  # in the filter "?" is a wildcard
         if action in _LIST_ACTIONS and locked:
             return False
         if action in ("focus_filter", "move_game") and self._filter_focused():

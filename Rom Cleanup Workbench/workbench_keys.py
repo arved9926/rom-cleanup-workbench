@@ -1,0 +1,74 @@
+# Rom Cleanup Workbench
+# Copyright (C) 2026 M. Kärcher
+#
+# This program is free software: you can redistribute it and/or modify it under the terms of the
+# GNU General Public License as published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without
+# even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+# General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License along with this program.
+# If not, see <https://www.gnu.org/licenses/>.
+
+"""The keys of the program, for the short line above the list and the key overview (F1 or ?).
+
+The window and the terminal version show the same keys; only a few differ (the font size exists
+only in the window, o only in the terminal version).
+"""
+from __future__ import annotations
+
+from translations import tr
+
+LIST = "list"
+OVERVIEW = "overview"
+
+ALL_KEYS = "F1 / ?"
+
+
+def short_keys(context: str) -> list[tuple[str, str]]:
+    """The few keys of the short line: (key, what it does)."""
+    if context == OVERVIEW:
+        keys = [("Enter", "keys.short.open"), ("r", "keys.short.scan"), ("a", "keys.short.scan_all")]
+    else:
+        keys = [("x", "keys.short.delete"), ("k", "keys.short.keep")]
+    return [(key, tr(text)) for key, text in keys] + [(ALL_KEYS, tr("keys.short.all"))]
+
+
+def key_sections(context: str, window: bool, collection: bool, ascii: bool = False) -> list[tuple[str, list]]:
+    """The key overview: [(section title, [(key, what it does), ...]), ...].
+
+    window: the window (font size with the mouse wheel) or the terminal version (o for the overview);
+    collection: a platform of a collection is open, so q and Esc go back to the overview first.
+    """
+    up_down = "Up Down" if ascii else "↑ ↓"
+    esc = tr("keys.esc")
+    zoom = [(tr("keys.zoom_key"), "keys.font_size")] if window else []
+    if context == OVERVIEW:
+        sections = [
+            ("keys.section.platforms", [(up_down, "keys.select_platform"), ("Enter", "keys.open_platform"),
+                                        ("r  F5", "keys.scan"), ("a", "keys.scan_all")]),
+            ("keys.section.switches", [("d", "keys.deep_scan"), ("h", "keys.hide_empty")]),
+            ("keys.section.program", [("f", "keys.other_roms_folder"), *zoom, ("c", "keys.credits"),
+                                      (f"q  {esc}", "keys.close"), ("F1  ?", "keys.this_overview")]),
+        ]
+    else:
+        back = [("o", "keys.to_overview")] if collection and not window else []
+        sections = [
+            ("keys.section.decide", [("x", "keys.delete_file"), ("k", "keys.keep_file"),
+                                     ("Enter", "keys.run_cleanup")]),
+            ("keys.section.navigate", [(up_down, "keys.select_row"), (f"Shift+{up_down}", "keys.select_several"),
+                                       ("Tab", "keys.next_game"), ("Shift+Tab", "keys.previous_game"),
+                                       ("/", "keys.filter")]),
+            ("keys.section.view", [("1", "window.scope.problems"), ("2", "window.scope.marked"),
+                                   ("3", "window.scope.all"), *zoom]),
+            ("keys.section.program", [("r  F5", "keys.analyze_again"), ("f", "keys.folder"), ("s", "keys.settings"),
+                                      *back, (f"q  {esc}", "keys.back_or_close" if collection else "keys.close"),
+                                      ("c", "keys.credits"), ("F1  ?", "keys.this_overview")]),
+        ]
+    return [(tr(title), [(key, tr(text)) for key, text in rows]) for title, rows in sections]
+
+
+def keys_title(context: str) -> str:
+    return tr("keys.title", where=tr("keys.where.overview" if context == OVERVIEW else "keys.where.list"))

@@ -1475,18 +1475,41 @@ class OverviewWindowTests(OverviewWindowBase):
             window._on_escape()
             close.assert_called_once()
 
-    def test_the_overview_has_its_own_help_line(self):
+    def test_the_short_key_line_follows_the_view(self):
+        def shown(window):
+            return [label.cget("text") for label in window.short_keys.winfo_children()]
+
         self.fill()
         window = self.make_window(self.roms)
         window.open_folder(self.roms)
-        help_text = window.help_label.cget("text")
-        self.assertEqual(help_text, translations.tr("window.help_overview"))
-        for word in ("a: Scan all", "d: Deep Scan", "q or Esc: Close"):
-            self.assertIn(word, help_text)
-        self.assertNotIn("x: delete", help_text)
+        self.assertEqual(shown(window), ["Enter", "Open", "r", "Scan", "a", "Scan all", "F1 / ?", "All keys"])
         window.overview_panel.open()
         self.wait(window)
-        self.assertEqual(window.help_label.cget("text"), translations.tr("window.help"))
+        self.assertEqual(shown(window), ["x", "Delete", "k", "Keep", "F1 / ?", "All keys"])
+        self.assertEqual(window.info.get(), "nes")
+
+    def test_f1_and_question_mark_show_all_keys_of_the_view(self):
+        self.fill()
+        window = self.make_window(self.roms)
+        window.open_folder(self.roms)
+        self.assertTrue(window.root.bind("<F1>") and window.root.bind("<question>"))
+        window.toggle_keys()  # in the overview: its keys
+        panel = window.keys_panel
+        self.assertEqual(panel.context, "overview")
+        self.assertIn(("d", "Deep Scan on/off"), panel.key_labels)
+        self.assertFalse(window._overview_keys_work())  # nothing acts behind the keys
+        window._on_escape()
+        self.assertIsNone(window.keys_panel)
+        self.assertTrue(window.overview_panel.frame.winfo_manager())
+        window.overview_panel.open()
+        self.wait(window)
+        window.toggle_keys()  # in the list: its keys, Enter runs the cleanup
+        self.assertIn(("Enter", "Run the cleanup"), window.keys_panel.key_labels)
+        self.assertIn(("q  Esc", "Back to the overview / close"), window.keys_panel.key_labels)
+        self.assertTrue(window._list_locked())
+        window.toggle_keys()
+        self.assertIsNone(window.keys_panel)
+        self.assertFalse(window._list_locked())
 
     def test_the_keys_of_the_help_line_work_in_the_overview(self):
         self.fill()
@@ -3146,16 +3169,6 @@ class ReviewWindowTests(RedundanzTestCase):
         window.change_font_size(5)
         self.assertGreater(window.tree.column("size", "width"), before)
 
-    def test_help_line_separates_every_key_evenly(self):
-        import re
-
-        for language in translations.LANGUAGES:
-            translations.set_language(language)
-            text = translations.tr("window.help").replace("\n", "  |  ")
-            self.assertEqual(re.findall(r"\S\|| \|\S|\|\s?\S", text.replace("  |  ", "")), [], language)
-        translations.set_language("en")
-        self.assertIn("Enter: Proceed  |  s: Settings  |  f: Folder", translations.tr("window.help"))
-
     def test_window_has_the_keys_of_the_terminal_version(self):
         window = self.open_window()
         for key in ("x", "X", "k", "K", "s", "S", "f", "F", "r", "R", "c", "C", "q", "Q", "1", "2", "3"):
@@ -3167,15 +3180,22 @@ class ReviewWindowTests(RedundanzTestCase):
                          "<Control-o>", "<Control-f>"):
             self.assertFalse(window.root.bind(sequence), sequence)
 
-    def test_help_row_of_the_window_names_the_new_keys_in_every_language(self):
+    def test_the_keys_exist_in_every_language(self):
+        import workbench_keys
+
         for language in translations.LANGUAGES:
             translations.set_language(language)
-            help_text, no_folder = translations.tr("window.help"), translations.tr("window.no_folder")
-            for key in ("x", "k", "1-3", "/", "s", "f", "r", "c", "q"):
-                self.assertRegex(help_text, rf"(^|  ){re.escape(key)}( ?:| )", (language, key))
-            for old in ("Ctrl+L", "Ctrl+O", "Ctrl+E", "Ctrl+F", "Strg+L", "Strg+O", "Demote", "Promote"):
-                self.assertNotIn(old, help_text, (language, old))
-            self.assertTrue(no_folder.endswith("(f)"), language)
+            for context in ("list", "overview"):
+                sections = workbench_keys.key_sections(context, window=True, collection=True)
+                rows = [row for _title, section in sections for row in section]
+                self.assertTrue(all(key and text and not text.startswith("keys.") for key, text in rows),
+                                (language, context))
+                self.assertTrue(workbench_keys.keys_title(context))
+                self.assertEqual(workbench_keys.short_keys(context)[-1][0], "F1 / ?")
+            self.assertTrue(translations.tr("window.no_folder").endswith("(f)"), language)
+        translations.set_language("de")
+        rows = dict(row for _title, section in workbench_keys.key_sections("list", True, False) for row in section)
+        self.assertEqual(rows["Enter"], "Bereinigung durchführen")
         translations.set_language("en")
 
     def test_number_keys_choose_the_view(self):
@@ -3198,10 +3218,9 @@ class ReviewWindowTests(RedundanzTestCase):
             window._quit_key()
         close.assert_called_once()
 
-    def test_f1_shows_the_credits(self):
+    def test_c_shows_the_credits(self):
         window = self.open_window()
-        self.assertTrue(window.root.bind("<F1>"))
-        self.assertIn("F1: Credits", translations.tr("window.help"))
+        self.assertTrue(window.root.bind("<KeyPress-c>"))
         with mock.patch("rom_cleanup_workbench_window.messagebox.showinfo") as info:
             window.show_credits()
         title, message = info.call_args.args[:2]
@@ -5665,11 +5684,14 @@ class TerminalVersionTests(unittest.IsolatedAsyncioTestCase):
             await self.analyzed(app, pilot)
             real_delete = app.review.delete
 
+            keys_pressed = threading.Event()
+
             def slow_delete(progress=None):
                 def report(done, total):
                     progress(done, total)
                     seen.append((done, total))
-                    time.sleep(0.1)  # time for the keys below
+                    # The deletion waits for the keys below, however slow the machine is.
+                    keys_pressed.wait(10)
                 return real_delete(report)
             app.review.delete = slow_delete
             await pilot.press("enter", "left", "enter")
@@ -5680,6 +5702,9 @@ class TerminalVersionTests(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(app.query_one("#filter").disabled)
             self.assertTrue(app.query_one("#views").disabled)
             await pilot.press("x", "3", "slash", "enter", "q")
+            await pilot.pause()
+            self.assertTrue(app.is_running)  # q does not end the program while deleting
+            keys_pressed.set()
             await app.workers.wait_for_complete()
             await pilot.pause()
             self.assertTrue(app.is_running)
@@ -6847,30 +6872,6 @@ class TerminalVersionTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(self.as_16_colors(segment.style.bgcolor), 2, text)  # green
                 self.assertEqual(self.as_16_colors(segment.style.color), 0, text)  # black
 
-    async def test_help_row_names_the_new_keys_in_every_language(self):
-        expected = {"en": "x:delete  k:keep", "de": "x:löschen  k:behalten", "it": "x:elimina  k:mantieni",
-                    "es": "x:eliminar  k:conservar", "fr": "x:supprimer  k:garder", "ja": "x:削除  k:保持"}
-        for language, start in expected.items():
-            translations.set_language(language)
-            help_row = translations.tr("tui.help")
-            self.assertTrue(help_row.startswith(start), language)
-            for key in ("Tab:", "1-3:", "/:", "s:", "f:", "r:", "c:", "q:"):
-                self.assertIn(key, help_row, language)
-            self.assertNotIn("d:", help_row, language)
-
-    async def test_help_row_breaks_only_between_entries(self):
-        app = self.tui.WorkbenchApp(None, Path("/home/user/games"))
-        for width in (80, 104, 60):
-            async with app.run_test(size=(width, 30)) as pilot:
-                await pilot.pause()
-                help_widget = app.query_one("#help")
-                lines = [strip.text.strip() for strip in app.screen._compositor.render_strips()
-                         [help_widget.region.y:help_widget.region.bottom]]
-                self.assertGreater(len(lines), 1, width)  # too long for one row at these widths
-                self.assertEqual("  ".join(lines), translations.tr("tui.help"), width)
-                self.assertTrue(all(line.split("  ")[0].count(":") == 1 for line in lines), lines)
-            app = self.tui.WorkbenchApp(None, Path("/home/user/games"))
-
     async def test_old_keys_do_nothing_any_more(self):
         app = self.app_for(self.TWO_GAMES)
         app.config_file = rf.ConfigFile(app.directory.with_name("config.json"))
@@ -6888,12 +6889,30 @@ class TerminalVersionTests(unittest.IsolatedAsyncioTestCase):
             await pilot.press("x")
             self.assertEqual(app.review.moved_count(), 1)
 
-    async def test_c_and_f1_show_the_credits(self):
+    async def test_f1_and_question_mark_show_the_keys(self):
         app = self.app_for(self.TWO_GAMES)
         async with app.run_test(size=(110, 30)) as pilot:
             await self.analyzed(app, pilot)
-            self.assertIn("c:credits", str(app.query_one("#help").content))
-            for key in ("c", "f1"):
+            self.assertEqual(str(app.query_one("#short-keys").render()), "x Delete   k Keep   F1 / ? All keys")
+            for key in ("f1", "question_mark"):
+                await pilot.press(key)
+                await pilot.pause()
+                self.assertTrue(app.keys_open(), key)
+                texts = " ".join(str(column.render()) for column in app.screen.query(".keys-column"))
+                self.assertIn("Run the cleanup", texts)
+                await pilot.press("x", "q")  # nothing acts behind the keys, and q does not quit
+                await pilot.pause()
+                self.assertTrue(app.is_running)
+                self.assertEqual(app.review.moved_count(), 0)
+                await pilot.press(key)  # the same key closes them
+                await pilot.pause()
+                self.assertFalse(app.keys_open(), key)
+
+    async def test_c_shows_the_credits(self):
+        app = self.app_for(self.TWO_GAMES)
+        async with app.run_test(size=(110, 30)) as pilot:
+            await self.analyzed(app, pilot)
+            for key in ("c",):
                 await pilot.press(key)
                 await pilot.pause()
                 self.assertTrue(app.question_open(), key)

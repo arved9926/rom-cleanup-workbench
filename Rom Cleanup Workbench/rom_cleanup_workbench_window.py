@@ -434,6 +434,40 @@ class SettingsPanel:
         return "break"
 
 
+class KeysPanel:
+    """All keys of the current view, grouped, in place of the list or the overview (F1 or ?)."""
+
+    def __init__(self, window: "ReviewWindow", context: str):
+        from workbench_keys import key_sections, keys_title
+
+        self.window = window
+        self.context = context
+        frame = self.frame = ttk.Frame(window.middle, padding=(16, 8, 16, 8))
+        heading = ttk.Frame(frame)
+        heading.pack(fill="x", pady=(0, 12))
+        ttk.Label(heading, text=keys_title(context), font=window.bold_font, foreground=_KEEP_TEXT).pack(side="left")
+        ttk.Label(heading, text=tr("keys.close_hint"), foreground=_LIGHT_GRAY).pack(side="right")
+        columns = ttk.Frame(frame)
+        columns.pack(fill="both", expand=True, anchor="nw")
+        sections = key_sections(context, window=True, collection=window.collection_root is not None)
+        left = (len(sections) + 1) // 2  # the first half of the sections on the left, the rest on the right
+        self.key_labels = []
+        for part in (sections[:left], sections[left:]):
+            column = ttk.Frame(columns)
+            column.pack(side="left", fill="y", anchor="nw", padx=(0, 48))
+            row = 0
+            for title, rows in part:
+                ttk.Label(column, text=title.upper(), font=window.bold_font).grid(
+                    row=row, column=0, columnspan=2, sticky="w", pady=(0 if row == 0 else 12, 4))
+                for key, text in rows:
+                    row += 1
+                    ttk.Label(column, text=key, font=window.bold_font, foreground=_KEEP_TEXT).grid(
+                        row=row, column=0, sticky="w", padx=(16, 24))
+                    ttk.Label(column, text=text).grid(row=row, column=1, sticky="w")
+                    self.key_labels.append((key, text))
+                row += 1
+
+
 class OverviewPanel:
     """The collection: one row per platform folder, in place of the file list. The start page."""
 
@@ -601,6 +635,7 @@ class ReviewWindow:
         self.config_file = config_file
         self.settings_panel = None
         self.folder_panel = None
+        self.keys_panel = None  # all keys, on F1 or ?
         self.overview_panel = None
         self._batch = None  # the running scan of all platforms: (queue, cancel flag)
         # The roms folder of the collection; None while a folder is open on its own.
@@ -646,7 +681,7 @@ class ReviewWindow:
         self._use_dark_title_bar()
 
     def _show_directory(self, platform: str | None = None) -> None:
-        """The folder in the title row; below the help, "Platform: nes" while a platform's list is shown."""
+        """The folder in the title row; below it "Platform: nes" while a platform's list is shown."""
         self.folder.set(tr("window.folder", directory=self.directory) if self.directory else tr("window.no_folder"))
         self.info.set(platform or "")
         if platform:
@@ -766,7 +801,7 @@ class ReviewWindow:
             self.start_analysis(rescan=True)
 
     def show_credits(self) -> None:
-        """F1 and c: who had the idea and who programmed it, the license and the warning, in the window."""
+        """c: who had the idea and who programmed it, the license and the warning, in the window."""
         if not self._questions:  # not on top of an open question
             message = tr("credits.text") + "\n\n" + tr("credits.license")
             messagebox.showinfo(tr("credits.title"), message, parent=self.root)
@@ -819,9 +854,10 @@ class ReviewWindow:
         except (OSError, ValueError) as error:
             messagebox.showerror(tr("window.analysis_failed_title"), str(error), parent=self.root)
             return
+        self.close_keys()
         self.close_overview()
         panel = self.overview_panel = OverviewPanel(self, rows)
-        self.help_label.configure(text=tr("window.help_overview"))
+        self._show_short_keys()
         self._show_panel(panel.frame)
         self._refresh_overview_button()
         panel.tree.focus_set()
@@ -829,9 +865,10 @@ class ReviewWindow:
     def close_overview(self) -> None:
         if self.overview_panel is None:
             return
+        self.close_keys()
         self.overview_panel.frame.destroy()
         self.overview_panel = None
-        self.help_label.configure(text=tr("window.help"))
+        self._show_short_keys()
         self._hide_panel()
 
     def scan_all(self) -> None:
@@ -1092,16 +1129,15 @@ class ReviewWindow:
             ),
         )
 
-        # Wraps with a large font instead of being cut off on the right.
-        help_label = self.help_label = ttk.Label(self.root, text=tr("window.help"), padding=8)
-        help_label.pack(fill="x")
-        help_label.bind("<Configure>", lambda event: help_label.configure(wraplength=event.width - 16))
-        info_row = ttk.Frame(self.root, padding=(8, 0, 8, 8))
+        info_row = ttk.Frame(self.root, padding=8)
         info_row.pack(fill="x")
+        self.short_keys = ttk.Frame(info_row)
+        self.short_keys.pack(side="right")
         self.platform_label = ttk.Label(info_row, text=tr("window.platform"), foreground=_KEEP_TEXT,
                                         font=self.bold_font)
         self.info_label = ttk.Label(info_row, textvariable=self.info)
         self.info_label.pack(side="left")
+        self._show_short_keys()
 
         # The status has a row of its own, so that it does not push out the buttons.
         bottom = ttk.Frame(self.root, padding=8)
@@ -1193,7 +1229,8 @@ class ReviewWindow:
         self.root.bind("<slash>", lambda _event: self.focus_search())
         self.root.bind("<KP_Divide>", lambda _event: self.focus_search())
         self.root.bind("<F5>", lambda _event: self.reanalyze())
-        self.root.bind("<F1>", lambda _event: self.show_credits())
+        self.root.bind("<F1>", lambda _event: self.toggle_keys())
+        self.root.bind("<question>", lambda _event: self.toggle_keys())
         # As in the terminal version, Ctrl+E only closes the settings.
         self.root.bind("<Control-e>", lambda _event: self._close_settings_key())
         self.root.bind("<Control-E>", lambda _event: self._close_settings_key())
@@ -1242,7 +1279,55 @@ class ReviewWindow:
     def _overview_keys_work(self) -> bool:
         """The overview is shown and nothing lies on top of it."""
         return (self.overview_panel is not None and self.settings_panel is None and self.folder_panel is None
-                and not self._questions)
+                and self.keys_panel is None and not self._questions)
+
+    # The keys ---------------------------------------------------------------------------------
+
+    def _show_short_keys(self) -> None:
+        """The few keys of the current view, right of "Platform: nes"; F1 or ? shows all."""
+        from workbench_keys import LIST, OVERVIEW, short_keys
+
+        for child in self.short_keys.winfo_children():
+            child.destroy()
+        context = OVERVIEW if self.overview_panel is not None else LIST
+        for index, (key, text) in enumerate(short_keys(context)):
+            ttk.Label(self.short_keys, text=key, font=self.bold_font, foreground=_KEEP_TEXT).pack(
+                side="left", padx=(0 if index == 0 else 24, 6))
+            ttk.Label(self.short_keys, text=text).pack(side="left")
+
+    def toggle_keys(self) -> str:
+        """F1 and ? show all keys of the current view in place of the list, and a second time close them."""
+        if self.keys_panel is not None:
+            self.close_keys()
+        elif not self._questions and self.settings_panel is None and self.folder_panel is None:
+            self.open_keys()
+        return "break"
+
+    def open_keys(self) -> None:
+        from workbench_keys import LIST, OVERVIEW
+
+        if self.keys_panel is not None:
+            return
+        context = OVERVIEW if self.overview_panel is not None else LIST
+        panel = self.keys_panel = KeysPanel(self, context)
+        if self.overview_panel is not None:
+            self.overview_panel.frame.pack_forget()  # comes back when the keys close
+            panel.frame.pack(fill="both", expand=True)
+            self._refresh_locks()
+        else:
+            self._show_panel(panel.frame)
+
+    def close_keys(self) -> None:
+        if self.keys_panel is None:
+            return
+        self.keys_panel.frame.destroy()
+        self.keys_panel = None
+        if self.overview_panel is not None:
+            self.overview_panel.frame.pack(fill="both", expand=True)
+            self._refresh_locks()
+            self.overview_panel.tree.focus_set()
+        else:
+            self._hide_panel()
 
     def _scan_all_key(self) -> None:
         if self._overview_keys_work():
@@ -1702,6 +1787,8 @@ class ReviewWindow:
     def _on_escape(self) -> None:
         if self._questions:
             self._answer(self._questions[-1][3])
+        elif self.keys_panel is not None:
+            self.close_keys()
         elif self.folder_panel is not None:
             self.close_folder_panel()
         elif self.settings_panel is not None:
@@ -1714,7 +1801,7 @@ class ReviewWindow:
     def _list_locked(self) -> bool:
         """The list is hidden behind the settings, the folder choice or a question: nothing may change it."""
         return (self.settings_panel is not None or self.folder_panel is not None or self.overview_panel is not None
-                or bool(self._questions))
+                or self.keys_panel is not None or bool(self._questions))
 
     def _refresh_locks(self) -> None:
         locked = self._list_locked()
