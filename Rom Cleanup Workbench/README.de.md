@@ -175,6 +175,8 @@ Das Programm öffnet das Analysefenster und zeigt dort alles an; im Terminal gib
 | `--config file.json` | verwendet eine andere Konfiguration |
 | `--report-only` | ohne Fenster: nur den Bericht im Terminal ausgeben |
 | `--yes` | ohne Fenster: markierte Dateien ohne Nachfrage löschen |
+| `--scan-all` | ohne Fenster: alle Plattform-Ordner des angegebenen `roms`-Ordners scannen und in seiner Datenbank speichern; löscht nichts |
+| `--full` | mit `--scan-all`: jede Datei neu lesen statt nur neue und geänderte |
 | `--all` | mit `--report-only`: auch Spiele ohne markierte Dateien zeigen |
 | `--tui` | die Terminal-Version statt des Fensters verwenden (automatisch unter Linux ohne grafische Anzeige) |
 | `--ascii` | Terminal-Version nur mit ASCII-Zeichen (automatisch auf der Linux-Konsole); schließt `--tui` ein |
@@ -182,6 +184,38 @@ Das Programm öffnet das Analysefenster und zeigt dort alles an; im Terminal gib
 Die Optionen der Befehlszeile und ihre Hilfe (`--help`) sind immer auf Englisch.
 
 Die Tests laufen mit `python -m unittest`.
+
+## Die Sammlung: viele Plattformen und die Datenbank
+
+Meist liegen die Spiele nach Plattformen getrennt in einem gemeinsamen Ordner, etwa `roms/nes`, `roms/snes`, `roms/n64`. Wählst du diesen `roms`-Ordner, zeigt das Programm die **Übersicht** aller Plattformen. Ab dann startet es immer mit der Übersicht des zuletzt benutzten `roms`-Ordners. Als `roms`-Ordner gilt ein Ordner, der schon eine Datenbank hat oder selbst keine ROM-Dateien, aber Unterordner enthält. Jeder andere Ordner wird wie bisher allein analysiert, ohne Datenbank.
+
+**Die Datenbank.** Beim ersten Öffnen legt das Programm im `roms`-Ordner den versteckten Ordner `.rom_cleanup_workbench` mit einer SQLite-Datenbank an. Das ist das Einzige, was es in deine Sammlung schreibt. Gespeichert werden die Ergebnisse jedes Scans: Dateien, Größen, Änderungszeiten, der Inhalt der ZIPs mit Prüfsummen. Die Entscheidungen rechnet das Programm daraus beim Öffnen in einem Augenblick neu. Geänderte Einstellungen wirken deshalb sofort, ohne neuen Scan. Außerdem stehen dort die Änderungen von Hand (`k`/`x`), die bestätigten Status- und Spielstanddateien und die eigenen Einstellungen einzelner Plattformen.
+
+**Die Übersicht** zeigt je Plattform: Dateien, Spiele, zum Löschen markierte Dateien, problematische Spiele, den letzten Scan und den Stand (`nicht gescannt`, `aktuell` oder `geändert`, wenn seitdem Dateien hinzukamen, wegfielen oder sich geändert haben), darunter die Summe.
+
+| Knopf | Taste (Terminal-Version) | Wirkung |
+| --- | --- | --- |
+| `Öffnen` | `Enter` | die markierte Plattform in der gewohnten Liste öffnen (auch Doppelklick) |
+| `Scannen` | `r` | die markierte Plattform scannen und öffnen |
+| `Alle scannen` | `a` | alle Plattformen nacheinander scannen; jede wird sofort gespeichert; `Abbrechen` behält die fertigen; löscht nichts |
+| `Vollständig` | `v` | Häkchen für Scannen und Alle scannen: jede Datei neu lesen statt nur neue und geänderte |
+| `Ordner...` | `f` | einen anderen `roms`-Ordner wählen |
+
+**Scannen.** Ein Scan ist normalerweise schnell: Er liest nur neue und geänderte Dateien (erkannt an Name, Größe und Änderungszeit) und übernimmt alles andere aus der Datenbank. Mit `Vollständig` wird jede Datei neu gelesen. `F5` in der Liste scannt die geöffnete Plattform schnell. Ausführen trägt gelöschte und umbenannte Dateien sofort ein, ein neuer Scan ist danach nicht nötig.
+
+**Zurück zur Übersicht** führt in der Liste der Knopf `Übersicht`, in der Terminal-Version die Taste `o`.
+
+**Änderungen von Hand** (`k`/`x`) bleiben gespeichert, auch nach dem Schließen, bis du ausführst oder die Plattform neu scannst. Ändert sich eine Datei, verfällt ihre Änderung von Hand.
+
+**Eigene Einstellungen je Plattform.** Ist eine Plattform geöffnet, zeigen die Einstellungen oben `Standard verwenden` oder `Eigene für nes`. Mit `Eigene` gelten Priorität, Löschwörter und die Wahl zwischen normaler Datei und ZIP nur für diese Plattform; sie liegen in der Datenbank, `redundanz_config.json` bleibt der Standard für alle anderen. Eine neue eigene Einstellung beginnt mit den Werten des Standards; zurück auf `Standard` verwirft sie. Die Sprache gilt immer für alles. In der Übersicht steht hinter solchen Plattformen ein `*`.
+
+**Ohne Fenster** scannt `--scan-all` alle Plattformen, etwa über Nacht:
+
+```powershell
+python rom_cleanup_workbench.py "D:\roms" --scan-all
+```
+
+Mit `--full` wird jede Datei neu gelesen. Gelöscht wird dabei nie etwas.
 
 ## Analysefenster
 
