@@ -1675,6 +1675,65 @@ class OverviewTerminalTests(unittest.IsolatedAsyncioTestCase):
             self.assertFalse((self.roms / ".rom_cleanup_workbench").exists())
 
 
+class ManualMovesTests(PlatformFromDatabaseTests):
+    """Step 7: k and x stay in the database until Proceed or a new scan; a changed file forgets them."""
+
+    def review(self):
+        directory = self.roms / "nes"
+        return rf.Review(self.open_platform(), self.config, collection_root=self.roms, directory=directory)
+
+    def two_files(self):
+        self.write("nes", "Title (USA).nes", b"usa")
+        self.write("nes", "Title (Japan).nes", b"jap")
+
+    def moved(self, review):
+        return {entry.path.name: (entry in result.keep) for result in review.results
+                for entry in result.keep + result.marked if entry.moved}
+
+    def test_k_survives_closing(self):
+        self.two_files()
+        review = self.review()
+        result = review.results[0]
+        review.promote(result, result.marked[0])
+        again = self.review()
+        self.assertEqual(self.moved(again), {"Title (Japan).nes": True})
+        self.assertEqual(again.moved_count(), 1)
+
+    def test_x_survives_closing_and_k_back_forgets_it(self):
+        self.two_files()
+        review = self.review()
+        result = review.results[0]
+        usa = result.keep[0]
+        review.demote(result, usa)
+        self.assertEqual(self.moved(self.review()), {"Title (USA).nes": False})
+        review.promote(result, usa)  # back where the rules put it
+        self.assertEqual(self.moved(self.review()), {})
+
+    def test_a_changed_file_forgets_its_move(self):
+        self.two_files()
+        review = self.review()
+        result = review.results[0]
+        review.promote(result, result.marked[0])
+        path = self.roms / "nes" / "Title (Japan).nes"
+        stat = path.stat()
+        os.utime(path, ns=(stat.st_atime_ns, stat.st_mtime_ns + 10_000_000_000))
+        self.open().save_facts("nes", rf.scan_facts(self.roms / "nes"))  # facts with the new time
+        self.assertEqual(self.moved(self.review()), {})
+
+    def test_a_new_scan_and_proceed_forget_the_moves(self):
+        self.two_files()
+        review = self.review()
+        result = review.results[0]
+        review.promote(result, result.marked[0])
+        self.open_platform(rescan=True)
+        self.assertEqual(self.moved(self.review()), {})
+        review = self.review()
+        result = review.results[0]
+        review.demote(result, result.keep[0])
+        review.delete()
+        self.assertEqual(self.open().moves("nes"), {})
+
+
 class RescanFlagTests(unittest.TestCase):
     """F5 asks for a new scan; analyses without the parameter (as in many tests) still work."""
 

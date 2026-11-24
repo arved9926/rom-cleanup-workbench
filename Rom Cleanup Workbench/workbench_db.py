@@ -271,6 +271,30 @@ class Collection:
                              "WHERE platform_id = ? AND name = ?", (new, mtime_ns, platform_id, old))
             self._db.execute("UPDATE platforms SET summary_key = NULL WHERE id = ?", (platform_id,))
 
+    # Changes by hand (k and x) -----------------------------------------------------------------
+
+    def save_move(self, folder: str, name: str, size: int | None, mtime_ns: int | None, decision: str | None) -> None:
+        """Remembers k ("keep") or x ("delete") for a file; None forgets it (the file is back where the rules put it)."""
+        platform_id = self._platform_id(folder)
+        with self._db:
+            self._db.execute("DELETE FROM manual_moves WHERE platform_id = ? AND name = ?", (platform_id, name))
+            if decision is not None:
+                self._db.execute("INSERT INTO manual_moves (platform_id, name, size, mtime_ns, decision) "
+                                 "VALUES (?, ?, ?, ?, ?)", (platform_id, name, size, mtime_ns, decision))
+
+    def moves(self, folder: str) -> dict[str, tuple[int | None, int | None, str]]:
+        platform_id = self._platform_id(folder, create=False)
+        if platform_id is None:
+            return {}
+        return {name: (size, mtime, decision) for name, size, mtime, decision in self._db.execute(
+            "SELECT name, size, mtime_ns, decision FROM manual_moves WHERE platform_id = ?", (platform_id,))}
+
+    def clear_moves(self, folder: str) -> None:
+        platform_id = self._platform_id(folder, create=False)
+        if platform_id is not None:
+            with self._db:
+                self._db.execute("DELETE FROM manual_moves WHERE platform_id = ?", (platform_id,))
+
     # Summary for the overview ------------------------------------------------------------------
 
     def save_summary(self, folder: str, games: int, marked: int, problematic: int, key: str) -> None:
@@ -365,6 +389,7 @@ def scan_platform(collection: "Collection", directory: Path, progress=None, full
     else:
         facts, read = quick_scan_facts(directory, old, progress)
     collection.save_facts(name, facts)
+    collection.clear_moves(name)  # a new scan starts from the rules again
     return read
 
 
@@ -383,7 +408,46 @@ def open_platform(root: Path, directory: Path, config: Config, progress=None,
         results = decide(directory, facts, config)
         collection.update_checksums(name, known_checksums(results))
         collection.save_summary(name, *summary_of(results), key=config_key(config))
+        _apply_moves(collection, name, facts, results, config)
     return results
+
+
+def _apply_moves(collection: "Collection", name: str, facts: list[FileFacts], results: list[GroupResult],
+                 config: Config) -> None:
+    """Applies the remembered k and x; a move of a file that changed since is forgotten."""
+    from rom_cleanup_workbench import Review
+
+    moves = collection.moves(name)
+    if not moves:
+        return
+    stamps = {item.name: (item.size, item.mtime_ns) for item in facts}
+    review = Review(results, config)
+    for result in results:
+        for entry in list(result.keep + result.marked):
+            move = moves.pop(entry.path.name, None)
+            if move is None:
+                continue
+            size, mtime, decision = move
+            if stamps.get(entry.path.name) != (size, mtime):
+                collection.save_move(name, entry.path.name, None, None, None)
+            elif decision == "keep" and entry in result.marked:
+                review.promote(result, entry)
+            elif decision == "delete" and entry in result.keep:
+                review.demote(result, entry)
+    for gone in moves:  # files that are no longer there
+        collection.save_move(name, gone, None, None, None)
+
+
+def record_move(root: Path, directory: Path, entry, kept: bool) -> None:
+    """After k or x: remembers the file's new place, or forgets it if it is back where the rules put it."""
+    try:
+        stat = entry.path.stat()
+        size, mtime = stat.st_size, stat.st_mtime_ns
+    except OSError:
+        size, mtime = None, None
+    decision = ("keep" if kept else "delete") if entry.moved else None
+    with Collection(root) as collection:
+        collection.save_move(Path(directory).name, entry.path.name, size, mtime, decision)
 
 
 def record_changes(root: Path, directory: Path, deleted: list[str], renamed: list[tuple[str, str]],
@@ -391,6 +455,7 @@ def record_changes(root: Path, directory: Path, deleted: list[str], renamed: lis
     """After Proceed: deleted and renamed files go into the database, and the overview numbers."""
     name = Path(directory).name
     with Collection(root) as collection:
+        collection.clear_moves(name)  # Proceed has carried out the changes by hand
         collection.remove_files(name, deleted)
         for old, new in renamed:
             try:

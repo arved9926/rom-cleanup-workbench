@@ -1231,6 +1231,7 @@ class Review:
         result.keep.insert(position, entry)
         entry.moved = not entry.moved
         result.title = game_title((result.keep or result.marked)[0])  # the spelling of the first kept file
+        self._record_move(entry, kept=True)
         return True
 
     def demote(self, result: GroupResult, entry: Entry) -> bool:
@@ -1241,7 +1242,15 @@ class Review:
         result.marked.append(entry)
         entry.moved = not entry.moved
         result.title = game_title((result.keep or result.marked)[0])
+        self._record_move(entry, kept=False)
         return True
+
+    def _record_move(self, entry: Entry, kept: bool) -> None:
+        """In a collection, k and x are kept in the database until Proceed or a new scan."""
+        if self.collection_root is not None and self.directory is not None:
+            from workbench_db import record_move
+
+            record_move(self.collection_root, self.directory, entry, kept)
 
     def is_visible(self, result: GroupResult, only_problems: bool, show_all: bool = False, pattern: str = "") -> bool:
         """Shows games with marked files, with show_all also the others.
