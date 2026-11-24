@@ -177,6 +177,8 @@ Il programma apre la finestra di analisi e mostra tutto lì; nel terminale non s
 | `--config file.json` | usa un'altra configurazione |
 | `--report-only` | senza finestra: stampa solo il rapporto nel terminale |
 | `--yes` | senza finestra: elimina i file marcati senza chiedere |
+| `--scan-all` | senza finestra: scansiona tutte le cartelle delle piattaforme della cartella `roms` indicata e le salva nel suo database; non elimina nulla |
+| `--deep-scan` | con `--scan-all`: scansione profonda, rilegge ogni file invece dei soli file nuovi e modificati (`--full` funziona ancora) |
 | `--all` | con `--report-only`: mostra anche i giochi senza file marcati |
 | `--tui` | usa la versione per terminale invece della finestra (automatico su Linux senza display grafico) |
 | `--ascii` | versione per terminale solo con caratteri ASCII (automatico sulla console di Linux); implica `--tui` |
@@ -185,11 +187,47 @@ Le opzioni della riga di comando e il loro aiuto (`--help`) sono sempre in ingle
 
 I test si eseguono con `python -m unittest`.
 
+## La raccolta: molte piattaforme e il database
+
+Di solito i giochi stanno in una cartella comune, separati per piattaforma, per esempio `roms/nes`, `roms/snes`, `roms/n64`. Se scegli questa cartella `roms`, il programma mostra la **panoramica** di tutte le piattaforme. Da quel momento parte sempre con la panoramica dell'ultima cartella `roms` usata. Conta come cartella `roms` una cartella che ha già un database oppure che non contiene file ROM propri ma sottocartelle. I file di contorno come `info.txt`, immagini o PDF non contano come file ROM. Ogni altra cartella viene analizzata da sola come prima, senza database.
+
+**Il database.** La prima volta che apre una cartella `roms`, il programma crea al suo interno la cartella nascosta `.rom_cleanup_workbench` con un database SQLite. È l'unica cosa che scrive nella tua raccolta. Vi salva i risultati di ogni scansione: file, dimensioni, date di modifica, il contenuto degli ZIP con i checksum. Da questi il programma ricalcola in un attimo le decisioni ogni volta che apre una piattaforma, quindi le impostazioni modificate valgono subito, senza nuova scansione. Vi stanno anche le modifiche a mano (`k`/`x`), i file di stato e di salvataggio confermati e le impostazioni delle singole piattaforme.
+
+**La panoramica** mostra per ogni piattaforma: file, giochi, file marcati per l'eliminazione, giochi problematici, l'ultima scansione e lo stato (`non scansionata`, `aggiornata` o `modificata` se da allora sono stati aggiunti, tolti o modificati dei file), con il totale sotto.
+
+| Pulsante | Tasto | Effetto |
+| --- | --- | --- |
+| `Apri` | `Invio` | apre la piattaforma evidenziata nel solito elenco (anche doppio clic) |
+| `Scansiona` | `r` o `F5` | scansiona la piattaforma evidenziata e la apre |
+| `Scansiona tutto` | `a` | scansiona tutte le piattaforme una dopo l'altra; ognuna viene salvata subito e i suoi numeri compaiono subito nella panoramica; `Annulla` tiene quelle finite; non elimina nulla |
+| `Scansione profonda` | `d` | interruttore (punto rosso) per Scansiona e Scansiona tutto: rilegge ogni file invece dei soli file nuovi e modificati |
+| `Nascondi vuote` | `h` | interruttore (punto rosso): nasconde le cartelle senza file di gioco, per esempio `bios` o una cartella con solo `info.txt`; i file di contorno non contano come file di gioco; la scelta viene ricordata |
+| `Cartella...` | `f` | sceglie un'altra cartella `roms` |
+| | `q` o `Esc` | chiude il programma |
+
+I tasti sono gli stessi nella finestra e nella versione per terminale. La riga sopra la tabella nomina i principali; `F1` o `?` li mostra tutti.
+
+**Scansione.** Una scansione di solito è veloce: legge solo i file nuovi e modificati (riconosciuti da nome, dimensione e data di modifica) e prende tutto il resto dal database. Con `Scansione profonda` ogni file viene riletto. `F5` nell'elenco scansiona velocemente la piattaforma aperta. Esegui registra subito i file eliminati e rinominati; dopo non serve una nuova scansione.
+
+**Tornare alla panoramica**: nell'elenco con `Esc`, `q` o il pulsante `Panoramica`, nella versione per terminale anche con `o`. `Esc` o `q` nella panoramica chiude il programma; per uscire del tutto si preme quindi due volte.
+
+**Le modifiche a mano** (`k`/`x`) restano salvate, anche dopo la chiusura, finché esegui o scansioni di nuovo la piattaforma. Se un file cambia, la sua modifica a mano decade.
+
+**Impostazioni per una piattaforma.** Quando una piattaforma è aperta, le impostazioni mostrano in alto `Impostazioni generali` o `Impostazioni specifiche per NES`. Con la scelta specifica, priorità, parole da eliminare e la scelta tra file normale e ZIP valgono solo per questa piattaforma; stanno nel database, e `redundanz_config.json` resta lo standard per tutte le altre. Nuove impostazioni specifiche partono dai valori standard; tornare a `Impostazioni generali` le scarta. La riga sotto il titolo delle impostazioni indica dove vengono salvate: `redundanz_config.json` oppure, con la scelta specifica, il database della raccolta (la lingua resta in `redundanz_config.json`). La lingua vale sempre per tutto. Nella panoramica queste piattaforme hanno un `*` dopo il nome.
+
+**Senza finestra**, `--scan-all` scansiona tutte le piattaforme, per esempio di notte:
+
+```powershell
+python rom_cleanup_workbench.py "D:\roms" --scan-all
+```
+
+Con `--deep-scan` ogni file viene riletto. In questo modo non viene mai eliminato nulla.
+
 ## Finestra di analisi
 
 Poiché i file ZIP devono essere estratti per ottenere dimensione, checksum SHA-256 e nome del loro contenuto, dopo la scelta di una cartella può passare un momento prima che compaiano i risultati.
 
-La riga verde in alto mostra `Rom Cleanup Workbench` a sinistra e la cartella a destra; sotto, la finestra indica la priorità in uso con la sua provenienza. La penultima riga verde mostra lo stato, durante l'analisi per esempio `Analisi: 120 di 2007 file`. In quel momento compare anche una barra di avanzamento al centro. La finestra mostra anche gli errori, per esempio nella configurazione, e finché l'analisi non riesce non si può eliminare nulla. Durante l'eliminazione la barra di avanzamento compare al centro e la riga verde mostra per esempio `Eliminazione: 120 di 500 file`; la finestra non accetta input finché l'eliminazione non è terminata. Al termine comunica il risultato e toglie dall'elenco i file eliminati senza analizzare di nuovo la cartella; i file che non è stato possibile eliminare restano marcati. `F5` analizza di nuovo la cartella quando lo desideri.
+La riga verde in alto mostra `Rom Cleanup Workbench` a sinistra e la cartella a destra; sotto compare in verde `Piattaforma:` con il nome della cartella aperta. A destra ci sono i tasti principali della vista, nell'elenco `x Elimina`, `k Mantieni`, `Invio Esegui la pulizia` e `F1 / ? Aiuto: altri tasti`. `F1` o `?` mostra tutti i tasti al posto dell'elenco, ordinati per tema; `Esc`, `F1` o `?` li chiude di nuovo. Nella panoramica entrambi mostrano i tasti della panoramica e sotto, in `Da sapere`, che cosa significano gli stati, la scansione e la scansione profonda. La priorità in uso si vede nelle impostazioni. Nella panoramica anche la parola `Raccolta` è verde. La penultima riga verde mostra lo stato, durante l'analisi per esempio `Analisi: 120 di 2007 file`. In quel momento compare anche una barra di avanzamento al centro. La finestra mostra anche gli errori, per esempio nella configurazione, e finché l'analisi non riesce non si può eliminare nulla. Durante l'eliminazione la barra di avanzamento compare al centro e la riga verde mostra per esempio `Eliminazione: 120 di 500 file`; la finestra non accetta input finché l'eliminazione non è terminata. Al termine comunica il risultato e toglie dall'elenco i file eliminati senza analizzare di nuovo la cartella; i file che non è stato possibile eliminare restano marcati. `F5` analizza di nuovo la cartella quando lo desideri.
 
 Se in tutta la cartella non è marcato nulla e nessun file è sospettato di essere un file di stato o salvataggio, al centro della finestra lampeggia `Niente da fare.`.
 
@@ -214,8 +252,9 @@ La finestra ricorda l'ultima vista scelta e i file di stato o salvataggio confer
 | `Enter` | come il pulsante `Esegui...`: elimina dopo una conferma, toglie il numero davanti ai nomi dei file mantenuti (regola 10) e conferma i possibili file di stato o salvataggio (regola 9) |
 | `f` | sceglie un'altra cartella, dentro la finestra al posto dell'elenco: apri le cartelle con la freccia, scegline una subito con un doppio clic, oppure scrivi un percorso in `Percorso:`, poi `Seleziona` o `Invio`; `Annulla` o `Esc` mantengono la cartella attuale |
 | `r` o `F5` | analizza di nuovo, rilegge anche la configurazione |
-| `c` o `F1` | mostra i riconoscimenti |
-| `q` o `Esc` | chiude senza eliminare nulla; dopo modifiche a mano il programma chiede prima |
+| `c` | mostra i riconoscimenti |
+| `F1` o `?` | mostra o nasconde tutti i tasti |
+| `q` o `Esc` | chiude senza eliminare nulla; in una piattaforma di una raccolta entrambi tornano prima alla panoramica; dopo modifiche a mano il programma chiede prima |
 
 Linee orizzontali separano i giochi, e un gioco su due ha lo sfondo grigio scuro. La colonna `Dimensione` mostra la dimensione di ogni file in KB, arrotondata per eccesso come in Esplora file di Windows (`1.234 KB`); `?` significa che non è stato possibile leggere la dimensione. La dimensione viene letta durante l'analisi. I file mantenuti sono mostrati in grassetto verde sotto `Mantieni:`, quelli da eliminare in rosso sotto `Da eliminare`. La finestra mostra testo bianco in Lucida Sans Typewriter 11 pt su sfondo nero. Se il font non è installato, Windows sceglie in silenzio un sostituto. I file spostati a mano hanno lo sfondo marrone e portano la nota `A mano`; mentre la riga è selezionata, appare blu. Le note del programma restano invariate, anche se si riferiscono a un file che hai spostato.
 
@@ -225,7 +264,7 @@ Linee orizzontali separano i giochi, e un gioco su due ha lo sfondo grigio scuro
 
 Il campo del filtro a sinistra nella riga in basso restringe la vista attuale ai giochi con un nome di file che contiene il modello. Un gioco resta completo se uno dei suoi file corrisponde. L'elenco si aggiorna poco dopo la digitazione; il contenuto dei file non viene letto.
 
-- `*` sta per un numero qualsiasi di caratteri, `?` per esattamente uno. Tutti gli altri caratteri, compresi `[` e `]`, valgono alla lettera, e maiuscole e minuscole non contano.
+- `*` sta per un numero qualsiasi di caratteri, `?` per esattamente uno. Tutti gli altri caratteri, compresi `[` e `]`, valgono alla lettera, e maiuscole e minuscole non contano. Gli spazi all'inizio e alla fine contano solo tra virgolette: `" by "` trova `Mario by Mick` ma non `Moby Dick`; senza virgolette `by` li trova entrambi.
 - Il modello può comparire in qualsiasi punto del nome: `Beta`, `*Beta*` e `Mario?2` trovano tutti anche `Super Mario 2 (Beta).nes`. Di conseguenza `S*` trova ogni nome che contiene una `S`, non solo i nomi che iniziano con essa.
 - `Invio`, `Tab` e la freccia giù tornano all'elenco; `Esc` svuota il filtro e torna all'elenco.
 - Finché il cursore è nel campo, i tasti scrivono solo lì: `x`, `k`, `Enter`, `f`, `r`, `F5` ed `Esc` non eseguono le loro funzioni dell'elenco.
@@ -269,9 +308,9 @@ Su Linux si avvia da sola quando non c'è un display grafico (né `DISPLAY` né 
 
 Richiede [Textual](https://textual.textualize.io/) (testato con 8.2.8). Come installarlo e avviare il programma è descritto in [Installazione](#installazione) e [Uso](#uso).
 
-Senza Textual il programma lo dice e non elimina nulla. Lo schermo ha le righe della finestra dall'alto in basso: la riga del titolo verde con la cartella, una riga di aiuto, la priorità, l'elenco, il campo del filtro, le tre viste e la riga di stato verde. Nell'elenco ogni gioco inizia con il suo nome in grassetto, seguito da trattini fino al bordo destro; una nota come `Grafie diverse del nome` si trova su quella riga. In un terminale stretto, come le 80 colonne di PuTTY, i nomi di file e le note lunghe vanno a capo nella loro colonna invece di uscire dallo schermo. `Niente da fare.` lampeggia con il lampeggio proprio del terminale; in PuTTY può essere necessario attivare prima il testo lampeggiante. Domande e messaggi compaiono in una cornice sopra l'elenco, con pulsanti nella lingua del programma; `No` è preselezionato.
+Senza Textual il programma lo dice e non elimina nulla. Lo schermo ha le righe della finestra dall'alto in basso: la riga del titolo verde con la cartella, la piattaforma con i tasti principali, l'elenco, il campo del filtro, le tre viste e la riga di stato verde. Nell'elenco ogni gioco inizia con il suo nome in grassetto, seguito da trattini fino al bordo destro; una nota come `Grafie diverse del nome` si trova su quella riga. In un terminale stretto, come le 80 colonne di PuTTY, i nomi di file e le note lunghe vanno a capo nella loro colonna invece di uscire dallo schermo. `Niente da fare.` lampeggia con il lampeggio proprio del terminale; in PuTTY può essere necessario attivare prima il testo lampeggiante. Domande e messaggi compaiono in una cornice sopra l'elenco, con pulsanti nella lingua del programma; `No` è preselezionato.
 
-La riga di aiuto mostra i tasti come `tasto:azione`, per esempio `x:elimina  k:mantieni`. La finestra e la versione per terminale hanno gli stessi tasti.
+A destra della piattaforma ci sono i tasti principali; `F1` o `?` li mostra tutti, ordinati per tema. La finestra e la versione per terminale hanno gli stessi tasti.
 
 | Tasto | Effetto |
 | --- | --- |
@@ -284,8 +323,9 @@ La riga di aiuto mostra i tasti come `tasto:azione`, per esempio `x:elimina  k:m
 | `f` | sceglie un'altra cartella: `Destra` o `Spazio` apre una cartella, `Sinistra` la chiude, `Invio` o un doppio clic la sceglie; si può anche scrivere un percorso |
 | `s` | impostazioni: `Maiusc+Su`/`Maiusc+Giù` spostano una regione, `Canc` la rimuove, `Ctrl+S` salva, `Esc` annulla |
 | `r` o `F5` | analizza di nuovo, rilegge anche la configurazione |
-| `c` o `F1` | mostra i riconoscimenti |
-| `q` o `Esc` | chiude senza eliminare nulla; dopo modifiche a mano il programma chiede prima |
+| `c` | mostra i riconoscimenti |
+| `F1` o `?` | mostra o nasconde tutti i tasti (anche `?`, perché alcuni terminali tengono `F1` per il proprio aiuto) |
+| `q` o `Esc` | chiude senza eliminare nulla; in una piattaforma di una raccolta entrambi tornano prima alla panoramica; dopo modifiche a mano il programma chiede prima |
 | In una domanda | `Sinistra`/`Destra` scelgono un pulsante, `Invio` lo preme, `Esc` risponde `No` |
 
 Funziona anche il mouse: un clic seleziona una riga, la rotellina scorre, e le viste e i pulsanti si possono cliccare. Le lettere scritte in un campo restano nel campo, anche se digitate velocemente o incollate: una `x` nel filtro non marca mai un file.

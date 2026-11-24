@@ -177,6 +177,8 @@ The program opens the analysis window and shows everything there; it prints noth
 | `--config file.json` | use a different configuration |
 | `--report-only` | without window: only print the report in the terminal |
 | `--yes` | without window: delete marked files without asking |
+| `--scan-all` | without window: scan every platform folder of the given `roms` folder and save it in its database; deletes nothing |
+| `--deep-scan` | with `--scan-all`: deep scan, read every file again instead of only new and changed ones (`--full` still works) |
 | `--all` | with `--report-only`: also show games without marked files |
 | `--tui` | use the terminal version instead of the window (automatic on Linux without a graphical display) |
 | `--ascii` | terminal version with ASCII characters only (automatic on the Linux console); implies `--tui` |
@@ -185,11 +187,47 @@ The command line options and their help (`--help`) are always in English.
 
 The tests run with `python -m unittest`.
 
+## The collection: many platforms and the database
+
+Usually the games lie in one common folder, separated by platform, for example `roms/nes`, `roms/snes`, `roms/n64`. If you choose this `roms` folder, the program shows the **overview** of all platforms. From then on it always starts with the overview of the `roms` folder used last. A folder counts as a `roms` folder if it already has a database, or if it holds no ROM files itself but subfolders. Side files such as `info.txt`, pictures or PDFs do not count as ROM files. Any other folder is analyzed on its own as before, without a database.
+
+**The database.** When it opens a `roms` folder for the first time, the program creates the hidden folder `.rom_cleanup_workbench` in it with an SQLite database. That is the only thing it writes into your collection. It stores the results of every scan: files, sizes, change times, the contents of the ZIPs with checksums. From these the program decides again in a moment whenever a platform opens, so changed settings take effect at once, without a new scan. It also holds the changes by hand (`k`/`x`), the confirmed status and save files and the settings of single platforms.
+
+**The overview** shows for each platform: files, games, files marked for deletion, problematic games, the last scan and the state (`not scanned`, `current` or `changed` if files were added, removed or changed since then), with the total below.
+
+| Button | Key | Effect |
+| --- | --- | --- |
+| `Open` | `Enter` | open the highlighted platform in the usual list (also a double click) |
+| `Scan` | `r` or `F5` | scan the highlighted platform and open it |
+| `Scan all` | `a` | scan all platforms one after the other; each is saved at once and its numbers appear in the overview right away; `Cancel` keeps the finished ones; deletes nothing |
+| `Deep Scan` | `d` | switch (red dot) for Scan and Scan all: read every file again instead of only new and changed ones |
+| `Hide empty` | `h` | switch (red dot): hide folders without a game file, for example `bios` or a folder with only `info.txt`; side files do not count as game files; the choice is remembered |
+| `Folder...` | `f` | choose another `roms` folder |
+| | `q` or `Esc` | close the program |
+
+The keys are the same in the window and in the terminal version. The line above the table names the main ones; `F1` or `?` shows all.
+
+**Scanning.** A scan is normally quick: it reads only new and changed files (recognized by name, size and change time) and takes everything else from the database. With `Deep Scan` every file is read again. `F5` in the list scans the open platform quickly. Proceed records deleted and renamed files at once; no new scan is needed afterwards.
+
+**Back to the overview** leads `Esc`, `q` or the button `Overview` in the list, in the terminal version `o` as well. `Esc` or `q` in the overview ends the program; to get all the way out, press it twice.
+
+**Changes by hand** (`k`/`x`) stay saved, also after closing, until you proceed or scan the platform again. If a file changes, its change by hand is dropped.
+
+**Settings for one platform.** While a platform is open, the settings show `General settings` or `NES platform-specific settings` at the top. With the platform-specific choice, the priority, the delete keywords and the choice between plain file and ZIP apply only to this platform; they are stored in the database, and `redundanz_config.json` stays the default for all others. New platform-specific settings start with the default values; going back to `General settings` drops them. The line below the heading of the settings names where they are saved: `redundanz_config.json` or, with the platform-specific choice, the collection's database (the language stays in `redundanz_config.json`). The language always applies to everything. In the overview, such platforms have a `*` after their name.
+
+**Without a window**, `--scan-all` scans all platforms, for example overnight:
+
+```powershell
+python rom_cleanup_workbench.py "D:\roms" --scan-all
+```
+
+With `--deep-scan` every file is read again. Nothing is ever deleted that way.
+
 ## Analysis window
 
 Since the ZIP files have to be unpacked to get the size, SHA-256 checksum and name of their contents, it can take a moment after choosing a directory until the results are shown.
 
-The green row at the top says `Rom Cleanup Workbench` on the left and names the folder on the right; below it the window names the active priority with its source. The green second-to-last row shows the status, during the analysis for example `Analyzing: 120 of 2007 files`. A progress bar also appears in the middle during that time. The window also shows errors, for example in the configuration, and nothing can be deleted as long as the analysis fails. While deleting, the progress bar appears in the middle and the green row shows for example `Deleting: 120 of 500 files`; the window accepts no input until the deletion is finished. After deleting, it reports the result and removes the deleted files from the list without analyzing the folder again; files that could not be deleted stay marked. `F5` analyzes the folder again when you want that.
+The green row at the top says `Rom Cleanup Workbench` on the left and names the folder on the right; below it `Platform:` in green with the name of the open folder. To the right are the main keys of the view, in the list `x Delete`, `k Keep`, `Enter Run the cleanup` and `F1 / ? Help: more keys`. `F1` or `?` shows all keys in place of the list, grouped by topic; `Esc`, `F1` or `?` closes them again. In the overview both show the keys of the overview and below them, under `Good to know`, what the states, scanning and deep scan mean. The priority in effect is shown in the settings. In the overview the word `Collection` is green as well. The green second-to-last row shows the status, during the analysis for example `Analyzing: 120 of 2007 files`. A progress bar also appears in the middle during that time. The window also shows errors, for example in the configuration, and nothing can be deleted as long as the analysis fails. While deleting, the progress bar appears in the middle and the green row shows for example `Deleting: 120 of 500 files`; the window accepts no input until the deletion is finished. After deleting, it reports the result and removes the deleted files from the list without analyzing the folder again; files that could not be deleted stay marked. `F5` analyzes the folder again when you want that.
 
 If nothing is marked in the whole folder and no file is suspected to be a status or save file, `Nothing to do.` blinks in the middle of the window.
 
@@ -214,8 +252,9 @@ The window remembers the most recently chosen view and the confirmed status or s
 | `Enter` | same as the button `Proceed...`: delete after a confirmation, remove the number in front of the kept file names (rule 10) and confirm the suspected status or save files (rule 9) |
 | `f` | choose another folder, inside the window in place of the list: open folders with the arrow, choose one at once with a double click, or type a path into `Path`, then `Select` or `Enter`; `Cancel` or `Esc` keep the current folder |
 | `r` or `F5` | analyze again, also reads the configuration again |
-| `c` or `F1` | show the credits |
-| `q` or `Esc` | close without deleting anything; after changes by hand the program asks first |
+| `c` | show the credits |
+| `F1` or `?` | show or hide all keys |
+| `q` or `Esc` | close without deleting anything; in a platform of a collection both first go back to the overview; after changes by hand the program asks first |
 
 Horizontal lines separate the games, and every second game has a dark gray background. The column `Size` shows the size of every file in KB, rounded up as in Windows Explorer (`1,234 KB`); `?` means the size could not be read. The size is read during the analysis. Kept files are shown in bold green under `Keep:`, files to be deleted in red under `Marked for deletion`. The window shows white text in Lucida Sans Typewriter 11 pt on a black background. If the font is not installed, Windows silently picks a substitute. Files moved by hand have a brown background and carry the note `By hand`; while the row is selected, it appears blue. The program's notes stay unchanged, even if they refer to a file you have moved.
 
@@ -225,7 +264,7 @@ Horizontal lines separate the games, and every second game has a dark gray backg
 
 The filter field on the left of the bottom row narrows the current view to games with a file name that contains the pattern. A game stays complete if one of its files matches. The list updates shortly after typing; the file contents are not read.
 
-- `*` stands for any number of characters, `?` for exactly one. All other characters, including `[` and `]`, count literally, and case does not count.
+- `*` stands for any number of characters, `?` for exactly one. All other characters, including `[` and `]`, count literally, and case does not count. Spaces at the start and the end count only in quotation marks: `" by "` finds `Mario by Mick` but not `Moby Dick`; without quotation marks `by` finds both.
 - The pattern may appear anywhere in the name: `Beta`, `*Beta*` and `Mario?2` all also find `Super Mario 2 (Beta).nes`. Accordingly, `S*` finds every name containing an `S`, not only names starting with it.
 - `Enter`, `Tab` and the down arrow return to the list; `Esc` clears the filter and returns to the list.
 - While the cursor is in the field, keys only write there: `x`, `k`, `Enter`, `f`, `r`, `F5` and `Esc` do not perform their list functions.
@@ -269,9 +308,9 @@ It starts by itself on Linux when there is no graphical display (neither `DISPLA
 
 It needs [Textual](https://textual.textualize.io/) (tested with 8.2.8). How to install it and start the program is described under [Installation](#installation) and [Usage](#usage).
 
-Without Textual, the program says so and deletes nothing. The screen has the rows of the window from top to bottom: the green title row with the folder, a help row, the priority, the list, the filter field, the three views and the green status row. In the list, each game starts with its name in bold, followed by dashes up to the right edge; a note such as `Different spellings of the name` stands in that line. In a narrow terminal, such as PuTTY's 80 columns, long file names and notes wrap in their column instead of leaving the screen. `Nothing to do.` blinks with the terminal's own blinking; in PuTTY, blinking text may have to be switched on first. Questions and messages appear in a frame over the list, with buttons in the program's language; `No` is preselected.
+Without Textual, the program says so and deletes nothing. The screen has the rows of the window from top to bottom: the green title row with the folder, the platform with the main keys, the list, the filter field, the three views and the green status row. In the list, each game starts with its name in bold, followed by dashes up to the right edge; a note such as `Different spellings of the name` stands in that line. In a narrow terminal, such as PuTTY's 80 columns, long file names and notes wrap in their column instead of leaving the screen. `Nothing to do.` blinks with the terminal's own blinking; in PuTTY, blinking text may have to be switched on first. Questions and messages appear in a frame over the list, with buttons in the program's language; `No` is preselected.
 
-The help row shows the keys as `key:action`, for example `x:delete  k:keep`. The window and the terminal version have the same keys.
+To the right of the platform are the main keys; `F1` or `?` shows all, grouped by topic. The window and the terminal version have the same keys.
 
 | Key | Effect |
 | --- | --- |
@@ -284,8 +323,9 @@ The help row shows the keys as `key:action`, for example `x:delete  k:keep`. The
 | `f` | choose another folder: `Right` or `Space` opens a folder, `Left` closes it, `Enter` or a double click chooses; a path can also be typed |
 | `s` | settings: `Shift+Up`/`Shift+Down` move a region, `Delete` removes it, `Ctrl+S` saves, `Esc` cancels |
 | `r` or `F5` | analyze again |
-| `c` or `F1` | show the credits (`c` too, because some terminals keep `F1` for their own help) |
-| `q` or `Esc` | close without deleting anything; after changes by hand the program asks first |
+| `c` | show the credits |
+| `F1` or `?` | show or hide all keys (`?` too, because some terminals keep `F1` for their own help) |
+| `q` or `Esc` | close without deleting anything; in a platform of a collection both first go back to the overview; after changes by hand the program asks first |
 | In a question | `Left`/`Right` choose a button, `Enter` presses it, `Esc` answers `No` |
 
 The mouse works too: a click selects a row, the wheel scrolls, and the views and buttons can be clicked. Letters typed in a field stay in the field, also when typed fast or pasted: an `x` in the filter never marks a file.

@@ -177,6 +177,8 @@ Le programme ouvre la fenêtre d'analyse et y affiche tout ; il n'écrit rien d
 | `--config file.json` | utilise une autre configuration |
 | `--report-only` | sans fenêtre : affiche seulement le rapport dans le terminal |
 | `--yes` | sans fenêtre : supprime les fichiers marqués sans demander |
+| `--scan-all` | sans fenêtre : analyse tous les dossiers de plateforme du dossier `roms` indiqué et les enregistre dans sa base de données ; ne supprime rien |
+| `--deep-scan` | avec `--scan-all` : analyse approfondie, relit chaque fichier au lieu des seuls fichiers nouveaux et modifiés (`--full` marche toujours) |
 | `--all` | avec `--report-only` : montre aussi les jeux sans fichier marqué |
 | `--tui` | utilise la version terminal au lieu de la fenêtre (automatique sous Linux sans affichage graphique) |
 | `--ascii` | version terminal avec des caractères ASCII seulement (automatique sur la console Linux) ; implique `--tui` |
@@ -185,11 +187,47 @@ Les options de la ligne de commande et leur aide (`--help`) sont toujours en ang
 
 Les tests se lancent avec `python -m unittest`.
 
+## La collection : de nombreuses plateformes et la base de données
+
+En général, les jeux se trouvent dans un dossier commun, séparés par plateforme, par exemple `roms/nes`, `roms/snes`, `roms/n64`. Si tu choisis ce dossier `roms`, le programme affiche la **vue d'ensemble** de toutes les plateformes. Ensuite, il démarre toujours avec la vue d'ensemble du dernier dossier `roms` utilisé. Compte comme dossier `roms` un dossier qui a déjà une base de données ou qui ne contient pas lui-même de fichiers ROM, mais des sous-dossiers. Les fichiers annexes comme `info.txt`, des images ou des PDF ne comptent pas comme fichiers ROM. Tout autre dossier est analysé seul comme avant, sans base de données.
+
+**La base de données.** À la première ouverture d'un dossier `roms`, le programme y crée le dossier caché `.rom_cleanup_workbench` avec une base de données SQLite. C'est la seule chose qu'il écrit dans ta collection. Elle conserve les résultats de chaque analyse : fichiers, tailles, dates de modification, le contenu des ZIP avec leurs sommes de contrôle. À partir de là, le programme redécide en un instant chaque fois qu'il ouvre une plateforme ; les paramètres modifiés s'appliquent donc tout de suite, sans nouvelle analyse. Elle contient aussi les modifications à la main (`k`/`x`), les fichiers d'état et de sauvegarde confirmés et les paramètres propres à certaines plateformes.
+
+**La vue d'ensemble** affiche pour chaque plateforme : fichiers, jeux, fichiers marqués pour suppression, jeux problématiques, la dernière analyse et l'état (`non analysée`, `à jour` ou `modifiée` si des fichiers ont été ajoutés, retirés ou modifiés depuis), avec le total en dessous.
+
+| Bouton | Touche | Effet |
+| --- | --- | --- |
+| `Ouvrir` | `Entrée` | ouvre la plateforme surlignée dans la liste habituelle (aussi double clic) |
+| `Analyser` | `r` ou `F5` | analyse la plateforme surlignée et l'ouvre |
+| `Tout analyser` | `a` | analyse toutes les plateformes l'une après l'autre ; chacune est enregistrée tout de suite et ses chiffres apparaissent aussitôt dans la vue d'ensemble ; `Annuler` garde celles qui sont finies ; ne supprime rien |
+| `Analyse approfondie` | `d` | interrupteur (point rouge) pour Analyser et Tout analyser : relit chaque fichier au lieu des seuls fichiers nouveaux et modifiés |
+| `Masquer les vides` | `h` | interrupteur (point rouge) : masque les dossiers sans fichier de jeu, par exemple `bios` ou un dossier avec seulement `info.txt` ; les fichiers annexes ne comptent pas comme fichiers de jeu ; le choix est mémorisé |
+| `Dossier...` | `f` | choisit un autre dossier `roms` |
+| | `q` ou `Échap` | ferme le programme |
+
+Les touches sont les mêmes dans la fenêtre et dans la version terminal. La ligne au-dessus du tableau nomme les principales ; `F1` ou `?` les montre toutes.
+
+**Analyser.** Une analyse est d'habitude rapide : elle ne lit que les fichiers nouveaux et modifiés (reconnus par leur nom, leur taille et leur date de modification) et reprend tout le reste de la base de données. Avec `Analyse approfondie`, chaque fichier est relu. `F5` dans la liste analyse rapidement la plateforme ouverte. Exécuter inscrit tout de suite les fichiers supprimés et renommés ; aucune nouvelle analyse n'est nécessaire ensuite.
+
+**Retour à la vue d'ensemble** : dans la liste avec `Échap`, `q` ou le bouton `Vue d'ensemble`, dans la version terminal aussi avec `o`. `Échap` ou `q` dans la vue d'ensemble ferme le programme ; pour sortir complètement, on appuie donc deux fois.
+
+**Les modifications à la main** (`k`/`x`) restent enregistrées, même après la fermeture, jusqu'à ce que tu exécutes ou analyses de nouveau la plateforme. Si un fichier change, sa modification à la main tombe.
+
+**Paramètres d'une plateforme.** Quand une plateforme est ouverte, les paramètres affichent en haut `Paramètres généraux` ou `Paramètres propres à NES`. Avec le choix propre à la plateforme, la priorité, les mots de suppression et le choix entre fichier normal et ZIP ne valent que pour cette plateforme ; ils sont dans la base de données, et `redundanz_config.json` reste le standard pour toutes les autres. De nouveaux paramètres propres partent des valeurs standard ; revenir à `Paramètres généraux` les abandonne. La ligne sous le titre des paramètres indique où ils sont enregistrés : `redundanz_config.json` ou, avec le choix propre à la plateforme, la base de données de la collection (la langue reste dans `redundanz_config.json`). La langue vaut toujours pour tout. Dans la vue d'ensemble, ces plateformes ont un `*` après leur nom.
+
+**Sans fenêtre**, `--scan-all` analyse toutes les plateformes, par exemple pendant la nuit :
+
+```powershell
+python rom_cleanup_workbench.py "D:\roms" --scan-all
+```
+
+Avec `--deep-scan`, chaque fichier est relu. Rien n'est jamais supprimé ainsi.
+
 ## Fenêtre d'analyse
 
 Comme les fichiers ZIP doivent être décompressés pour obtenir la taille, la somme SHA-256 et le nom de leur contenu, il peut falloir un moment après le choix d'un dossier avant que les résultats s'affichent.
 
-La ligne verte du haut affiche `Rom Cleanup Workbench` à gauche et le dossier à droite ; en dessous, la fenêtre indique la priorité en vigueur et sa source. L'avant-dernière ligne verte montre l'état, pendant l'analyse par exemple `Analyse : 120 sur 2007 fichiers`. Pendant ce temps, une barre de progression apparaît aussi au milieu. La fenêtre affiche aussi les erreurs, par exemple dans la configuration, et tant que l'analyse échoue, rien ne peut être supprimé. Pendant la suppression, la barre de progression apparaît au milieu et la ligne verte affiche par exemple `Suppression : 120 sur 500 fichiers` ; la fenêtre n'accepte aucune saisie avant la fin de la suppression. Ensuite elle indique le résultat et retire de la liste les fichiers supprimés sans analyser à nouveau le dossier ; les fichiers qui n'ont pas pu être supprimés restent marqués. `F5` analyse à nouveau le dossier quand vous le souhaitez.
+La ligne verte du haut affiche `Rom Cleanup Workbench` à gauche et le dossier à droite ; en dessous figure en vert `Plateforme :` avec le nom du dossier ouvert. À droite se trouvent les touches principales de la vue, dans la liste `x Supprimer`, `k Garder`, `Entrée Effectuer le nettoyage` et `F1 / ? Aide : autres touches`. `F1` ou `?` affiche toutes les touches à la place de la liste, rangées par thème ; `Échap`, `F1` ou `?` les referme. Dans la vue d'ensemble, les deux montrent les touches de la vue d'ensemble et en dessous, sous `Bon à savoir`, ce que signifient les états, l'analyse et l'analyse approfondie. La priorité en vigueur se voit dans les paramètres. Dans la vue d'ensemble, le mot `Collection` est vert lui aussi. L'avant-dernière ligne verte montre l'état, pendant l'analyse par exemple `Analyse : 120 sur 2007 fichiers`. Pendant ce temps, une barre de progression apparaît aussi au milieu. La fenêtre affiche aussi les erreurs, par exemple dans la configuration, et tant que l'analyse échoue, rien ne peut être supprimé. Pendant la suppression, la barre de progression apparaît au milieu et la ligne verte affiche par exemple `Suppression : 120 sur 500 fichiers` ; la fenêtre n'accepte aucune saisie avant la fin de la suppression. Ensuite elle indique le résultat et retire de la liste les fichiers supprimés sans analyser à nouveau le dossier ; les fichiers qui n'ont pas pu être supprimés restent marqués. `F5` analyse à nouveau le dossier quand vous le souhaitez.
 
 Si rien n'est marqué dans tout le dossier et qu'aucun fichier n'est soupçonné d'être un fichier d'état ou de sauvegarde, `Rien à faire.` clignote au milieu de la fenêtre.
 
@@ -214,8 +252,9 @@ La fenêtre retient la dernière vue choisie et les fichiers d'état ou de sauve
 | `Enter` | comme le bouton `Exécuter...` : supprime après une confirmation, retire le numéro devant les noms des fichiers conservés (règle 10) et confirme les fichiers d'état ou de sauvegarde présumés (règle 9) |
 | `f` | choisit un autre dossier, dans la fenêtre à la place de la liste : ouvrez les dossiers avec la flèche, choisissez-en un aussitôt par un double-clic, ou saisissez un chemin dans `Chemin :`, puis `Sélectionner` ou `Entrée` ; `Annuler` ou `Échap` gardent le dossier actuel |
 | `r` ou `F5` | analyse à nouveau, relit aussi la configuration |
-| `c` ou `F1` | affiche les crédits |
-| `q` ou `Échap` | ferme sans rien supprimer ; après des modifications à la main, le programme demande d'abord |
+| `c` | affiche les crédits |
+| `F1` ou `?` | affiche ou masque toutes les touches |
+| `q` ou `Échap` | ferme sans rien supprimer ; dans une plateforme d'une collection, les deux reviennent d'abord à la vue d'ensemble ; après des modifications à la main, le programme demande d'abord |
 
 Des lignes horizontales séparent les jeux, et un jeu sur deux a un fond gris foncé. La colonne `Taille` montre la taille de chaque fichier en Ko, arrondie au supérieur comme dans l'Explorateur Windows (`1 234 Ko`) ; `?` signifie que la taille n'a pas pu être lue. La taille est lue pendant l'analyse. Les fichiers conservés sont affichés en gras et en vert sous `Garder :`, ceux à supprimer en rouge sous `Marqué pour suppression`. La fenêtre affiche du texte blanc en Lucida Sans Typewriter 11 pt sur fond noir. Si la police n'est pas installée, Windows choisit discrètement une police de substitution. Les fichiers déplacés à la main ont un fond marron et portent la remarque `À la main` ; tant que la ligne est choisie, elle apparaît en bleu. Les remarques du programme restent inchangées, même si elles concernent un fichier que vous avez déplacé.
 
@@ -225,7 +264,7 @@ Des lignes horizontales séparent les jeux, et un jeu sur deux a un fond gris fo
 
 Le champ de filtre à gauche de la ligne du bas restreint la vue actuelle aux jeux dont un nom de fichier contient le motif. Un jeu reste complet si l'un de ses fichiers correspond. La liste se met à jour peu après la saisie ; le contenu des fichiers n'est pas lu.
 
-- `*` remplace un nombre quelconque de caractères, `?` exactement un. Tous les autres caractères, y compris `[` et `]`, comptent littéralement, et les majuscules et minuscules ne comptent pas.
+- `*` remplace un nombre quelconque de caractères, `?` exactement un. Tous les autres caractères, y compris `[` et `]`, comptent littéralement, et les majuscules et minuscules ne comptent pas. Les espaces au début et à la fin ne comptent qu'entre guillemets : `" by "` trouve `Mario by Mick` mais pas `Moby Dick` ; sans guillemets, `by` trouve les deux.
 - Le motif peut apparaître n'importe où dans le nom : `Beta`, `*Beta*` et `Mario?2` trouvent tous aussi `Super Mario 2 (Beta).nes`. Par conséquent, `S*` trouve tout nom contenant un `S`, pas seulement les noms qui commencent par lui.
 - `Entrée`, `Tab` et la flèche vers le bas reviennent à la liste ; `Échap` vide le filtre et revient à la liste.
 - Tant que le curseur est dans le champ, les touches n'écrivent que là : `x`, `k`, `Enter`, `f`, `r`, `F5` et `Échap` n'exécutent pas leurs fonctions de liste.
@@ -269,9 +308,9 @@ Sous Linux, elle démarre d'elle-même lorsqu'il n'y a pas d'affichage graphique
 
 Elle nécessite [Textual](https://textual.textualize.io/) (testé avec 8.2.8). L'installation et le lancement du programme sont décrits dans [Installation](#installation) et [Utilisation](#utilisation).
 
-Sans Textual, le programme le dit et ne supprime rien. L'écran a les lignes de la fenêtre de haut en bas : la ligne de titre verte avec le dossier, une ligne d'aide, la priorité, la liste, le champ de filtre, les trois vues et la ligne d'état verte. Dans la liste, chaque jeu commence par son nom en gras, suivi de tirets jusqu'au bord droit ; une remarque comme `Orthographes différentes du nom` figure sur cette ligne. Dans un terminal étroit, comme les 80 colonnes de PuTTY, les noms de fichier et les remarques longs passent à la ligne dans leur colonne au lieu de sortir de l'écran. `Rien à faire.` clignote avec le clignotement propre au terminal ; dans PuTTY, il faut parfois d'abord activer le texte clignotant. Les questions et les messages apparaissent dans un cadre au-dessus de la liste, avec des boutons dans la langue du programme ; `Non` est présélectionné.
+Sans Textual, le programme le dit et ne supprime rien. L'écran a les lignes de la fenêtre de haut en bas : la ligne de titre verte avec le dossier, la plateforme avec les touches principales, la liste, le champ de filtre, les trois vues et la ligne d'état verte. Dans la liste, chaque jeu commence par son nom en gras, suivi de tirets jusqu'au bord droit ; une remarque comme `Orthographes différentes du nom` figure sur cette ligne. Dans un terminal étroit, comme les 80 colonnes de PuTTY, les noms de fichier et les remarques longs passent à la ligne dans leur colonne au lieu de sortir de l'écran. `Rien à faire.` clignote avec le clignotement propre au terminal ; dans PuTTY, il faut parfois d'abord activer le texte clignotant. Les questions et les messages apparaissent dans un cadre au-dessus de la liste, avec des boutons dans la langue du programme ; `Non` est présélectionné.
 
-La ligne d'aide montre les touches sous la forme `touche:action`, par exemple `x:supprimer  k:garder`. La fenêtre et la version terminal ont les mêmes touches.
+À droite de la plateforme se trouvent les touches principales ; `F1` ou `?` les montre toutes, rangées par thème. La fenêtre et la version terminal ont les mêmes touches.
 
 | Touche | Effet |
 | --- | --- |
@@ -284,8 +323,9 @@ La ligne d'aide montre les touches sous la forme `touche:action`, par exemple `x
 | `f` | choisit un autre dossier : `Droite` ou `Espace` ouvre un dossier, `Gauche` le ferme, `Entrée` ou un double-clic le choisit ; on peut aussi saisir un chemin |
 | `s` | paramètres : `Maj+Haut`/`Maj+Bas` déplacent une région, `Suppr` la retire, `Ctrl+S` enregistre, `Échap` annule |
 | `r` ou `F5` | analyse à nouveau, relit aussi la configuration |
-| `c` ou `F1` | affiche les crédits |
-| `q` ou `Échap` | ferme sans rien supprimer ; après des modifications à la main, le programme demande d'abord |
+| `c` | affiche les crédits |
+| `F1` ou `?` | affiche ou masque toutes les touches (aussi `?`, car certains terminaux gardent `F1` pour leur propre aide) |
+| `q` ou `Échap` | ferme sans rien supprimer ; dans une plateforme d'une collection, les deux reviennent d'abord à la vue d'ensemble ; après des modifications à la main, le programme demande d'abord |
 | Dans une question | `Gauche`/`Droite` choisissent un bouton, `Entrée` l'actionne, `Échap` répond `Non` |
 
 La souris fonctionne aussi : un clic choisit une ligne, la molette fait défiler, et on peut cliquer sur les vues et les boutons. Les lettres tapées dans un champ restent dans le champ, même tapées vite ou collées : un `x` dans le filtre ne marque jamais un fichier.

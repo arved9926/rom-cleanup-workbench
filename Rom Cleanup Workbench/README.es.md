@@ -177,6 +177,8 @@ El programa abre la ventana de análisis y lo muestra todo allí; no escribe nad
 | `--config file.json` | usa otra configuración |
 | `--report-only` | sin ventana: solo muestra el informe en el terminal |
 | `--yes` | sin ventana: elimina los archivos marcados sin preguntar |
+| `--scan-all` | sin ventana: analiza todas las carpetas de plataforma de la carpeta `roms` indicada y las guarda en su base de datos; no elimina nada |
+| `--deep-scan` | con `--scan-all`: análisis profundo, vuelve a leer cada archivo en lugar de solo los nuevos y cambiados (`--full` sigue funcionando) |
 | `--all` | con `--report-only`: muestra también los juegos sin archivos marcados |
 | `--tui` | usa la versión para terminal en lugar de la ventana (automático en Linux sin pantalla gráfica) |
 | `--ascii` | versión para terminal solo con caracteres ASCII (automático en la consola de Linux); implica `--tui` |
@@ -185,11 +187,47 @@ Las opciones de la línea de comandos y su ayuda (`--help`) están siempre en in
 
 Las pruebas se ejecutan con `python -m unittest`.
 
+## La colección: muchas plataformas y la base de datos
+
+Normalmente los juegos están en una carpeta común, separados por plataforma, por ejemplo `roms/nes`, `roms/snes`, `roms/n64`. Si eliges esta carpeta `roms`, el programa muestra el **resumen** de todas las plataformas. Desde entonces siempre empieza con el resumen de la última carpeta `roms` usada. Cuenta como carpeta `roms` una carpeta que ya tiene una base de datos o que no contiene archivos ROM propios pero sí subcarpetas. Los archivos adjuntos como `info.txt`, imágenes o PDF no cuentan como archivos ROM. Cualquier otra carpeta se analiza sola como antes, sin base de datos.
+
+**La base de datos.** La primera vez que abre una carpeta `roms`, el programa crea en ella la carpeta oculta `.rom_cleanup_workbench` con una base de datos SQLite. Es lo único que escribe en tu colección. Guarda los resultados de cada análisis: archivos, tamaños, fechas de modificación, el contenido de los ZIP con sumas de comprobación. A partir de ellos el programa vuelve a decidir en un instante cada vez que abre una plataforma, así que los ajustes cambiados se aplican enseguida, sin nuevo análisis. También guarda los cambios a mano (`k`/`x`), los archivos de estado y de partida confirmados y los ajustes de plataformas concretas.
+
+**El resumen** muestra para cada plataforma: archivos, juegos, archivos marcados para eliminar, juegos problemáticos, el último análisis y el estado (`sin analizar`, `al día` o `cambiada` si desde entonces se añadieron, quitaron o cambiaron archivos), con el total debajo.
+
+| Botón | Tecla | Efecto |
+| --- | --- | --- |
+| `Abrir` | `Intro` | abre la plataforma resaltada en la lista habitual (también doble clic) |
+| `Analizar` | `r` o `F5` | analiza la plataforma resaltada y la abre |
+| `Analizar todo` | `a` | analiza todas las plataformas una tras otra; cada una se guarda enseguida y sus números aparecen de inmediato en el resumen; `Cancelar` conserva las terminadas; no elimina nada |
+| `Análisis profundo` | `d` | interruptor (punto rojo) para Analizar y Analizar todo: vuelve a leer cada archivo en lugar de solo los nuevos y cambiados |
+| `Ocultar vacías` | `h` | interruptor (punto rojo): oculta las carpetas sin archivo de juego, por ejemplo `bios` o una carpeta solo con `info.txt`; los archivos adjuntos no cuentan como archivos de juego; la elección se recuerda |
+| `Carpeta...` | `f` | elige otra carpeta `roms` |
+| | `q` o `Esc` | cierra el programa |
+
+Las teclas son las mismas en la ventana y en la versión para terminal. La línea sobre la tabla nombra las principales; `F1` o `?` las muestra todas.
+
+**Analizar.** Un análisis suele ser rápido: solo lee los archivos nuevos y cambiados (reconocidos por nombre, tamaño y fecha de modificación) y toma todo lo demás de la base de datos. Con `Análisis profundo` se vuelve a leer cada archivo. `F5` en la lista analiza rápidamente la plataforma abierta. Ejecutar registra enseguida los archivos eliminados y renombrados; después no hace falta un nuevo análisis.
+
+**Volver al resumen**: en la lista con `Esc`, `q` o el botón `Resumen`, en la versión para terminal también con `o`. `Esc` o `q` en el resumen cierra el programa; para salir del todo se pulsa, pues, dos veces.
+
+**Los cambios a mano** (`k`/`x`) se conservan, también tras cerrar, hasta que ejecutes o vuelvas a analizar la plataforma. Si un archivo cambia, su cambio a mano se descarta.
+
+**Ajustes para una plataforma.** Con una plataforma abierta, los ajustes muestran arriba `Ajustes generales` o `Ajustes específicos de NES`. Con la opción específica, la prioridad, las palabras de borrado y la elección entre archivo normal y ZIP valen solo para esta plataforma; se guardan en la base de datos, y `redundanz_config.json` sigue siendo el estándar para todas las demás. Unos ajustes específicos nuevos empiezan con los valores estándar; volver a `Ajustes generales` los descarta. La línea bajo el título de los ajustes indica dónde se guardan: `redundanz_config.json` o, con la opción específica, la base de datos de la colección (el idioma sigue en `redundanz_config.json`). El idioma vale siempre para todo. En el resumen, esas plataformas llevan un `*` tras el nombre.
+
+**Sin ventana**, `--scan-all` analiza todas las plataformas, por ejemplo de noche:
+
+```powershell
+python rom_cleanup_workbench.py "D:\roms" --scan-all
+```
+
+Con `--deep-scan` se vuelve a leer cada archivo. Así nunca se elimina nada.
+
 ## Ventana de análisis
 
 Como los archivos ZIP se tienen que descomprimir para obtener el tamaño, la suma SHA-256 y el nombre de su contenido, tras elegir una carpeta puede pasar un momento hasta que se muestren los resultados.
 
-La fila verde superior muestra `Rom Cleanup Workbench` a la izquierda y la carpeta a la derecha; debajo, la ventana indica la prioridad vigente con su origen. La penúltima fila verde muestra el estado, durante el análisis por ejemplo `Analizando: 120 de 2007 archivos`. Mientras tanto aparece también una barra de progreso en el centro. La ventana muestra también los errores, por ejemplo en la configuración, y mientras el análisis falle no se puede eliminar nada. Al eliminar, la barra de progreso aparece en el centro y la fila verde muestra por ejemplo `Eliminando: 120 de 500 archivos`; la ventana no acepta entradas hasta que termina la eliminación. Después informa del resultado y quita de la lista los archivos eliminados sin volver a analizar la carpeta; los archivos que no se pudieron eliminar siguen marcados. `F5` vuelve a analizar la carpeta cuando lo quieras.
+La fila verde superior muestra `Rom Cleanup Workbench` a la izquierda y la carpeta a la derecha; debajo aparece en verde `Plataforma:` con el nombre de la carpeta abierta. A la derecha están las teclas principales de la vista, en la lista `x Eliminar`, `k Conservar`, `Intro Realizar la limpieza` y `F1 / ? Ayuda: más teclas`. `F1` o `?` muestra todas las teclas en lugar de la lista, ordenadas por tema; `Esc`, `F1` o `?` las cierra de nuevo. En el resumen ambas muestran las teclas del resumen y debajo, en `Bueno saber`, qué significan los estados, el análisis y el análisis profundo. La prioridad vigente se ve en los ajustes. En el resumen la palabra `Colección` también es verde. La penúltima fila verde muestra el estado, durante el análisis por ejemplo `Analizando: 120 de 2007 archivos`. Mientras tanto aparece también una barra de progreso en el centro. La ventana muestra también los errores, por ejemplo en la configuración, y mientras el análisis falle no se puede eliminar nada. Al eliminar, la barra de progreso aparece en el centro y la fila verde muestra por ejemplo `Eliminando: 120 de 500 archivos`; la ventana no acepta entradas hasta que termina la eliminación. Después informa del resultado y quita de la lista los archivos eliminados sin volver a analizar la carpeta; los archivos que no se pudieron eliminar siguen marcados. `F5` vuelve a analizar la carpeta cuando lo quieras.
 
 Si en toda la carpeta no hay nada marcado y ningún archivo es sospechoso de ser un archivo de estado o partida guardada, `Nada que hacer.` parpadea en el centro de la ventana.
 
@@ -214,8 +252,9 @@ La ventana recuerda la última vista elegida y los archivos de estado o partidas
 | `Enter` | como el botón `Ejecutar...`: elimina tras una confirmación, quita el número delante de los nombres de los archivos conservados (regla 10) y confirma los posibles archivos de estado o partidas guardadas (regla 9) |
 | `f` | elige otra carpeta, dentro de la ventana en lugar de la lista: abre carpetas con la flecha, elige una al instante con doble clic, o escribe una ruta en `Ruta:`, y luego `Seleccionar` o `Intro`; `Cancelar` o `Esc` conservan la carpeta actual |
 | `r` o `F5` | analiza de nuevo, también vuelve a leer la configuración |
-| `c` o `F1` | muestra los créditos |
-| `q` o `Esc` | cierra sin eliminar nada; tras cambios a mano el programa pregunta antes |
+| `c` | muestra los créditos |
+| `F1` o `?` | muestra u oculta todas las teclas |
+| `q` o `Esc` | cierra sin eliminar nada; en una plataforma de una colección ambas vuelven primero al resumen; tras cambios a mano el programa pregunta antes |
 
 Unas líneas horizontales separan los juegos, y uno de cada dos juegos tiene fondo gris oscuro. La columna `Tamaño` muestra el tamaño de cada archivo en KB, redondeado hacia arriba como en el Explorador de Windows (`1.234 KB`); `?` significa que no se pudo leer el tamaño. El tamaño se lee durante el análisis. Los archivos conservados aparecen en negrita verde bajo `Conservar:`, los que se van a eliminar en rojo bajo `Marcado para eliminar`. La ventana muestra texto blanco en Lucida Sans Typewriter 11 pt sobre fondo negro. Si la fuente no está instalada, Windows elige en silencio una sustituta. Los archivos movidos a mano tienen fondo marrón y llevan la nota `A mano`; mientras la fila está elegida, aparece azul. Las notas del programa no cambian, aunque se refieran a un archivo que has movido.
 
@@ -225,7 +264,7 @@ Unas líneas horizontales separan los juegos, y uno de cada dos juegos tiene fon
 
 El campo de filtro a la izquierda de la fila inferior limita la vista actual a los juegos con un nombre de archivo que contiene el patrón. Un juego se muestra completo si uno de sus archivos coincide. La lista se actualiza poco después de escribir; no se lee el contenido de los archivos.
 
-- `*` representa cualquier número de caracteres, `?` exactamente uno. Todos los demás caracteres, incluidos `[` y `]`, cuentan literalmente, y no se distingue entre mayúsculas y minúsculas.
+- `*` representa cualquier número de caracteres, `?` exactamente uno. Todos los demás caracteres, incluidos `[` y `]`, cuentan literalmente, y no se distingue entre mayúsculas y minúsculas. Los espacios al principio y al final solo cuentan entre comillas: `" by "` encuentra `Mario by Mick` pero no `Moby Dick`; sin comillas `by` encuentra ambos.
 - El patrón puede aparecer en cualquier parte del nombre: `Beta`, `*Beta*` y `Mario?2` encuentran todos también `Super Mario 2 (Beta).nes`. Por tanto, `S*` encuentra cualquier nombre que contenga una `S`, no solo los que empiezan por ella.
 - `Intro`, `Tab` y la flecha abajo vuelven a la lista; `Esc` vacía el filtro y vuelve a la lista.
 - Mientras el cursor está en el campo, las teclas solo escriben allí: `x`, `k`, `Enter`, `f`, `r`, `F5` y `Esc` no ejecutan sus funciones de la lista.
@@ -269,9 +308,9 @@ En Linux se inicia por sí sola cuando no hay pantalla gráfica (ni `DISPLAY` ni
 
 Necesita [Textual](https://textual.textualize.io/) (probado con 8.2.8). Cómo instalarlo e iniciar el programa se describe en [Instalación](#instalación) y [Uso](#uso).
 
-Sin Textual, el programa lo dice y no elimina nada. La pantalla tiene las filas de la ventana de arriba abajo: la fila de título verde con la carpeta, una fila de ayuda, la prioridad, la lista, el campo de filtro, las tres vistas y la fila de estado verde. En la lista, cada juego empieza con su nombre en negrita, seguido de guiones hasta el borde derecho; una nota como `Distintas grafías del nombre` aparece en esa línea. En un terminal estrecho, como las 80 columnas de PuTTY, los nombres de archivo y las notas largas pasan a la línea siguiente dentro de su columna en lugar de salirse de la pantalla. `Nada que hacer.` parpadea con el parpadeo propio del terminal; en PuTTY puede ser necesario activar antes el texto parpadeante. Las preguntas y los mensajes aparecen en un marco sobre la lista, con botones en el idioma del programa; `No` está preseleccionado.
+Sin Textual, el programa lo dice y no elimina nada. La pantalla tiene las filas de la ventana de arriba abajo: la fila de título verde con la carpeta, la plataforma con las teclas principales, la lista, el campo de filtro, las tres vistas y la fila de estado verde. En la lista, cada juego empieza con su nombre en negrita, seguido de guiones hasta el borde derecho; una nota como `Distintas grafías del nombre` aparece en esa línea. En un terminal estrecho, como las 80 columnas de PuTTY, los nombres de archivo y las notas largas pasan a la línea siguiente dentro de su columna en lugar de salirse de la pantalla. `Nada que hacer.` parpadea con el parpadeo propio del terminal; en PuTTY puede ser necesario activar antes el texto parpadeante. Las preguntas y los mensajes aparecen en un marco sobre la lista, con botones en el idioma del programa; `No` está preseleccionado.
 
-La fila de ayuda muestra las teclas como `tecla:acción`, por ejemplo `x:eliminar  k:conservar`. La ventana y la versión para terminal tienen las mismas teclas.
+A la derecha de la plataforma están las teclas principales; `F1` o `?` las muestra todas, ordenadas por tema. La ventana y la versión para terminal tienen las mismas teclas.
 
 | Tecla | Efecto |
 | --- | --- |
@@ -284,8 +323,9 @@ La fila de ayuda muestra las teclas como `tecla:acción`, por ejemplo `x:elimina
 | `f` | elige otra carpeta: `Derecha` o `Espacio` abre una carpeta, `Izquierda` la cierra, `Intro` o un doble clic la elige; también se puede escribir una ruta |
 | `s` | ajustes: `Mayús+Arriba`/`Mayús+Abajo` mueven una región, `Supr` la quita, `Ctrl+S` guarda, `Esc` cancela |
 | `r` o `F5` | analiza de nuevo, también vuelve a leer la configuración |
-| `c` o `F1` | muestra los créditos |
-| `q` o `Esc` | cierra sin eliminar nada; tras cambios a mano el programa pregunta antes |
+| `c` | muestra los créditos |
+| `F1` o `?` | muestra u oculta todas las teclas (también `?`, porque algunos terminales reservan `F1` para su propia ayuda) |
+| `q` o `Esc` | cierra sin eliminar nada; en una plataforma de una colección ambas vuelven primero al resumen; tras cambios a mano el programa pregunta antes |
 | En una pregunta | `Izquierda`/`Derecha` eligen un botón, `Intro` lo pulsa, `Esc` responde `No` |
 
 El ratón también funciona: un clic elige una fila, la rueda desplaza, y las vistas y los botones se pueden pulsar. Las letras escritas en un campo se quedan en el campo, aunque se escriban rápido o se peguen: una `x` en el filtro nunca marca un archivo.
