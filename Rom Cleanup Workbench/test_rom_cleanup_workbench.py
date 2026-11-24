@@ -698,7 +698,7 @@ class PreferZipTests(RedundanzTestCase):
         self.assertEqual(self.names(result.keep), ["Title (USA).zip"])
         self.assertEqual(self.names(result.marked), ["Title (USA).bin"])
         self.assertEqual(result.marked[0].notes[-1], "Game content deviates from the kept version")
-        self.assertIn("Content of a marked plain file is not kept", result.problems)
+        self.assertIn("Same version as the kept file, but different content", result.problems)
 
     def test_all_plain_files_of_the_version_give_way(self):
         self.write("Title (USA).cue", b"cue" * 10)
@@ -1294,10 +1294,29 @@ class ProblemTests(RedundanzTestCase):
         self.write("Title (USA) (Hack).bin")
         self.assert_problem("No file")
 
-    def test_zip_with_unique_content(self):
+    def test_zip_of_the_same_version_with_other_content(self):
+        self.write("Title (USA).bin", b"rom")
+        self.write_zip("Title (USA).zip", {"a.bin": b"other"})
+        self.assert_problem("Same version as the kept file, but different content")
+
+    def test_zip_of_another_region_with_other_content_is_no_problem(self):
         self.write("Title (USA).bin", b"rom")
         self.write_zip("Title (Europe).zip", {"a.bin": b"unique"})
-        self.assert_problem("Content of a marked ZIP")
+        result = self.single()
+        self.assertEqual(result.problems, [])
+        self.assertEqual(result.marked[0].notes,
+                         ["Priority: Europe after USA", "Game content deviates from the kept version"])
+
+    def test_arch_rivals_only_names_the_spellings(self):
+        self.config = replace(self.config, region_priority=["Germany", "Europe", "USA", "none", "Japan", "Beta"],
+                              prefer_zip=True)
+        eur, usa = b"e" * 4000, b"u" * 4000
+        self.write_zip("Arch Rivals - A Basketbrawl! (Europe).zip", {"a.nes": eur})
+        self.write("Arch Rivals - A Basketbrawl! (Europe).nes", eur)
+        self.write_zip("Arch Rivals - A Basketbrawl! (USA).zip", {"a.nes": usa})
+        self.write("Arch Rivals - A Basketbrawl! (USA).nes", usa)
+        self.write("160 Arch Rivals-A Basket Brawl!.nes", b"n" * 4000)
+        self.assertEqual(self.single().problems, ["Different spellings of the name"])
 
     def test_defective_zip(self):
         self.write("Title (USA).bin")

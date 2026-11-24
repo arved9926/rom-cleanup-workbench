@@ -694,10 +694,9 @@ def find_problems(keep: list[Entry], marked: list[Entry]) -> list[str]:
     problems = []
     if not keep:
         problems.append(tr("problem.nothing_kept"))
-    if _has_note(notes, "warning"):
-        problems.append(tr("problem.zip_not_kept"))
-    if _has_note(notes, "warning_plain"):
-        problems.append(tr("problem.plain_not_kept"))
+    # Same version as a kept file, but other content: which dump is the right one?
+    if _has_note(notes, "warning", "warning_plain"):
+        problems.append(tr("problem.same_version_differs"))
     if any(entry.zip_defective for entry in entries):
         problems.append(tr("problem.zip_defective"))
     if any(entry.zip_error and not entry.zip_defective for entry in entries):
@@ -887,6 +886,9 @@ def analyze_group(entries: list[Entry], config: Config) -> GroupResult:
         covering = _covering_entries(entry, keep)
         if covering:
             entry.notes.append(Note("identical", names=_names(covering)))
+        elif _has_note(entry.notes, "priority", "older_version", "older_beta"):
+            # Another region or an older version: other content is expected, no problem.
+            entry.notes.append(Note("content_differs"))
         else:
             entry.notes.append(Note("warning"))
 

@@ -183,7 +183,7 @@ Die Schaltfläche `Einstellungen...` in der unteren Zeile oder `s` zeigt die hä
 Ein Spiel gilt als problematisch, wenn
 
 - keine seiner Dateien erhalten bliebe,
-- der Inhalt eines markierten ZIPs sonst nirgends vorkommt (`Spielinhalt weicht von der behaltenen Version ab`),
+- ein markiertes ZIP (oder, mit `ZIP-Datei behalten`, eine markierte normale Datei) dieselbe Fassung ist wie eine behaltene Datei, aber einen anderen Inhalt hat (`Gleiche Fassung wie die behaltene Datei, aber anderer Inhalt`): Welcher Dump ist der richtige?,
 - ein ZIP defekt, verschlüsselt oder nicht lesbar ist,
 - eine Datei als vermutete Status- oder Spielstanddatei erhalten bleibt (Regel 9),
 - die Regeln nur durch einen `Gleichstand` entschieden haben,
@@ -294,9 +294,9 @@ Jede ZIP-Datei wird vollständig gelesen, auch wenn sie die einzige Datei eines 
 
 - **Gleicher Inhalt wie eine behaltene Datei:** Die ZIP-Datei wird markiert, und der Bericht nennt die Datei mit demselben Inhalt.
 - **Bleiben nach der Auswahl ein ZIP und eine normale Datei übrig:** Das ZIP wird immer markiert, auch bei anderem Inhalt, wenn es die einzige Datei mit einem Teil wie `(Disc 1)` ist oder wenn es nicht lesbar ist.
-- **Mit `ZIP-Datei behalten` (`prefer_zip`):** Umgekehrt: Neben einer lesbaren ZIP-Datei derselben Version werden die normalen Dateien markiert (`ZIP-Datei bevorzugt`). Kommt der Inhalt einer solchen Datei in keinem behaltenen ZIP vor, zeigt der Bericht `Spielinhalt weicht von der behaltenen Version ab`, und das Spiel gilt als problematisch (`Inhalt einer markierten normalen Datei bleibt nicht erhalten`). Ein nicht lesbares ZIP verdrängt keine normale Datei. Die Priorität geht weiterhin vor: Eine normale `(USA)`-Datei gewinnt gegen ein `(Japan)`-ZIP.
+- **Mit `ZIP-Datei behalten` (`prefer_zip`):** Umgekehrt: Neben einer lesbaren ZIP-Datei derselben Version werden die normalen Dateien markiert (`ZIP-Datei bevorzugt`). Kommt der Inhalt einer solchen Datei in keinem behaltenen ZIP vor, zeigt der Bericht `Spielinhalt weicht von der behaltenen Version ab`, und das Spiel gilt als problematisch (`Gleiche Fassung wie die behaltene Datei, aber anderer Inhalt`). Ein nicht lesbares ZIP verdrängt keine normale Datei. Die Priorität geht weiterhin vor: Eine normale `(USA)`-Datei gewinnt gegen ein `(Japan)`-ZIP.
 - **Mehrere ZIPs derselben Version mit anderem Inhalt:** Alle bleiben erhalten, und der Bericht weist darauf hin.
-- **Markiert, aber der Inhalt kommt in keiner behaltenen Datei vor:** Der Bericht zeigt `Spielinhalt weicht von der behaltenen Version ab`, und das Spiel gilt als problematisch. Die Datei bleibt markiert. Das gilt nicht für ZIPs, die wegen eines Löschworts markiert sind.
+- **Markiert, aber der Inhalt kommt in keiner behaltenen Datei vor:** Der Bericht zeigt `Spielinhalt weicht von der behaltenen Version ab`. Die Datei bleibt markiert. Ist das ZIP dieselbe Fassung wie eine behaltene Datei, gilt das Spiel als problematisch (`Gleiche Fassung wie die behaltene Datei, aber anderer Inhalt`). Verliert es dagegen wegen der Priorität oder als ältere Version, ist ein anderer Inhalt zu erwarten: Dann ist es nur ein Hinweis. ZIPs, die wegen eines Löschworts markiert sind, bekommen keinen solchen Hinweis.
 - **Keine Region oder Version im ZIP-Namen:** Die Angabe wird den Dateien im ZIP entnommen, sofern sie denselben Spielnamen haben.
 - **Defektes oder verschlüsseltes ZIP:** Die Datei wird immer markiert, auch wenn sie die einzige Datei des Spiels ist. Der Inhalt eines verschlüsselten ZIPs wird nicht geprüft.
 - **Gesperrtes ZIP oder unbekannte Methode (zum Beispiel Deflate64):** Das sagt nichts über den Zustand der Datei. Ohne normale Datei des Spiels bleibt es erhalten und wird im Bericht genannt.
