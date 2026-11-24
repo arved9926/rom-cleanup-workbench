@@ -1357,10 +1357,13 @@ def build_parser() -> argparse.ArgumentParser:
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--report-only", action="store_true", help="without window: only print the report in the terminal")
     mode.add_argument("--yes", action="store_true", help="without window: delete marked files without asking")
+    mode.add_argument("--scan-all", action="store_true",
+                      help="without window: scan every platform folder of the roms folder into its database")
     mode.add_argument(
         "--review", choices=[REVIEW_ALL, REVIEW_PROBLEMS],
         help="open the window with all marked or only the problematic games",
     )
+    parser.add_argument("--full", action="store_true", help="with --scan-all: read every file again")
     parser.add_argument(
         "--tui", action="store_true",
         help="use the terminal version instead of the window (automatic on Linux without a graphical display)",
@@ -1412,6 +1415,22 @@ def _run_in_terminal(args: argparse.Namespace, parser: argparse.ArgumentParser, 
     for error in errors:
         print(tr("terminal.error", error=error), file=sys.stderr)
     return 1 if errors else 0
+
+
+def _scan_all_in_terminal(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
+    """--scan-all: every platform of the roms folder into its database; prints one line per platform."""
+    from workbench_db import is_collection, scan_all
+
+    if args.directory is None:
+        parser.error("--scan-all needs the roms folder")
+    if not args.directory.is_dir() or not is_collection(args.directory):
+        print(tr("terminal.not_collection", directory=args.directory), file=sys.stderr)
+        return 1
+    finished = scan_all(args.directory, full=args.full)
+    for platform, files, read in finished:
+        print(tr("terminal.scan_platform", platform=platform, files=files, read=read))
+    print(tr("terminal.scan_done", count=len(finished)))
+    return 0
 
 
 def _config_path(args: argparse.Namespace) -> Path | None:
@@ -1473,6 +1492,9 @@ def main(argv: list[str] | None = None) -> int:
             return Review(scan_directory(directory, config, progress), config, source)
         results = open_platform(root, directory, config, progress, rescan=rescan, full=full)
         return Review(results, config, source, collection_root=root, directory=directory)
+
+    if args.scan_all:
+        return _scan_all_in_terminal(args, parser)
 
     if args.report_only or args.yes:
         return _run_in_terminal(args, parser, analyze)

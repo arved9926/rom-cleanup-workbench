@@ -416,10 +416,17 @@ class OverviewPanel:
         frame.rowconfigure(1, weight=1)
         heading = ttk.Frame(frame)
         heading.grid(row=0, column=0, sticky="ew", pady=(0, 8))
-        for key, command in (("overview.full_scan", lambda: self.open(rescan=True, full=True)),
-                             ("overview.scan", lambda: self.open(rescan=True)),
+        self.full = tk.BooleanVar(frame, False)
+        self.buttons = []
+        for key, command in (("overview.scan_all", window.scan_all),
+                             ("overview.scan", lambda: self.open(rescan=True, full=self.full.get())),
                              ("overview.open", self.open)):
-            ttk.Button(heading, text=tr(key), command=command).pack(side="right", padx=(8, 0))
+            button = ttk.Button(heading, text=tr(key), command=command)
+            button.pack(side="right", padx=(8, 0))
+            self.buttons.append(button)
+        self.full_box = ttk.Checkbutton(heading, text=tr("overview.full"), variable=self.full)
+        self.full_box.pack(side="right", padx=(8, 0))
+        self.cancel_button = ttk.Button(heading, text=tr("settings.cancel"), command=window.cancel_scan_all)
         ttk.Label(heading, text=tr("overview.title"), font=window.bold_font).pack(side="left")
 
         self.tree = ttk.Treeview(frame, columns=self._COLUMNS, selectmode="browse")
@@ -490,8 +497,17 @@ class OverviewPanel:
 
     def open(self, rescan: bool = False, full: bool = False) -> None:
         folder = self.selected()
-        if folder is not None:
+        if folder is not None and self.window._batch is None:
             self.window.open_platform(folder, rescan=rescan, full=full)
+
+    def set_scanning(self, scanning: bool) -> None:
+        """While all platforms are scanned, only Cancel works."""
+        for widget in self.buttons + [self.full_box]:
+            widget.state(["disabled"] if scanning else ["!disabled"])
+        if scanning:
+            self.cancel_button.pack(side="right", padx=(8, 0))
+        else:
+            self.cancel_button.pack_forget()
 
 
 def _count(value) -> str:
@@ -515,6 +531,7 @@ class ReviewWindow:
         self.settings_panel = None
         self.folder_panel = None
         self.overview_panel = None
+        self._batch = None  # the running scan of all platforms: (queue, cancel flag)
         # The roms folder of the collection; None while a folder is open on its own.
         self.collection_root = None
         self.config_loader = config_loader
@@ -736,6 +753,69 @@ class ReviewWindow:
         self.overview_panel.frame.destroy()
         self.overview_panel = None
         self._hide_panel()
+
+    def scan_all(self) -> None:
+        """Scans every platform in the background; each is saved at once; nothing is deleted."""
+        from workbench_db import ScanCancelled, scan_all
+
+        panel = self.overview_panel
+        if panel is None or self._batch is not None:
+            return
+        answer, cancel, state = queue.Queue(), threading.Event(), {}
+        self._batch = (answer, cancel)
+        full = panel.full.get()
+        root = self.collection_root
+
+        def report(platform, number, count, done, total):
+            if cancel.is_set():
+                raise ScanCancelled
+            state["now"] = (platform, number, count, done, total)
+
+        def work():
+            try:
+                answer.put(("done", scan_all(root, full=full, progress=report)))
+            except ScanCancelled:
+                answer.put(("cancelled", None))
+            except Exception as error:  # every error must reach the window
+                answer.put(("error", str(error) or type(error).__name__))
+
+        panel.set_scanning(True)
+        self.progress_bar.configure(value=0, maximum=1)
+        self.progress_bar.place(in_=panel.tree, relx=0.5, rely=0.5, relwidth=0.6, anchor="center")
+        self.progress_bar.lift()
+        gc.disable()  # as for the analysis: Tk objects must not be collected in the worker thread
+        worker = threading.Thread(target=work, daemon=True)
+        self._workers.append(worker)
+        worker.start()
+        self.root.after(100, self._poll_scan_all, answer, state)
+
+    def cancel_scan_all(self) -> None:
+        if self._batch is not None:
+            self._batch[1].set()
+
+    def _poll_scan_all(self, answer: queue.Queue, state: dict) -> None:
+        if self._batch is None or self._batch[0] is not answer:
+            return
+        try:
+            outcome, value = answer.get_nowait()
+        except queue.Empty:
+            if "now" in state:
+                platform, number, count, done, total = state["now"]
+                self.status.set(tr("overview.scanning", platform=platform, done=done, total=total,
+                                   number=number, count=count))
+                self.progress_bar.configure(value=done, maximum=max(total, 1))
+            self.root.after(100, self._poll_scan_all, answer, state)
+            return
+        self._batch = None
+        self.progress_bar.place_forget()
+        self._enable_gc_when_idle()
+        self.show_overview()
+        if outcome == "error":
+            messagebox.showerror(tr("window.analysis_failed_title"), value, parent=self.root)
+        elif outcome == "cancelled":
+            self.status.set(tr("overview.scan_cancelled"))
+        else:
+            self.status.set(tr("overview.scan_finished", count=len(value)))
 
     def open_platform(self, folder: str, rescan: bool = False, full: bool = False) -> None:
         self.close_overview()

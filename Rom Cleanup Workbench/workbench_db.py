@@ -447,3 +447,26 @@ def overview(root: Path, config: Config) -> list[OverviewRow]:
             rows.append(OverviewRow(name, state, row.files, row.games, row.marked, row.problematic,
                                     row.last_scan, row.has_own_config))
     return rows
+
+
+class ScanCancelled(Exception):
+    """Raised by a progress callback to stop a batch scan; finished platforms stay saved."""
+
+
+def scan_all(root: Path, full: bool = False, progress=None) -> list[tuple[str, int, int]]:
+    """Scans every platform folder one after the other and saves each at once.
+
+    progress(platform, number, count, done, total) reports the state; it may raise ScanCancelled.
+    Returns (platform, files, files read) for every finished platform. Never deletes anything.
+    """
+    finished = []
+    with Collection(root) as collection:
+        folders = collection.platform_folders()
+        for number, directory in enumerate(folders, 1):
+            def report(done, total, directory=directory, number=number):
+                if progress:
+                    progress(directory.name, number, len(folders), done, total)
+
+            read = scan_platform(collection, directory, report, full=full)
+            finished.append((directory.name, collection.platform(directory.name).files or 0, read))
+    return finished

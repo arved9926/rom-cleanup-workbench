@@ -1500,6 +1500,83 @@ class OverviewWindowTests(CollectionDatabaseTests):
         self.assertEqual(sorted(reads), ["Title (Japan).nes", "Title (USA).nes"])
 
 
+class ScanAllTests(OverviewWindowTests):
+    """Step 5: scan every platform (window and --scan-all), quick or full; nothing is deleted."""
+
+    def test_scan_all_saves_every_platform(self):
+        import workbench_db
+
+        self.fill()
+        seen = []
+        finished = workbench_db.scan_all(self.roms, progress=lambda *args: seen.append(args[:3]))
+        self.assertEqual([name for name, _files, _read in finished], ["nes", "snes"])
+        self.assertIn(("snes", 2, 2), seen)
+        with workbench_db.Collection(self.roms) as collection:
+            self.assertEqual(collection.state(self.roms / "nes"), "current")
+            self.assertEqual(collection.platform("snes").files, 1)
+        self.assertEqual(sorted(path.name for path in (self.roms / "nes").iterdir()),
+                         ["Title (Japan).nes", "Title (USA).nes"])  # nothing deleted
+
+    def test_a_quick_scan_all_reads_only_changes_a_full_one_everything(self):
+        import workbench_db
+
+        self.fill()
+        workbench_db.scan_all(self.roms)
+        self.write("snes", "New (USA).sfc", b"n")
+        self.assertEqual([read for _n, _f, read in workbench_db.scan_all(self.roms)], [0, 1])
+        self.assertEqual([read for _n, _f, read in workbench_db.scan_all(self.roms, full=True)], [2, 2])
+
+    def test_cancel_keeps_the_finished_platforms(self):
+        import workbench_db
+
+        self.fill()
+
+        def stop_in_snes(platform, *_rest):
+            if platform == "snes":
+                raise workbench_db.ScanCancelled
+
+        with self.assertRaises(workbench_db.ScanCancelled):
+            workbench_db.scan_all(self.roms, progress=stop_in_snes)
+        with workbench_db.Collection(self.roms) as collection:
+            self.assertEqual(collection.state(self.roms / "nes"), "current")
+            self.assertEqual(collection.state(self.roms / "snes"), "not_scanned")
+
+    def test_the_window_scans_all_and_shows_the_numbers(self):
+        self.fill()
+        window = self.make_window(self.roms)
+        window.open_folder(self.roms)
+        window.scan_all()
+        self.assertTrue(window.overview_panel.cancel_button.winfo_manager())
+        deadline = time.monotonic() + 10
+        while window._batch is not None and time.monotonic() < deadline:
+            window.root.update()
+            time.sleep(0.01)
+        self.assertIsNone(window._batch)
+        self.assertEqual(window.status.get(), "2 platform(s) scanned.")
+        self.assertEqual(window.overview_panel.tree.item("nes", "values")[-1], "current")
+        self.assertFalse(window.overview_panel.cancel_button.winfo_manager())
+
+    def test_scan_all_on_the_command_line(self):
+        self.fill()
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            code = rf.main([str(self.roms), "--scan-all"])
+        self.assertEqual(code, 0)
+        self.assertEqual(output.getvalue().splitlines(), [
+            "nes: 2 file(s), 2 read", "snes: 1 file(s), 1 read", "2 platform(s) scanned; nothing was deleted."])
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            rf.main([str(self.roms), "--scan-all", "--full"])
+        self.assertIn("nes: 2 file(s), 2 read", output.getvalue())
+
+    def test_scan_all_refuses_a_platform_folder(self):
+        self.fill()
+        error = io.StringIO()
+        with contextlib.redirect_stderr(error), contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(rf.main([str(self.roms / "nes"), "--scan-all"]), 1)
+        self.assertIn("is no roms folder", error.getvalue())
+
+
 class RescanFlagTests(unittest.TestCase):
     """F5 asks for a new scan; analyses without the parameter (as in many tests) still work."""
 
