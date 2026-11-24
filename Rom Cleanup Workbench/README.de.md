@@ -176,7 +176,7 @@ Das Programm öffnet das Analysefenster und zeigt dort alles an; im Terminal gib
 | `--report-only` | ohne Fenster: nur den Bericht im Terminal ausgeben |
 | `--yes` | ohne Fenster: markierte Dateien ohne Nachfrage löschen |
 | `--scan-all` | ohne Fenster: alle Plattform-Ordner des angegebenen `roms`-Ordners scannen und in seiner Datenbank speichern; löscht nichts |
-| `--full` | mit `--scan-all`: jede Datei neu lesen statt nur neue und geänderte |
+| `--deep-scan` | mit `--scan-all`: Tiefenscan, jede Datei neu lesen statt nur neue und geänderte (früher `--full`, das weiter geht) |
 | `--all` | mit `--report-only`: auch Spiele ohne markierte Dateien zeigen |
 | `--tui` | die Terminal-Version statt des Fensters verwenden (automatisch unter Linux ohne grafische Anzeige) |
 | `--ascii` | Terminal-Version nur mit ASCII-Zeichen (automatisch auf der Linux-Konsole); schließt `--tui` ein |
@@ -198,14 +198,14 @@ Meist liegen die Spiele nach Plattformen getrennt in einem gemeinsamen Ordner, e
 | `Öffnen` | `Enter` | die markierte Plattform in der gewohnten Liste öffnen (auch Doppelklick) |
 | `Scannen` | `r` oder `F5` | die markierte Plattform scannen und öffnen |
 | `Alle scannen` | `a` | alle Plattformen nacheinander scannen; jede wird sofort gespeichert und ihre Zahlen erscheinen gleich in der Übersicht; `Abbrechen` behält die fertigen; löscht nichts |
-| `Vollständig` | `v` | Häkchen für Scannen und Alle scannen: jede Datei neu lesen statt nur neue und geänderte |
-| `Leere ausblenden` | `h` | Häkchen: Ordner ohne Spieldatei ausblenden, etwa `bios` oder einen Ordner nur mit `info.txt`; Beipack-Dateien zählen nicht als Spieldatei; die Wahl bleibt gespeichert |
+| `Tiefenscan` | `d` | Schalter (roter Punkt) für Scannen und Alle scannen: jede Datei neu lesen statt nur neue und geänderte |
+| `Leere ausblenden` | `h` | Schalter (roter Punkt): Ordner ohne Spieldatei ausblenden, etwa `bios` oder einen Ordner nur mit `info.txt`; Beipack-Dateien zählen nicht als Spieldatei; die Wahl bleibt gespeichert |
 | `Ordner...` | `f` | einen anderen `roms`-Ordner wählen |
 | | `q` oder `Esc` | das Programm schließen |
 
 Die Tasten gelten im Fenster und in der Terminal-Version gleich; die Hilfezeile oben zeigt in der Übersicht nur sie.
 
-**Scannen.** Ein Scan ist normalerweise schnell: Er liest nur neue und geänderte Dateien (erkannt an Name, Größe und Änderungszeit) und übernimmt alles andere aus der Datenbank. Mit `Vollständig` wird jede Datei neu gelesen. `F5` in der Liste scannt die geöffnete Plattform schnell. Ausführen trägt gelöschte und umbenannte Dateien sofort ein, ein neuer Scan ist danach nicht nötig.
+**Scannen.** Ein Scan ist normalerweise schnell: Er liest nur neue und geänderte Dateien (erkannt an Name, Größe und Änderungszeit) und übernimmt alles andere aus der Datenbank. Mit `Tiefenscan` wird jede Datei neu gelesen. `F5` in der Liste scannt die geöffnete Plattform schnell. Ausführen trägt gelöschte und umbenannte Dateien sofort ein, ein neuer Scan ist danach nicht nötig.
 
 **Zurück zur Übersicht** führt in der Liste `Esc`, `q` oder der Knopf `Übersicht`, in der Terminal-Version auch `o`. `Esc` oder `q` in der Übersicht beendet das Programm; wer ganz hinaus will, drückt also zweimal.
 
@@ -219,13 +219,13 @@ Die Tasten gelten im Fenster und in der Terminal-Version gleich; die Hilfezeile 
 python rom_cleanup_workbench.py "D:\roms" --scan-all
 ```
 
-Mit `--full` wird jede Datei neu gelesen. Gelöscht wird dabei nie etwas.
+Mit `--deep-scan` wird jede Datei neu gelesen (Tiefenscan). Gelöscht wird dabei nie etwas.
 
 ## Analysefenster
 
 Da die ZIP-Dateien entpackt werden müssen, um Größe, SHA-256-Prüfsumme und Namen ihres Inhalts zu erhalten, kann es nach der Auswahl eines Verzeichnisses einen Moment dauern, bis die Ergebnisse angezeigt werden.
 
-Die grüne Zeile oben zeigt links `Rom Cleanup Workbench` und rechts den Ordner; darunter nennt das Fenster die geltende Priorität mit ihrer Herkunft. Die grüne vorletzte Zeile zeigt den Status, während der Analyse zum Beispiel `Analysiere: 120 von 2007 Dateien`. Solange erscheint auch ein Fortschrittsbalken in der Mitte. Das Fenster zeigt auch Fehler, etwa in der Konfiguration, und solange die Analyse scheitert, lässt sich nichts löschen. Beim Löschen erscheint der Fortschrittsbalken in der Mitte, und die grüne Zeile zeigt zum Beispiel `Lösche: 120 von 500 Dateien`; das Fenster nimmt keine Eingaben an, bis das Löschen fertig ist. Danach meldet es das Ergebnis und entfernt die gelöschten Dateien aus der Liste, ohne den Ordner neu zu analysieren; Dateien, die sich nicht löschen ließen, bleiben markiert. `F5` analysiert den Ordner neu, wenn du das willst.
+Die grüne Zeile oben zeigt links `Rom Cleanup Workbench` und rechts den Ordner; darunter steht in Grün `Plattform:` mit dem Namen des geöffneten Ordners. Die geltende Priorität zeigen die Einstellungen. In der Übersicht steht das Wort `Sammlung` ebenfalls in Grün. Die grüne vorletzte Zeile zeigt den Status, während der Analyse zum Beispiel `Analysiere: 120 von 2007 Dateien`. Solange erscheint auch ein Fortschrittsbalken in der Mitte. Das Fenster zeigt auch Fehler, etwa in der Konfiguration, und solange die Analyse scheitert, lässt sich nichts löschen. Beim Löschen erscheint der Fortschrittsbalken in der Mitte, und die grüne Zeile zeigt zum Beispiel `Lösche: 120 von 500 Dateien`; das Fenster nimmt keine Eingaben an, bis das Löschen fertig ist. Danach meldet es das Ergebnis und entfernt die gelöschten Dateien aus der Liste, ohne den Ordner neu zu analysieren; Dateien, die sich nicht löschen ließen, bleiben markiert. `F5` analysiert den Ordner neu, wenn du das willst.
 
 Ist im ganzen Ordner nichts markiert und keine Datei als Status- oder Spielstanddatei verdächtig, blinkt `Nichts zu tun.` in der Mitte des Fensters.
 
@@ -305,7 +305,7 @@ Unter Linux startet sie von selbst, wenn es keine grafische Anzeige gibt (weder 
 
 Sie braucht [Textual](https://textual.textualize.io/) (getestet mit 8.2.8). Wie du es installierst und das Programm startest, steht unter [Installation](#installation) und [Aufruf](#aufruf).
 
-Ohne Textual sagt das Programm das und löscht nichts. Der Bildschirm hat die Zeilen des Fensters von oben nach unten: die grüne Titelzeile mit dem Ordner, eine Hilfezeile, die Priorität, die Liste, das Filterfeld, die drei Ansichten und die grüne Statuszeile. In der Liste beginnt jedes Spiel mit seinem Namen in Fettschrift, gefolgt von Strichen bis zum rechten Rand; ein Hinweis wie `Unterschiedliche Schreibweisen des Namens` steht in dieser Zeile. In einem schmalen Terminal, etwa den 80 Spalten von PuTTY, brechen lange Dateinamen und Hinweise in ihrer Spalte um, statt den Bildschirm zu verlassen. `Nichts zu tun.` blinkt mit dem eigenen Blinken des Terminals; in PuTTY muss blinkender Text eventuell erst eingeschaltet werden. Fragen und Meldungen erscheinen in einem Rahmen über der Liste, mit Schaltflächen in der Sprache des Programms; `Nein` ist vorgewählt.
+Ohne Textual sagt das Programm das und löscht nichts. Der Bildschirm hat die Zeilen des Fensters von oben nach unten: die grüne Titelzeile mit dem Ordner, eine Hilfezeile, die Plattform, die Liste, das Filterfeld, die drei Ansichten und die grüne Statuszeile. In der Liste beginnt jedes Spiel mit seinem Namen in Fettschrift, gefolgt von Strichen bis zum rechten Rand; ein Hinweis wie `Unterschiedliche Schreibweisen des Namens` steht in dieser Zeile. In einem schmalen Terminal, etwa den 80 Spalten von PuTTY, brechen lange Dateinamen und Hinweise in ihrer Spalte um, statt den Bildschirm zu verlassen. `Nichts zu tun.` blinkt mit dem eigenen Blinken des Terminals; in PuTTY muss blinkender Text eventuell erst eingeschaltet werden. Fragen und Meldungen erscheinen in einem Rahmen über der Liste, mit Schaltflächen in der Sprache des Programms; `Nein` ist vorgewählt.
 
 Die Hilfezeile zeigt die Tasten als `Taste:Aktion`, zum Beispiel `x:löschen  k:behalten`. Fenster und Terminal-Version haben dieselben Tasten.
 

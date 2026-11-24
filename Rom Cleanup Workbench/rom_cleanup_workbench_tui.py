@@ -121,6 +121,12 @@ class AsciiScrollBarRender(ScrollBarRender):
     HORIZONTAL_BARS = [" "] * 8
 
 
+class DotSwitch(Checkbox):
+    """A switch with the red dot of the views instead of a check mark (Deep Scan, Hide empty)."""
+
+    BUTTON_INNER = "●"
+
+
 def _plain_radio(button: RadioButton) -> RadioButton:
     button.BUTTON_LEFT, button.BUTTON_INNER, button.BUTTON_RIGHT = ASCII_RADIO
     return button
@@ -660,7 +666,7 @@ class OverviewScreen(Screen):
         Binding("enter", "open", show=False, priority=True),
         Binding("r,R,f5", "scan", show=False),
         Binding("a,A", "scan_all", show=False),
-        Binding("v,V", "toggle_full", show=False),
+        Binding("d,D", "toggle_full", show=False),
         Binding("h,H", "toggle_hide_empty", show=False),
         Binding("f,F", "folder", show=False),
     ]
@@ -683,9 +689,10 @@ class OverviewScreen(Screen):
             yield Button(tr("overview.open"), id="overview-open", compact=True)
             yield Button(tr("overview.scan"), id="overview-scan", compact=True)
             yield Button(tr("overview.scan_all"), id="overview-scan-all", compact=True)
-            yield Checkbox(tr("overview.full"), id="overview-full", compact=True)
-            yield Checkbox(tr("overview.hide_empty"), load_hide_empty(self.app.settings_path), id="overview-hide",
-                           compact=True)
+            for switch in (DotSwitch(tr("overview.full"), id="overview-full", compact=True),
+                           DotSwitch(tr("overview.hide_empty"), load_hide_empty(self.app.settings_path),
+                                     id="overview-hide", compact=True)):
+                yield _plain_radio(switch) if getattr(self.app, "ascii", False) else switch
             yield Button(tr("settings.cancel"), id="overview-cancel", compact=True)
         yield Static(tr("overview.hint") + " " + tr("overview.own_hint") + "  " + tr("overview.tui_keys"),
                      id="overview-hint", markup=False)
@@ -1096,11 +1103,20 @@ class WorkbenchApp(App):
     #language-hint { margin: 1 0 1 0; color: #aaaaaa; }
     #tags-label { margin-bottom: 1; }
     #overview-head { height: 1; margin-bottom: 1; }
-    #overview-title { width: auto; text-style: bold; padding: 0 2 0 0; }
+    #overview-title { width: auto; text-style: bold; padding: 0 2 0 0; color: #3fb950; }
+    .-colors16 #overview-title { color: #00aa00; }
     #overview-folder { width: 1fr; }
     #overview-table { height: 1fr; }
     #overview-buttons { height: 1; margin-top: 1; }
     #overview-buttons > Button, #overview-buttons > Checkbox { margin-right: 2; }
+    #overview-full, #overview-hide { background: #000000; color: #ffffff; }
+    #overview-full > .toggle--button, #overview-hide > .toggle--button { color: #222222; background: #222222; }
+    #overview-full.-on > .toggle--button, #overview-hide.-on > .toggle--button { color: #e5383b; background: #222222; }
+    .-colors16 #overview-full, .-colors16 #overview-hide { color: #aaaaaa; }
+    .-colors16 #overview-full > .toggle--button, .-colors16 #overview-hide > .toggle--button {
+        background: #000000; color: #000000; }
+    .-colors16 #overview-full.-on > .toggle--button, .-colors16 #overview-hide.-on > .toggle--button {
+        background: #000000; color: #ff5555; }
     #overview-hint { height: auto; margin-top: 1; color: #aaaaaa; }
     #overview-status { height: 1; margin-top: 1; }
     #prefer-label { margin-top: 1; margin-bottom: 1; }
@@ -1333,7 +1349,9 @@ class WorkbenchApp(App):
             self._game_numbers[id(result)] = game_index
             for file_index, entry in enumerate(result.keep + result.marked):
                 self._file_keys[id(entry)] = f"g{game_index}f{file_index}"
-        self.query_one("#info", Static).update(review.priority_text())
+        green = "#00aa00" if self.colors16 else "#3fb950"
+        self.query_one("#info", Static).update(
+            Text.assemble((tr("window.platform"), f"bold {green}"), " " + (self.directory.name if self.directory else "")))
         self.show_games()
 
     # The list ---------------------------------------------------------------------------------

@@ -1419,7 +1419,8 @@ def build_parser() -> argparse.ArgumentParser:
         "--review", choices=[REVIEW_ALL, REVIEW_PROBLEMS],
         help="open the window with all marked or only the problematic games",
     )
-    parser.add_argument("--full", action="store_true", help="with --scan-all: read every file again")
+    parser.add_argument("--deep-scan", "--full", dest="full", action="store_true",
+                        help="with --scan-all: read every file again (deep scan)")
     parser.add_argument(
         "--tui", action="store_true",
         help="use the terminal version instead of the window (automatic on Linux without a graphical display)",

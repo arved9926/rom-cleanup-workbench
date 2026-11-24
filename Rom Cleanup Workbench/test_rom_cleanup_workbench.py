@@ -1481,7 +1481,7 @@ class OverviewWindowTests(OverviewWindowBase):
         window.open_folder(self.roms)
         help_text = window.help_label.cget("text")
         self.assertEqual(help_text, translations.tr("window.help_overview"))
-        for word in ("a: Scan all", "v: Full", "q or Esc: Close"):
+        for word in ("a: Scan all", "d: Deep Scan", "q or Esc: Close"):
             self.assertIn(word, help_text)
         self.assertNotIn("x: delete", help_text)
         window.overview_panel.open()
@@ -1496,7 +1496,7 @@ class OverviewWindowTests(OverviewWindowBase):
         # Tk sends keys only to a window with the focus, which a test cannot rely on: the list passes
         # its keys on to the window's bindings, and those call these methods.
         self.assertIn(str(window.root), tree.bindtags())
-        keys = {"<KeyPress-v>": "_toggle_full_key", "<KeyPress-a>": "_scan_all_key", "<KeyPress-c>": "show_credits",
+        keys = {"<KeyPress-d>": "_toggle_full_key", "<KeyPress-a>": "_scan_all_key", "<KeyPress-c>": "show_credits",
                 "<KeyPress-q>": "_quit_key", "<Escape>": "_on_escape", "<KeyPress-r>": "reanalyze",
                 "<KeyPress-s>": "toggle_settings", "<KeyPress-f>": "choose_directory"}
 
@@ -1504,9 +1504,9 @@ class OverviewWindowTests(OverviewWindowBase):
             getattr(window, keys[key])()  # looked up now, so that the mocks below take effect
             window.root.update()
 
-        press("<KeyPress-v>")
+        press("<KeyPress-d>")
         self.assertTrue(window.overview_panel.full.get())
-        press("<KeyPress-v>")
+        press("<KeyPress-d>")
         self.assertFalse(window.overview_panel.full.get())
         with mock.patch.object(window, "scan_all") as scan_all:
             press("<KeyPress-a>")
@@ -1741,6 +1741,14 @@ class ScanAllTests(OverviewWindowBase):
             rf.main([str(self.roms), "--scan-all", "--full"])
         self.assertIn("nes: 2 file(s), 2 read", output.getvalue())
 
+    def test_deep_scan_on_the_command_line(self):
+        self.fill()
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            rf.main([str(self.roms), "--scan-all"])
+            rf.main([str(self.roms), "--scan-all", "--deep-scan"])
+        self.assertEqual(output.getvalue().splitlines()[-3], "nes: 2 file(s), 2 read")
+
     def test_scan_all_refuses_a_platform_folder(self):
         self.fill()
         error = io.StringIO()
@@ -1863,6 +1871,22 @@ class OverviewTerminalTests(OverviewTerminalBase):
             await pilot.press("h")
             await pilot.pause()
             self.assertEqual(list(self.overview_rows(app)), ["bios", "nes", "snes", "*total*"])
+
+    async def test_d_switches_the_deep_scan_and_the_title_is_green(self):
+        app = self.app(self.roms)
+        async with app.run_test(size=(140, 30)) as pilot:
+            await self.settle(app, pilot)
+            box = app.screen.query_one("#overview-full")
+            self.assertEqual(str(box.label), "Deep Scan")
+            await pilot.press("d")
+            await pilot.pause()
+            self.assertTrue(box.value)
+            title = app.screen.query_one("#overview-title")
+            self.assertEqual(title.styles.color.hex.lower(), "#3fb950")
+            await pilot.press("enter")  # a platform: "Platform: nes" below the help
+            await self.settle(app, pilot)
+            info = app.query_one("#info").render()
+            self.assertEqual(str(info), "Platform: nes")
 
     async def test_a_scans_all_platforms(self):
         app = self.app(self.roms)
@@ -3138,8 +3162,8 @@ class ReviewWindowTests(RedundanzTestCase):
             self.assertTrue(window.root.bind(f"<KeyPress-{key}>"), key)
         for sequence in ("<Return>", "<slash>", "<F5>", "<F1>", "<Escape>", "<Tab>", "<Shift-Tab>"):
             self.assertTrue(window.root.bind(sequence), sequence)
-        # The old keys are gone, as in the terminal version.
-        for sequence in ("<KeyPress-d>", "<KeyPress-D>", "<KeyPress-p>", "<KeyPress-P>", "<Control-l>",
+        # The old keys are gone, as in the terminal version (d now switches the overview's deep scan only).
+        for sequence in ("<KeyPress-p>", "<KeyPress-P>", "<Control-l>",
                          "<Control-o>", "<Control-f>"):
             self.assertFalse(window.root.bind(sequence), sequence)
 
@@ -4248,12 +4272,14 @@ class ReviewWindowTests(RedundanzTestCase):
             window.close()
         self.assertEqual(len(list(self.dir.iterdir())), 2)
 
-    def test_window_shows_folder_and_priority(self):
+    def test_window_shows_folder_and_platform(self):
         self.write("Title (USA).bin")
         window = self.open_window()
         self.assertIn(str(self.dir), window.folder.get())
-        self.assertNotIn(str(self.dir), window.info.get())
-        self.assertIn("Priority: USA > Europe", window.info.get())
+        self.assertEqual(window.info.get(), self.dir.name)  # "Platform: <folder name>", no priority any more
+        self.assertEqual(window.platform_label.cget("text"), "Platform:")
+        self.assertTrue(window.platform_label.winfo_manager())
+        self.assertEqual(str(window.platform_label.cget("foreground")), "#3fb950")
 
     def test_folder_is_right_aligned_in_the_green_title_row(self):
         window = self.open_window()
@@ -4972,7 +4998,7 @@ class TerminalVersionTests(unittest.IsolatedAsyncioTestCase):
             proto = next(row for row in rows if row[0].strip() == "- Other (USA) (Hack).bin")
             self.assertEqual(" ".join(proto[2].split()), "Deleted according to delete keyword (Hack) - as requested")
             self.assertIn("Showing: 2 of 2 games", self.text(app, "#status"))
-            self.assertIn("Priority: USA > Europe", self.text(app, "#info"))
+            self.assertEqual(self.text(app, "#info"), f"Platform: {app.directory.name}")
             self.assertEqual(len(app.files), 3)
 
     async def test_brackets_in_file_names_are_shown_literally(self):
@@ -6280,7 +6306,7 @@ class TerminalVersionTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(values["region_priority"], ["Japan", "USA"])
             self.assertEqual(values["delete_tags"], ["Beta", "Proto"])
             self.assertIsNot(app.review, before)  # analyzed again with the new rules
-            self.assertIn("Priority: Japan > USA", self.text(app, "#info"))
+            self.assertEqual(app.review.config.region_priority, ["Japan", "USA"])
             self.assertIn("+ Title (Japan).bin", self.row_texts(app))
             self.assertIs(app.focused, app.query_one("#games"))
 

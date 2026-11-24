@@ -54,6 +54,7 @@ _GREEN = "#1a7f37"
 _RED = "#e5383b"
 # The text of the file rows: kept files green, marked files red; light enough on black.
 _KEEP_TEXT = "#3fb950"
+_DOT_STYLE = "Dot.TCheckbutton"  # a switch that looks like the view choice: red dot when on
 _MARKED_TEXT = "#ff6b6b"
 _HIGHLIGHT_STYLE = "Highlight.TLabel"
 _HIGHLIGHT_FRAME_STYLE = "Highlight.TFrame"
@@ -454,14 +455,14 @@ class OverviewPanel:
             button = ttk.Button(heading, text=tr(key), command=command)
             button.pack(side="right", padx=(8, 0))
             self.buttons.append(button)
-        self.full_box = ttk.Checkbutton(heading, text=tr("overview.full"), variable=self.full)
+        self.full_box = ttk.Checkbutton(heading, text=tr("overview.full"), variable=self.full, style=_DOT_STYLE)
         self.full_box.pack(side="right", padx=(8, 0))
         self.hide_empty = tk.BooleanVar(frame, load_hide_empty(window.settings_path))
         self.hide_box = ttk.Checkbutton(heading, text=tr("overview.hide_empty"), variable=self.hide_empty,
-                                        command=self._hide_empty_changed)
+                                        command=self._hide_empty_changed, style=_DOT_STYLE)
         self.hide_box.pack(side="right", padx=(8, 0))
         self.cancel_button = ttk.Button(heading, text=tr("settings.cancel"), command=window.cancel_scan_all)
-        ttk.Label(heading, text=tr("overview.title"), font=window.bold_font).pack(side="left")
+        ttk.Label(heading, text=tr("overview.title"), font=window.bold_font, foreground=_KEEP_TEXT).pack(side="left")
 
         self.tree = ttk.Treeview(frame, columns=self._COLUMNS, selectmode="browse")
         self.tree.heading("#0", text=tr("overview.platform"), anchor="w")
@@ -644,9 +645,14 @@ class ReviewWindow:
         self.tree.focus_set()
         self._use_dark_title_bar()
 
-    def _show_directory(self, *lines: str) -> None:
+    def _show_directory(self, platform: str | None = None) -> None:
+        """The folder in the title row; below the help, "Platform: nes" while a platform's list is shown."""
         self.folder.set(tr("window.folder", directory=self.directory) if self.directory else tr("window.no_folder"))
-        self.info.set("\n".join(lines))
+        self.info.set(platform or "")
+        if platform:
+            self.platform_label.pack(side="left", padx=(0, 6), before=self.info_label)
+        else:
+            self.platform_label.pack_forget()
 
     def _clear(self) -> None:
         self.review = None
@@ -744,7 +750,7 @@ class ReviewWindow:
                 row = f"g{group_index}f{file_index}"
                 self._file_ids[id(entry)] = row
                 self._files[row] = (result, entry)
-        self._show_directory(review.priority_text())
+        self._show_directory(self.directory.name if self.directory else None)
         self._show_all_groups()
         self._select_first_file()
 
@@ -972,7 +978,8 @@ class ReviewWindow:
     def _fit_radio_indicator(self) -> None:
         """The circle grows with the font, so that the red dot stays easy to see."""
         size = max(12, round(tkfont.nametofont("TkDefaultFont").metrics("linespace") * 0.8))
-        ttk.Style(self.root).configure("TRadiobutton", indicatorsize=size, indicatormargin=(0, 0, 8, 0))
+        for name in ("TRadiobutton", _DOT_STYLE):
+            ttk.Style(self.root).configure(name, indicatorsize=size, indicatormargin=(0, 0, 8, 0))
 
     def _fit_size_column(self) -> None:
         """Wide enough for files up to 99 GB, also after changing the font size."""
@@ -1022,6 +1029,10 @@ class ReviewWindow:
             indicatorbackground=[("active", _GRAY)],
             indicatorforeground=[("disabled", _LIGHT_GRAY)],
         )
+        # Switches such as Deep Scan: the circle with the red dot of the views, not a check box.
+        style.layout(_DOT_STYLE, style.layout("TRadiobutton"))
+        style.configure(_DOT_STYLE, **style.configure("TRadiobutton"))
+        style.map(_DOT_STYLE, **style.map("TRadiobutton"))
         self._fit_radio_indicator()
         style.configure(_HIGHLIGHT_STYLE, background=_GREEN, foreground=_WHITE)
         style.configure(_HIGHLIGHT_FRAME_STYLE, background=_GREEN)
@@ -1085,9 +1096,12 @@ class ReviewWindow:
         help_label = self.help_label = ttk.Label(self.root, text=tr("window.help"), padding=8)
         help_label.pack(fill="x")
         help_label.bind("<Configure>", lambda event: help_label.configure(wraplength=event.width - 16))
-        info_label = ttk.Label(self.root, textvariable=self.info, padding=(8, 0, 8, 8))
-        info_label.pack(fill="x")
-        info_label.bind("<Configure>", lambda event: info_label.configure(wraplength=event.width - 16))
+        info_row = ttk.Frame(self.root, padding=(8, 0, 8, 8))
+        info_row.pack(fill="x")
+        self.platform_label = ttk.Label(info_row, text=tr("window.platform"), foreground=_KEEP_TEXT,
+                                        font=self.bold_font)
+        self.info_label = ttk.Label(info_row, textvariable=self.info)
+        self.info_label.pack(side="left")
 
         # The status has a row of its own, so that it does not push out the buttons.
         bottom = ttk.Frame(self.root, padding=8)
@@ -1167,7 +1181,7 @@ class ReviewWindow:
         keys = {
             "x": self.demote_selected, "k": self.promote_selected, "s": self.toggle_settings,
             "f": self.choose_directory, "r": self.reanalyze, "c": self.show_credits, "q": self._quit_key,
-            "a": self._scan_all_key, "v": self._toggle_full_key, "h": self._hide_empty_key,
+            "a": self._scan_all_key, "d": self._toggle_full_key, "h": self._hide_empty_key,
         }
         for key, action in keys.items():
             for variant in (key, key.upper()):
