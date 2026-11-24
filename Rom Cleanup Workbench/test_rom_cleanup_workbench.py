@@ -240,9 +240,9 @@ class AnalyzeTests(RedundanzTestCase):
             "Katz und Maus (game name)\n"
             "+ Katz und Maus (USA).abc\n"
             "  + Marked for deletion\n"
-            "    - Katz und Maus (Europa).abc  [Content differs from the kept files]\n"
-            "    - Katz und Maus.abc (Japan).abc  [Content differs from the kept files]\n"
-            "    - Katz und Maus.zip  [Content identical to Katz und Maus (USA).abc]",
+            "    - Katz und Maus (Europa).abc  [Priority: Europe after USA; Game content deviates from the kept version]\n"
+            "    - Katz und Maus.abc (Japan).abc  [Priority: Japan after USA; Game content deviates from the kept version]\n"
+            "    - Katz und Maus.zip  [Priority: none after USA; Content identical to Katz und Maus (USA).abc]",
         )
 
     def test_comparison_ignores_case(self):
@@ -697,7 +697,7 @@ class PreferZipTests(RedundanzTestCase):
         result = self.single()
         self.assertEqual(self.names(result.keep), ["Title (USA).zip"])
         self.assertEqual(self.names(result.marked), ["Title (USA).bin"])
-        self.assertEqual(result.marked[0].notes[-1], "Game content deviates from the kept ZIP file")
+        self.assertEqual(result.marked[0].notes[-1], "Game content deviates from the kept version")
         self.assertIn("Content of a marked plain file is not kept", result.problems)
 
     def test_all_plain_files_of_the_version_give_way(self):
@@ -924,6 +924,33 @@ class RenameNumberTests(RedundanzTestCase):
         return path
 
 
+class PriorityNoteTests(RedundanzTestCase):
+    """A file that loses through the priority list names its own entry and the one that won."""
+
+    def test_addams_family_usa_loses_to_europe(self):
+        self.config = replace(self.config, region_priority=["Germany", "Europe", "USA", "none", "Japan", "Beta"])
+        self.write_zip("Addams Family The (Europe) (En Fr De).zip", {"a.nes": b"e" * 3000})
+        self.write_zip("Addams Family The (USA).zip", {"a.nes": b"u" * 3000})
+        marked = self.single().marked[0]
+        self.assertEqual(marked.notes, ["Priority: USA after Europe", "Game content deviates from the kept version"])
+
+    def test_extra_info_names_its_keyword(self):
+        self.write("Title (USA).bin", b"usa")
+        self.write("Title (USA) (Beta).bin", b"beta!")
+        self.assertEqual(self.single().marked[0].notes[0], "Priority: Beta after USA")
+
+    def test_the_note_speaks_the_language(self):
+        translations.set_language("de")
+        self.write("Title (USA).bin", b"usa")
+        self.write("Title (Europe).bin", b"eur!")
+        self.assertEqual(self.single().marked[0].notes[0], "Priorität: Europe nach USA")
+
+    def test_same_priority_gets_no_priority_note(self):
+        self.write("Title (USA) (v1.1).bin", b"new")
+        self.write("Title (USA) (v1.0).bin", b"old")
+        self.assertEqual(self.single().marked[0].notes[0], "Older version")
+
+
 class PlainContentNoteTests(RedundanzTestCase):
     """A marked plain file says whether its content is kept elsewhere (information, no problem)."""
 
@@ -943,21 +970,21 @@ class PlainContentNoteTests(RedundanzTestCase):
         self.write("Title (USA).bin", b"usa!")
         self.write("Title (Europe).bin", b"eur!")
         result = self.single()
-        self.assertEqual(list(result.marked[0].notes), ["Content differs from the kept files"])
+        self.assertEqual(list(result.marked[0].notes), ["Priority: Europe after USA", "Game content deviates from the kept version"])
         self.assertEqual(result.problems, [])
 
     def test_the_same_content_under_another_region_is_named(self):
         self.write("Title (USA).bin", b"same")
         self.write("Title (World).bin", b"same")
         result = self.single()
-        self.assertEqual(list(result.marked[0].notes), ["Content identical to Title (USA).bin"])
+        self.assertEqual(list(result.marked[0].notes), ["Priority: none after USA", "Content identical to Title (USA).bin"])
 
     def test_no_checksum_without_a_kept_file_of_the_same_size(self):
         self.write("Title (USA).bin", b"usa")
         self.write("Title (Europe).bin", b"europe")
         with mock.patch.object(rf.Entry, "sha256", side_effect=AssertionError("checksum computed")):
             result = self.single()
-        self.assertEqual(list(result.marked[0].notes), ["Content differs from the kept files"])
+        self.assertEqual(list(result.marked[0].notes), ["Priority: Europe after USA", "Game content deviates from the kept version"])
 
 
 class DeleteKeywordNoteTests(RedundanzTestCase):
@@ -1147,7 +1174,7 @@ class ZipTests(RedundanzTestCase):
         self.write("Title (USA).bin", b"rom")
         self.write_zip("Title (Europe).zip", {"a.bin": b"unique"})
         marked = self.single().marked[0]
-        self.assertEqual(marked.notes[0], "Game content deviates from the kept version")
+        self.assertEqual(marked.notes, ["Priority: Europe after USA", "Game content deviates from the kept version"])
 
     def test_two_identical_zips_leave_one(self):
         self.write_zip("Title (USA).zip", {"a.bin": b"rom"})

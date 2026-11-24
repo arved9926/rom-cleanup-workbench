@@ -363,6 +363,10 @@ class Config:
         place = max(bracket_places) if bracket_places else self._none_rank
         return place, best
 
+    def rank_label(self, index: int) -> str:
+        """The entry of the priority list at this place, as written there; "none" past its end."""
+        return self.region_priority[index] if index < len(self.region_priority) else NO_REGION
+
     def with_regions(self, regions: list[str]) -> list[str]:
         """--priority: these regions; without "none" in them, "none" and the keywords after it stay.
 
@@ -825,6 +829,12 @@ def analyze_group(entries: list[Entry], config: Config) -> GroupResult:
                         entry.notes.append(Note("older_beta"))
                     else:
                         entry.notes.append(Note("tie"))
+                else:
+                    # Lost through the priority list: name its own entry and the one that won.
+                    own, kept = _rank(entry, config), _rank(best, config)
+                    index = 0 if own[0] != kept[0] else 1
+                    entry.notes.append(Note("priority", own=config.rank_label(own[index]),
+                                            kept=config.rank_label(kept[index])))
                 marked.append(entry)
 
     # Same version, one name with a number in front ("073 Batman"), one without: the number wins.
