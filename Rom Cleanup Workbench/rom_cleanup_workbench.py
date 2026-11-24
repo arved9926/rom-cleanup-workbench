@@ -102,6 +102,7 @@ class Note(str):
     def __new__(cls, kind: str, **values) -> "Note":
         note = super().__new__(cls, tr("note." + kind, **values))
         note.kind = kind
+        note.values = values  # kept, so that a note can be stored and shown again
         return note
 
 
@@ -510,6 +511,7 @@ class Entry:
     tag_groups: list[list[str]] | None = None
     _sha256: str | None = None
     _size: int | None = None
+    zip_read: bool = False  # True once the ZIP contents (or its error) are known
 
     def content_size(self) -> int | None:
         """Size of the content: For a ZIP the unpacked size, so that packing counts for nothing.
@@ -566,6 +568,14 @@ class GroupResult:
 
 
 def read_zip(entry: Entry) -> None:
+    """Reads the ZIP contents once and remembers their size and checksum."""
+    if entry.zip_read:
+        return
+    entry.zip_read = True
+    _read_zip(entry)
+
+
+def _read_zip(entry: Entry) -> None:
     """Reads the ZIP contents and remembers their size and checksum.
 
     The contents are hashed directly while reading. This gives the same result
@@ -936,26 +946,101 @@ def _is_rom_candidate(path: Path) -> bool:
     return path.is_file() and not path.name.casefold().startswith(_NO_ROM_PREFIX) and not _is_hidden(path)
 
 
-def scan_directory(directory: Path, config: Config, progress=None) -> list[GroupResult]:
-    """Analyzes the folder; progress(done, total) reports the state in files."""
-    groups: dict[str, list[Entry]] = {}
-    files = sorted((p for p in directory.iterdir() if _is_rom_candidate(p)), key=lambda p: p.name.casefold())
-    for path in files:
-        game, tag_groups = parse_tag_groups(path.name)
-        tag_groups = [[config.canonical(tag) for tag in group] for group in tag_groups]
-        entry = Entry(path, game, [tag for group in tag_groups for tag in group], tag_groups=tag_groups)
-        entry.size()  # Here in the background thread, so that showing the list needs no file access.
-        groups.setdefault(game_key(game), []).append(entry)
-    results = []
-    done = 0
+@dataclass
+class FileFacts:
+    """What the scan learns about one file, independent of the configuration.
+
+    Reading these is the slow part (ZIPs are unpacked and hashed); the database keeps them,
+    so that the rules can decide again at once without reading the folder.
+    """
+
+    name: str
+    size: int | None
+    mtime_ns: int | None
+    members: list[ZipMember] | None = None
+    zip_error_kind: str | None = None  # zip_encrypted, zip_defective or zip_unreadable
+    zip_error_text: str = ""
+    sha256: str | None = None  # of a plain file, once known
+
+    @property
+    def is_zip(self) -> bool:
+        return Path(self.name).suffix.casefold() == ".zip"
+
+
+def rom_files(directory: Path) -> list[Path]:
+    """The files of a folder the program looks at, sorted by name."""
+    return sorted((p for p in directory.iterdir() if _is_rom_candidate(p)), key=lambda p: p.name.casefold())
+
+
+def read_facts(path: Path) -> FileFacts:
+    """Reads one file: size, change time and, for a ZIP, its contents."""
+    try:
+        stat = path.stat()
+        size, mtime = stat.st_size, stat.st_mtime_ns
+    except OSError:
+        size, mtime = None, None
+    facts = FileFacts(path.name, size, mtime)
+    if facts.is_zip:
+        entry = Entry(path, "", [])
+        read_zip(entry)
+        facts.members = entry.members
+        if entry.zip_error is not None:
+            facts.zip_error_kind = entry.zip_error.kind
+            facts.zip_error_text = str(entry.zip_error.values.get("error", ""))
+    return facts
+
+
+def scan_facts(directory: Path, progress=None, files: list[Path] | None = None) -> list[FileFacts]:
+    """Reads the facts of all files of the folder; progress(done, total) counts files."""
+    files = rom_files(directory) if files is None else files
     if progress:
-        progress(done, len(files))
-    for entries in groups.values():
-        results.append(analyze_group(entries, config))
-        done += len(entries)
+        progress(0, len(files))
+    facts = []
+    for done, path in enumerate(files, 1):
+        facts.append(read_facts(path))
         if progress:
             progress(done, len(files))
+    return facts
+
+
+def _entry_from_facts(directory: Path, facts: FileFacts, config: Config) -> Entry:
+    game, tag_groups = parse_tag_groups(facts.name)
+    tag_groups = [[config.canonical(tag) for tag in group] for group in tag_groups]
+    entry = Entry(directory / facts.name, game, [tag for group in tag_groups for tag in group],
+                  tag_groups=tag_groups)
+    entry._size = facts.size
+    entry._sha256 = facts.sha256
+    if facts.is_zip:
+        entry.zip_read = True
+        entry.members = None if facts.zip_error_kind else list(facts.members or [])
+        if facts.zip_error_kind:
+            entry.zip_error = Note(facts.zip_error_kind, error=facts.zip_error_text)
+            entry.zip_defective = facts.zip_error_kind in ("zip_encrypted", "zip_defective")
+    return entry
+
+
+def decide(directory: Path, facts: list[FileFacts], config: Config) -> list[GroupResult]:
+    """Applies the rules to the facts of a folder; reads no ZIP again."""
+    groups: dict[str, list[Entry]] = {}
+    for item in facts:
+        entry = _entry_from_facts(directory, item, config)
+        groups.setdefault(game_key(entry.game), []).append(entry)
+    results = [analyze_group(entries, config) for entries in groups.values()]
     return sorted(results, key=lambda result: result.title.casefold())
+
+
+def known_checksums(results: list[GroupResult]) -> dict[str, str]:
+    """Checksums of plain files computed while deciding, by file name, to keep them with the facts."""
+    return {
+        entry.path.name: entry._sha256
+        for result in results for entry in result.keep + result.marked
+        if not entry.is_zip and entry._sha256
+    }
+
+
+def scan_directory(directory: Path, config: Config, progress=None) -> list[GroupResult]:
+    """Analyzes the folder; progress(done, total) reports the state in files."""
+    return decide(directory, scan_facts(directory, progress), config)
 
 
 def _format_entry(entry: Entry) -> str:

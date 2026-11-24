@@ -1117,6 +1117,140 @@ class GameTitleTests(RedundanzTestCase):
         self.assertEqual(self.single().title, "1942")
 
 
+class CollectionDatabaseTests(unittest.TestCase):
+    """The database of a roms folder (workbench_db): created on opening, keeps the facts of a scan."""
+
+    def setUp(self):
+        translations.set_language("en")
+        self.addCleanup(translations.set_language, "en")
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        self.roms = Path(temp.name) / "roms"
+        (self.roms / "nes").mkdir(parents=True)
+        (self.roms / "snes").mkdir()
+        self.config = rules_config()
+
+    def open(self):
+        import workbench_db
+
+        collection = workbench_db.Collection(self.roms)
+        self.addCleanup(collection.close)
+        return collection
+
+    def write(self, platform, name, content=b"data"):
+        (self.roms / platform / name).write_bytes(content)
+
+    def write_zip(self, platform, name, members):
+        with zipfile.ZipFile(self.roms / platform / name, "w") as archive:
+            for member, content in members.items():
+                archive.writestr(member, content)
+
+    @staticmethod
+    def summary(results):
+        return [(result.title, [e.path.name for e in result.keep], [e.path.name for e in result.marked],
+                 [[str(note) for note in e.notes] for e in result.keep + result.marked], list(result.problems))
+                for result in results]
+
+    def test_opening_creates_a_hidden_database_folder(self):
+        import workbench_db
+
+        collection = self.open()
+        folder = self.roms / ".rom_cleanup_workbench"
+        self.assertTrue((folder / "rom_cleanup_workbench.sqlite").is_file())
+        self.assertEqual(collection.path, folder / "rom_cleanup_workbench.sqlite")
+        if os.name == "nt":
+            self.assertTrue(folder.stat().st_file_attributes & 0x2)
+        self.assertEqual(workbench_db.SCHEMA_VERSION, 1)
+
+    def test_platforms_are_the_visible_subfolders(self):
+        (self.roms / ".git").mkdir()
+        (self.roms / "gamelists").mkdir()
+        (self.roms / "readme.txt").write_text("x")
+        collection = self.open()
+        self.assertEqual([folder.name for folder in collection.platform_folders()], ["nes", "snes"])
+
+    def test_facts_survive_closing_and_decide_as_a_fresh_scan(self):
+        self.write("nes", "Title (USA).nes", b"rom")
+        self.write("nes", "Title (Europe).nes", b"eur")
+        self.write_zip("nes", "Title (USA).zip", {"Title (USA).nes": b"rom"})
+        self.write_zip("nes", "Other (Japan).zip", {"a.nes": b"jap", "b.txt": b"readme"})
+        (self.roms / "nes" / "Broken (USA).zip").write_bytes(b"no zip")
+        directory = self.roms / "nes"
+        fresh = rf.scan_directory(directory, self.config)
+        facts = rf.scan_facts(directory)
+        self.open().save_facts("nes", facts)
+        loaded = self.open().load_facts("nes")
+        self.assertEqual([item.name for item in loaded], [item.name for item in facts])
+        broken = next(item for item in loaded if item.name == "Broken (USA).zip")
+        self.assertEqual(broken.zip_error_kind, "zip_defective")
+        other = next(item for item in loaded if item.name == "Other (Japan).zip")
+        self.assertEqual([member.name for member in other.members], ["a.nes", "b.txt"])
+        with mock.patch.object(rf, "_read_zip", side_effect=AssertionError("ZIP read again")):
+            again = rf.decide(directory, loaded, self.config)
+        self.assertEqual(self.summary(again), self.summary(fresh))
+
+    def test_a_platform_never_scanned_has_no_facts(self):
+        collection = self.open()
+        self.assertIsNone(collection.load_facts("snes"))
+        self.assertIsNone(collection.platform("snes").last_scan)
+
+    def test_scanning_again_replaces_the_facts(self):
+        self.write("nes", "A (USA).nes")
+        collection = self.open()
+        collection.save_facts("nes", rf.scan_facts(self.roms / "nes"))
+        (self.roms / "nes" / "A (USA).nes").unlink()
+        self.write("nes", "B (USA).nes")
+        collection.save_facts("nes", rf.scan_facts(self.roms / "nes"))
+        self.assertEqual([item.name for item in collection.load_facts("nes")], ["B (USA).nes"])
+        self.assertEqual(collection.platform("nes").files, 1)
+
+    def test_checksums_computed_while_deciding_are_kept(self):
+        self.write("nes", "Title (USA).nes", b"same")
+        self.write("nes", "Title (World).nes", b"same")
+        collection = self.open()
+        collection.save_facts("nes", rf.scan_facts(self.roms / "nes"))
+        results = rf.decide(self.roms / "nes", collection.load_facts("nes"), self.config)
+        collection.update_checksums("nes", rf.known_checksums(results))
+        loaded = {item.name: item.sha256 for item in collection.load_facts("nes")}
+        self.assertTrue(loaded["Title (USA).nes"] and loaded["Title (World).nes"])
+
+    def test_deleted_and_renamed_files_are_updated(self):
+        for name in ("073 Batman (USA).nes", "Batman (Europe).nes"):
+            self.write("nes", name)
+        collection = self.open()
+        collection.save_facts("nes", rf.scan_facts(self.roms / "nes"))
+        collection.remove_files("nes", ["Batman (Europe).nes"])
+        collection.rename_file("nes", "073 Batman (USA).nes", "Batman (USA).nes")
+        self.assertEqual([item.name for item in collection.load_facts("nes")], ["Batman (USA).nes"])
+        self.assertEqual(collection.platform("nes").files, 1)
+
+    def test_summary_and_own_config(self):
+        collection = self.open()
+        collection.save_summary("nes", games=10, marked=3, problematic=1, key="k1")
+        row = collection.platform("nes")
+        self.assertEqual((row.games, row.marked, row.problematic, row.summary_key), (10, 3, 1, "k1"))
+        self.assertFalse(row.has_own_config)
+        collection.set_own_config("nes", {"region_priority": ["Japan", "none"]})
+        self.assertEqual(collection.own_config("nes"), {"region_priority": ["Japan", "none"]})
+        self.assertTrue(collection.platform("nes").has_own_config)
+        self.assertIsNone(collection.platform("nes").summary_key)  # the numbers must be computed again
+        collection.set_own_config("nes", None)
+        self.assertIsNone(collection.own_config("nes"))
+
+    def test_a_newer_database_is_refused(self):
+        import sqlite3
+
+        import workbench_db
+
+        self.open().close()
+        db = sqlite3.connect(self.roms / ".rom_cleanup_workbench" / "rom_cleanup_workbench.sqlite")
+        with db:
+            db.execute("UPDATE schema_info SET version = 99")
+        db.close()
+        with self.assertRaises(ValueError):
+            workbench_db.Collection(self.roms)
+
+
 class ZipTests(RedundanzTestCase):
     def test_zip_with_same_tags_and_same_content_is_redundant(self):
         self.write("Title (USA).bin", b"rom")
