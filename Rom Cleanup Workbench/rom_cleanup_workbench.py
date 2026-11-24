@@ -1124,6 +1124,9 @@ class Review:
     results: list[GroupResult]
     config: Config
     source: str = ""
+    # Set when the folder is a platform of a collection: deleting and renaming update its database.
+    collection_root: Path | None = None
+    directory: Path | None = None
 
     def priority_text(self) -> str:
         return tr(
@@ -1135,9 +1138,11 @@ class Review:
     def delete(self, progress=None) -> tuple[int, list[str]]:
         """Deletes the marked files, then removes the number in front of the kept names (rename_plan)."""
         renames, _skipped = rename_plan(self.results)
-        deleted, errors = delete_files(marked_paths(self.results), progress)
+        to_delete = marked_paths(self.results)
+        deleted, errors = delete_files(to_delete, progress)
         self._forget_deleted_files()
         self.renamed = 0
+        done_renames = []
         for entry, target in renames:
             if target.exists():  # a marked file of that name could not be deleted
                 errors.append(tr("error.rename_exists", name=entry.path.name, new=target.name))
@@ -1147,11 +1152,17 @@ class Review:
             except OSError as error:
                 errors.append(f"{entry.path.name}: {error}")
                 continue
+            done_renames.append((entry.path.name, target.name))
             entry.path = target
             entry.game = _FILE_NUMBER_RE.sub("", entry.game, count=1)
             self.renamed += 1
         for result in self.results:
             result.title = game_title((result.keep or result.marked)[0])
+        if self.collection_root is not None and self.directory is not None:
+            from workbench_db import record_changes  # only for a collection
+
+            gone = [path.name for path in to_delete if not path.exists()]
+            record_changes(self.collection_root, self.directory, gone, done_renames, self.results, self.config)
         return deleted, errors
 
     def done_message(self, deleted: int) -> str:
@@ -1425,9 +1436,10 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     _apply_language(args)
 
-    def analyze(directory: Path, progress=None) -> Review:
+    def analyze(directory: Path, progress=None, rescan: bool = False) -> Review:
         """Reads the configuration again for every analysis and examines the folder.
 
+        A platform of a collection is decided from its database; rescan (F5) reads it again.
         A changed language only takes effect at the next start, so that window and notes match.
         """
         if not directory.is_dir():
@@ -1442,7 +1454,13 @@ def main(argv: list[str] | None = None) -> int:
         if args.delete_tag is not None:
             config = replace(config, delete_tags=args.delete_tag)
         source = "--priority" if args.priority else str(config_path or "")
-        return Review(scan_directory(directory, config, progress), config, source)
+        from workbench_db import collection_root, open_platform
+
+        root = collection_root(directory)
+        if root is None:
+            return Review(scan_directory(directory, config, progress), config, source)
+        results = open_platform(root, directory, config, progress, rescan=rescan)
+        return Review(results, config, source, collection_root=root, directory=directory)
 
     if args.report_only or args.yes:
         return _run_in_terminal(args, parser, analyze)

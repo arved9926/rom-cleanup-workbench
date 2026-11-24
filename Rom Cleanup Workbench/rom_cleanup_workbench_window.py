@@ -75,6 +75,17 @@ _CELL_GAP = "  "  # Treeview cells have no padding: Keeps the right-aligned size
 _SEARCH_DELAY_MS = 200  # Rebuilding a long list on every keystroke would make typing sluggish.
 
 
+def _call_analyze(analyze, directory, progress, rescan: bool):
+    """Passes rescan only to an analysis that knows it (tests hand in simpler ones)."""
+    import inspect
+
+    try:
+        takes_rescan = "rescan" in inspect.signature(analyze).parameters
+    except (TypeError, ValueError):
+        takes_rescan = False
+    return analyze(directory, progress, rescan=rescan) if takes_rescan else analyze(directory, progress)
+
+
 class FolderPanel:
     """Chooses a folder in place of the file list, instead of the Windows folder dialog.
 
@@ -451,10 +462,11 @@ class ReviewWindow:
         self._hide_nothing_to_do()
         self._show_directory()
 
-    def start_analysis(self) -> None:
+    def start_analysis(self, rescan: bool = False) -> None:
         """Analyzes in the background, so that the window does not hang while reading large ZIPs.
 
         If an analysis is already running, it is replaced: Its result no longer counts.
+        rescan (F5): a platform of a collection is read again instead of taken from its database.
         """
         if self.directory is None:
             return
@@ -468,12 +480,13 @@ class ReviewWindow:
         gc.disable()
         answer = queue.Queue()
         self._analysis = answer
-        worker = threading.Thread(target=self._analyze_in_background, args=(self.directory, answer), daemon=True)
+        worker = threading.Thread(target=self._analyze_in_background, args=(self.directory, answer, rescan),
+                                  daemon=True)
         self._workers.append(worker)
         worker.start()
         self.root.after(100, self._poll_analysis, answer)
 
-    def _analyze_in_background(self, directory: Path, answer: queue.Queue) -> None:
+    def _analyze_in_background(self, directory: Path, answer: queue.Queue, rescan: bool = False) -> None:
         def report(done: int, total: int) -> None:
             if answer is not self._analysis:
                 raise _AnalysisReplaced  # Stops the replaced analysis at the next game.
@@ -481,7 +494,7 @@ class ReviewWindow:
             self._progress = (done, total)
 
         try:
-            answer.put((self.analyze(directory, report), None))
+            answer.put((_call_analyze(self.analyze, directory, report, rescan), None))
         except Exception as error:  # Every error must reach the window, otherwise it would stay at "Analyzing".
             answer.put((None, str(error) or type(error).__name__))
 
@@ -548,7 +561,7 @@ class ReviewWindow:
 
     def reanalyze(self) -> None:
         if not self._list_locked() and self._may_discard_changes(tr("window.discard_reanalyze")):
-            self.start_analysis()
+            self.start_analysis(rescan=True)
 
     def show_credits(self) -> None:
         """F1 and c: who had the idea and who programmed it, the license and the warning, in the window."""

@@ -234,6 +234,17 @@ def _cell(text: str, **options) -> Text:
     return Text(f" {text} ", **options)
 
 
+def _call_analyze(analyze, directory, progress, rescan: bool):
+    """Passes rescan only to an analysis that knows it (tests hand in simpler ones)."""
+    import inspect
+
+    try:
+        takes_rescan = "rescan" in inspect.signature(analyze).parameters
+    except (TypeError, ValueError):
+        takes_rescan = False
+    return analyze(directory, progress, rescan=rescan) if takes_rescan else analyze(directory, progress)
+
+
 class GameTable(DataTable):
     """The game list: one cursor row plus a selection of several rows, as in the window's list.
 
@@ -1049,7 +1060,7 @@ class WorkbenchApp(App):
 
     # Analysis ---------------------------------------------------------------------------------
 
-    def start_analysis(self) -> None:
+    def start_analysis(self, rescan: bool = False) -> None:
         """Analyzes in a background thread, so that the terminal does not hang while reading large ZIPs."""
         self._analysis += 1
         number = self._analysis
@@ -1067,7 +1078,7 @@ class WorkbenchApp(App):
 
         def work() -> None:
             try:
-                review = self.analyze(directory, report)
+                review = _call_analyze(self.analyze, directory, report, rescan)
             except Exception as error:  # Every error must reach the screen, otherwise it would stay at "Analyzing".
                 self.call_from_thread(self._finish_analysis, number, None, str(error) or type(error).__name__)
             else:
@@ -1422,9 +1433,9 @@ class WorkbenchApp(App):
             return
         if self.review is not None and self.review.moved_count():
             self.ask("question", tr("window.discard_title"), tr("window.discard_reanalyze"),
-                     then=lambda yes: self.start_analysis() if yes else None)
+                     then=lambda yes: self.start_analysis(rescan=True) if yes else None)
         else:
-            self.start_analysis()
+            self.start_analysis(rescan=True)
 
     # Folder choice ----------------------------------------------------------------------------
 

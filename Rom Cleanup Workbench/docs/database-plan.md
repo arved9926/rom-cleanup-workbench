@@ -1,6 +1,6 @@
 # Konzept: ROM-Sammlung mit Datenbank, Übersicht und Batch-Analyse
 
-Stand: Entwurf vom 2026-11-24, alle Fragen beantwortet, wartet auf die Freigabe. Noch ist nichts davon programmiert.
+Stand: freigegeben am 2026-11-24, in Arbeit (siehe Log).
 
 ## Ausgangslage
 
@@ -130,3 +130,5 @@ Jeder Schritt gilt als fertig, wenn seine Tests unter Windows und in der WSL lau
 - 2026-11-24: Frage 1 entschieden: Start immer mit der Übersicht (zuletzt benutzter `roms`-Ordner).
 - 2026-11-24: Fragen 2, 3, 5, 6 entschieden: `k`/`x` speichern, Standard- plus Plattformkonfiguration, `--scan-all`, versteckter Ordner. Frage 4 erklärt.
 - 2026-11-24: Frage 4 entschieden: schneller Scan als Normalfall, voller Scan auf Wunsch. Alle Fragen beantwortet; das Konzept wartet auf die Freigabe.
+- 2026-11-24: Freigegeben. Schritt 1 fertig (`6af4a1a`): Der Scan liest zuerst die Fakten (`FileFacts`: Größe, Änderungszeit, ZIP-Inhalt mit Prüfsummen, Lesefehler) und entscheidet dann daraus (`decide`); ein ZIP wird nur einmal gelesen. Neue Datei `workbench_db.py` mit `Collection`: SQLite in `roms/.rom_cleanup_workbench/`, unter Windows versteckt; speichert und lädt die Fakten, behält beim Entscheiden berechnete Prüfsummen, folgt Löschen und Umbenennen, hält die Zahlen der Übersicht und eine eigene Konfiguration je Plattform. 9 Tests, darunter: Entscheiden aus der Datenbank ergibt dasselbe wie ein frischer Scan, ohne ein ZIP erneut zu lesen.
+- 2026-11-24: Schritt 2 fertig. Liegt ein Ordner in einem `roms`-Ordner mit Datenbank (`collection_root`), entscheidet `open_platform` aus den gespeicherten Fakten und scannt nur, wenn es noch keine gibt; `F5` (Fenster `reanalyze`, Terminal `action_reanalyze`) scannt neu (`rescan`). Neue Einstellungen rechnen ohne Scan. Ausführen trägt Gelöschtes und Umbenanntes ein (`record_changes`) und aktualisiert die Zahlen. Ohne Datenbank bleibt alles wie bisher. 7 neue Tests; 525 Tests unter Windows und in der WSL (nur der bekannte Vergleich mit der lokal geänderten Konfiguration schlägt fehl). Nächster Schritt: 3.

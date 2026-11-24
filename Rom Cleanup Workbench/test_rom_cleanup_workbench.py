@@ -1251,6 +1251,97 @@ class CollectionDatabaseTests(unittest.TestCase):
             workbench_db.Collection(self.roms)
 
 
+class PlatformFromDatabaseTests(CollectionDatabaseTests):
+    """Step 2: a platform of a collection is decided from its database; F5 scans again."""
+
+    def open_platform(self, platform="nes", config=None, rescan=False):
+        import workbench_db
+
+        return workbench_db.open_platform(self.roms, self.roms / platform, config or self.config, rescan=rescan)
+
+    def test_without_a_database_a_folder_stays_on_its_own(self):
+        import workbench_db
+
+        self.assertIsNone(workbench_db.collection_root(self.roms / "nes"))
+        self.open().close()
+        self.assertEqual(workbench_db.collection_root(self.roms / "nes"), self.roms)
+
+    def test_the_first_opening_scans_the_second_reads_the_database(self):
+        self.write("nes", "Title (USA).nes", b"usa")
+        self.write_zip("nes", "Title (Europe).zip", {"a.nes": b"eur"})
+        first = self.open_platform()
+        with mock.patch.object(rf, "read_facts", side_effect=AssertionError("folder read again")):
+            second = self.open_platform()
+        self.assertEqual(self.summary(second), self.summary(first))
+        row = self.open().platform("nes")
+        self.assertEqual((row.files, row.games, row.marked, row.problematic), (2, 1, 1, 0))
+        self.assertTrue(row.last_scan)
+
+    def test_new_settings_decide_again_without_a_scan(self):
+        self.write("nes", "Title (USA).nes", b"usa")
+        self.write("nes", "Title (Japan).nes", b"jap")
+        self.open_platform()
+        japan_first = replace(self.config, region_priority=["Japan", "USA", "none"])
+        with mock.patch.object(rf, "read_facts", side_effect=AssertionError("folder read again")):
+            results = self.open_platform(config=japan_first)
+        self.assertEqual([e.path.name for e in results[0].keep], ["Title (Japan).nes"])
+
+    def test_rescan_reads_the_folder_again(self):
+        self.write("nes", "Title (USA).nes", b"usa")
+        self.open_platform()
+        self.write("nes", "Title (Japan).nes", b"jap")
+        self.assertEqual(len(self.open_platform()[0].marked), 0)  # still the old facts
+        self.assertEqual(len(self.open_platform(rescan=True)[0].marked), 1)
+        self.assertEqual(self.open().platform("nes").files, 2)
+
+    def test_proceed_records_deletions_and_renames(self):
+        import workbench_db
+
+        self.write("nes", "073 Batman (USA).nes", b"usa")
+        self.write("nes", "Batman (Japan).nes", b"jap")
+        directory = self.roms / "nes"
+        results = self.open_platform()
+        review = rf.Review(results, self.config, collection_root=self.roms, directory=directory)
+        self.assertEqual(review.delete(), (1, []))
+        self.assertEqual([item.name for item in self.open().load_facts("nes")], ["Batman (USA).nes"])
+        row = self.open().platform("nes")
+        self.assertEqual((row.files, row.games, row.marked), (1, 1, 0))
+        self.assertEqual(workbench_db.collection_root(directory), self.roms)
+
+    def test_main_uses_the_database_of_a_collection(self):
+        self.write("nes", "Title (USA).nes", b"usa")
+        self.write("nes", "Title (Japan).nes", b"jap")
+        self.open().close()
+        config = self.roms.parent / "config.json"
+        config.write_text("{}", encoding="utf-8")
+        with contextlib.redirect_stdout(io.StringIO()):
+            rf.main([str(self.roms / "nes"), "--report-only", "--config", str(config)])
+        self.assertEqual(self.open().platform("nes").files, 2)
+
+
+class RescanFlagTests(unittest.TestCase):
+    """F5 asks for a new scan; analyses without the parameter (as in many tests) still work."""
+
+    def test_both_front_ends_pass_rescan_only_where_it_is_known(self):
+        import rom_cleanup_workbench_window as window_module
+
+        modules = [window_module]
+        try:
+            import rom_cleanup_workbench_tui as tui_module
+            modules.append(tui_module)
+        except ImportError:
+            pass
+        for module in modules:
+            calls = []
+
+            def knows(directory, progress=None, rescan=False):
+                calls.append(rescan)
+
+            module._call_analyze(knows, Path("."), None, True)
+            module._call_analyze(lambda d, p=None: calls.append("old"), Path("."), None, True)
+            self.assertEqual(calls, [True, "old"], module.__name__)
+
+
 class ZipTests(RedundanzTestCase):
     def test_zip_with_same_tags_and_same_content_is_redundant(self):
         self.write("Title (USA).bin", b"rom")

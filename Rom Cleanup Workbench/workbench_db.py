@@ -20,6 +20,7 @@ decisions: the rules decide again from these facts in a moment, with the current
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import sqlite3
@@ -27,7 +28,9 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
-from rom_cleanup_workbench import FileFacts, ZipMember, _is_hidden
+from rom_cleanup_workbench import (
+    Config, FileFacts, GroupResult, ZipMember, _is_hidden, decide, known_checksums, scan_facts,
+)
 
 DATABASE_FOLDER = ".rom_cleanup_workbench"
 DATABASE_NAME = "rom_cleanup_workbench.sqlite"
@@ -268,3 +271,56 @@ class Collection:
         with self._db:
             self._db.execute("UPDATE platforms SET config_json = ?, summary_key = NULL WHERE id = ?",
                              (None if values is None else json.dumps(values, ensure_ascii=False), platform_id))
+
+
+# A platform of a collection ---------------------------------------------------------------------
+
+def collection_root(directory: Path) -> Path | None:
+    """The roms folder whose database knows this platform folder; None for a folder on its own."""
+    parent = Path(directory).parent
+    return parent if (parent / DATABASE_FOLDER / DATABASE_NAME).is_file() else None
+
+
+def config_key(config: Config) -> str:
+    """Fingerprint of the settings that decide, so that the overview knows when to count again."""
+    values = {
+        "region_priority": config.region_priority, "region_aliases": config.region_aliases,
+        "delete_tags": config.delete_tags, "part_tags": config.part_tags, "prefer_zip": config.prefer_zip,
+    }
+    return hashlib.sha256(json.dumps(values, sort_keys=True).encode("utf-8")).hexdigest()[:16]
+
+
+def summary_of(results: list[GroupResult]) -> tuple[int, int, int]:
+    """Games, marked files and problematic games, as the overview shows them."""
+    return (len(results), sum(len(result.marked) for result in results),
+            sum(1 for result in results if result.problems))
+
+
+def open_platform(root: Path, directory: Path, config: Config, progress=None,
+                  rescan: bool = False) -> list[GroupResult]:
+    """Decides a platform from the database; scans it first if it was never scanned or rescan is set."""
+    name = Path(directory).name
+    with Collection(root) as collection:
+        facts = None if rescan else collection.load_facts(name)
+        if facts is None:
+            facts = scan_facts(directory, progress)
+            collection.save_facts(name, facts)
+        results = decide(directory, facts, config)
+        collection.update_checksums(name, known_checksums(results))
+        collection.save_summary(name, *summary_of(results), key=config_key(config))
+    return results
+
+
+def record_changes(root: Path, directory: Path, deleted: list[str], renamed: list[tuple[str, str]],
+                   results: list[GroupResult], config: Config) -> None:
+    """After Proceed: deleted and renamed files go into the database, and the overview numbers."""
+    name = Path(directory).name
+    with Collection(root) as collection:
+        collection.remove_files(name, deleted)
+        for old, new in renamed:
+            try:
+                mtime = (Path(directory) / new).stat().st_mtime_ns
+            except OSError:
+                mtime = None
+            collection.rename_file(name, old, new, mtime)
+        collection.save_summary(name, *summary_of(results), key=config_key(config))
