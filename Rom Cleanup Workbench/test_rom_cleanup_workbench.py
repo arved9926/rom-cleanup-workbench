@@ -1114,6 +1114,18 @@ class MultiRegionKeywordTests(RedundanzTestCase):
         self.assertEqual(self.names(result.keep), ["Title (Japan, USA).n64"])
 
 
+class CurlyBracketTests(RedundanzTestCase):
+    """{} counts like () and []: for the game name, the priority and the delete keywords."""
+
+    def test_curly_brackets_are_brackets(self):
+        self.assertEqual(rf.parse_filename("Title {Hack by Mick} (USA).sfc"), ("Title", ["Hack by Mick", "USA"]))
+        self.write("Title (USA).sfc", b"u" * 4096)
+        self.write("Title {Hack by Mick} (USA).sfc", b"h" * 4096)
+        result = self.single()
+        self.assertEqual(self.names(result.keep), ["Title (USA).sfc"])
+        self.assertEqual(result.marked[0].notes[0].kind, "extra_info")
+
+
 class SaveFileTests(RedundanzTestCase):
     """An emulator loads a save only with exactly the ROM's name: other saves are marked."""
 

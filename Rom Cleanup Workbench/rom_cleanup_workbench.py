@@ -58,7 +58,8 @@ DEFAULT_CONFIG = {
     "prefer_zip": False,
 }
 
-_TAG_RE = re.compile(r"\(([^()]*)\)|\[([^\[\]]*)\]")
+# Brackets with extra information: (USA), [!] and {Hack}.
+_TAG_RE = re.compile(r"\(([^()]*)\)|\[([^\[\]]*)\]|\{([^{}]*)\}")
 _EXT_RE = re.compile(r"\.[A-Za-z0-9]+$")
 _SEPARATOR_RE = re.compile(r"[-_]")
 _AND_RE = re.compile(r"\b(?:und|and)\b")
@@ -203,7 +204,7 @@ def parse_tag_groups(filename: str) -> tuple[str, list[list[str]]]:
         game = game[: name_version.start()].strip()
 
     for match in _TAG_RE.finditer(stem):
-        content = match.group(1) if match.group(1) is not None else match.group(2)
+        content = next(group for group in match.groups() if group is not None)
         parts = [part.strip() for part in content.split(",") if part.strip()]
         if parts:
             groups.append(parts)
