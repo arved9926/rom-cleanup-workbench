@@ -343,9 +343,15 @@ def collection_root(directory: Path) -> Path | None:
     return parent if (parent / DATABASE_FOLDER / DATABASE_NAME).is_file() else None
 
 
+# Raised whenever the rules decide differently, so that the overview counts again (no scan needed).
+# 2: save files stay only next to a kept file of their name (2026-11-24).
+RULES_VERSION = 2
+
+
 def config_key(config: Config) -> str:
     """Fingerprint of the settings that decide, so that the overview knows when to count again."""
     values = {
+        "rules": RULES_VERSION,
         "region_priority": config.region_priority, "region_aliases": config.region_aliases,
         "delete_tags": config.delete_tags, "part_tags": config.part_tags, "prefer_zip": config.prefer_zip,
     }

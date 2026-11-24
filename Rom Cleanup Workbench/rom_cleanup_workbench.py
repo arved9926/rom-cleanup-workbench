@@ -727,7 +727,9 @@ def find_problems(keep: list[Entry], marked: list[Entry]) -> list[str]:
             kept_types.update(PurePosixPath(member.name).suffix.casefold() for member in entry.members or [])
         else:
             kept_types.add(entry.path.suffix.casefold())
-    if keep and any(not entry.is_zip and entry.path.suffix.casefold() not in kept_types for entry in marked):
+    # Save files always have another type than their ROM: they are no reason to look closer.
+    if keep and any(not entry.is_zip and save_file_stem(entry.path) is None
+                    and entry.path.suffix.casefold() not in kept_types for entry in marked):
         problems.append(tr("problem.file_type"))
     return problems
 
@@ -788,6 +790,21 @@ def has_suspected_save_file(result: GroupResult) -> bool:
     return any(_has_note(entry.notes, "save_suspected") for entry in result.keep + result.marked)
 
 
+# Save files of emulators. An emulator loads a save only if it has exactly the name of the ROM
+# (without the extension), so a save without such a kept ROM can never be used.
+SAVE_FILE_EXTENSIONS = frozenset({".srm", ".sav", ".eep", ".mpk", ".fla", ".sra", ".rtc", ".dsv", ".mcr"})
+_SAVE_FILE_RE = re.compile(r"(\.state(\d+|\.auto)?|\.st\d|\.ss\d)$", re.IGNORECASE)
+
+
+def save_file_stem(path: Path) -> str | None:
+    """The name a save file belongs to ("Title (USA).srm" -> "Title (USA)"); None for any other file."""
+    name = path.name
+    if path.suffix.casefold() in SAVE_FILE_EXTENSIONS:
+        return name[:-len(path.suffix)]
+    match = _SAVE_FILE_RE.search(name)
+    return name[:match.start()] if match else None
+
+
 def analyze_group(entries: list[Entry], config: Config) -> GroupResult:
     """Decides for all files of a game: keep or delete."""
     # Single ZIPs are read too, otherwise a defect would go unnoticed.
@@ -796,6 +813,10 @@ def analyze_group(entries: list[Entry], config: Config) -> GroupResult:
             read_zip(entry)
             _adopt_tags_from_zip(entry, config)
 
+    # Save files are no ROMs: they never compete with them (a delete keyword still applies).
+    saves = [entry for entry in entries
+             if save_file_stem(entry.path) is not None and not config.delete_reason(entry.tags)]
+    entries = [entry for entry in entries if not any(entry is save for save in saves)]
     suspected = _suspected_save_files(entries, config)
     entries = [entry for entry in entries if not any(entry is other for other in suspected)]
 
@@ -924,6 +945,16 @@ def analyze_group(entries: list[Entry], config: Config) -> GroupResult:
             entry.notes.append(Note("content_differs"))
 
     keep.extend(unreadable)
+    # A save file stays only next to a kept file of exactly its name; any other one can never be
+    # used (another region, another dump such as "(U) [!]"), so it is marked.
+    kept_names = {entry.path.stem.casefold() for entry in keep}
+    for save in saves:
+        stem = save_file_stem(save.path)
+        if stem.casefold() in kept_names:
+            keep.append(save)
+        else:
+            save.notes.append(Note("save_orphan", name=stem))
+            marked.append(save)
     keep.extend(suspected)
     marked.sort(key=sort_key)
     title = game_title((keep or marked)[0])

@@ -553,9 +553,9 @@ class AnalyzeTests(RedundanzTestCase):
 
     def test_much_smaller_file_is_kept_as_suspected_save_file(self):
         self.write("Title (USA).sfc", b"x" * 1000)
-        self.write("Title.srm", b"x" * 100)
+        self.write("Title.cht", b"x" * 100)
         result = self.single()
-        self.assertEqual(self.names(result.keep), ["Title (USA).sfc", "Title.srm"])
+        self.assertEqual(self.names(result.keep), ["Title (USA).sfc", "Title.cht"])
         self.assertEqual(result.marked, [])
         [note] = [note for note in result.keep[1].notes if note.startswith("Suspected")]
         self.assertEqual(note, "Suspected status or save file: less than 1/4 of the size of Title (USA).sfc")
@@ -596,35 +596,35 @@ class AnalyzeTests(RedundanzTestCase):
         self.assertEqual(self.names(result.marked), ["Title (Japan).zip"])
 
     def test_save_state_next_to_zip_does_not_push_out_the_rom(self):
-        """The case from the window: 1941.state was kept and 1941.zip marked."""
-        self.write("1941.state", b"x" * 500)
+        """The case from the window: 1941.cht was kept and 1941.zip marked."""
+        self.write("1941.cht", b"x" * 500)
         self.write_zip("1941.zip", {"1941.bin": b"x" * 100_000})
         result = self.single()
-        self.assertEqual(self.names(result.keep), ["1941.zip", "1941.state"])
+        self.assertEqual(self.names(result.keep), ["1941.zip", "1941.cht"])
         self.assertEqual(result.marked, [])
         self.assertTrue(any(note.startswith("Suspected") for note in result.keep[1].notes))
         self.assertFalse(any(note.startswith("WARNING") for entry in result.keep for note in entry.notes))
 
     def test_save_file_with_better_region_does_not_push_out_the_rom(self):
-        self.write("Title (USA).srm", b"x" * 100)
+        self.write("Title (USA).cht", b"x" * 100)
         self.write("Title (Japan).sfc", b"x" * 1000)
         result = self.single()
-        self.assertEqual(self.names(result.keep), ["Title (Japan).sfc", "Title (USA).srm"])
+        self.assertEqual(self.names(result.keep), ["Title (Japan).sfc", "Title (USA).cht"])
         self.assertEqual(result.marked, [])
 
     def test_save_file_does_not_hide_a_real_duplicate(self):
-        self.write("Title.srm", b"x" * 100)
+        self.write("Title.cht", b"x" * 100)
         self.write("Title (USA).sfc", b"x" * 1000)
         self.write("Title (Japan).sfc", b"x" * 1000)
         result = self.single()
-        self.assertEqual(self.names(result.keep), ["Title (USA).sfc", "Title.srm"])
+        self.assertEqual(self.names(result.keep), ["Title (USA).sfc", "Title.cht"])
         self.assertEqual(self.names(result.marked), ["Title (Japan).sfc"])
 
     def test_small_plain_file_next_to_a_zip_of_its_version_is_suspected(self):
-        self.write("Title (USA).sav", b"x" * 100)
+        self.write("Title (USA).cht", b"x" * 100)
         self.write_zip("Title (USA).zip", {"Title (USA).sfc": b"x" * 1000})
         result = self.single()
-        self.assertEqual(self.names(result.keep), ["Title (USA).zip", "Title (USA).sav"])
+        self.assertEqual(self.names(result.keep), ["Title (USA).zip", "Title (USA).cht"])
         self.assertEqual(result.marked, [])
 
     def test_small_file_of_a_marked_version_is_marked_with_it(self):
@@ -657,11 +657,11 @@ class AnalyzeTests(RedundanzTestCase):
 
     def test_much_smaller_file_can_still_be_demoted_by_hand(self):
         self.write("Title (USA).sfc", b"x" * 1000)
-        self.write("Title.srm", b"x" * 100)
+        self.write("Title.cht", b"x" * 100)
         result = self.single()
         review = rf.Review([result], self.config)
         self.assertTrue(review.demote(result, result.keep[1]))
-        self.assertEqual(self.names(result.marked), ["Title.srm"])
+        self.assertEqual(self.names(result.marked), ["Title.cht"])
 
     def test_delete_tag_wins_over_low_priority_tag(self):
         self.config = rf.Config(["USA", "none"], {}, ["Beta"], [], ["Beta"])
@@ -1060,6 +1060,65 @@ class ShortRegionTests(RedundanzTestCase):
             self.assertEqual(shipped["region_aliases"][region], aliases, region)
 
 
+class SaveFileTests(RedundanzTestCase):
+    """An emulator loads a save only with exactly the ROM's name: other saves are marked."""
+
+    def orphan_names(self, result):
+        return [entry.path.name for entry in result.marked
+                if any(getattr(note, "kind", "") == "save_orphan" for note in entry.notes)]
+
+    def test_the_mario_kart_case(self):
+        self.write("Mario Kart 64 (USA).n64", b"r" * 64 * 1024)
+        self.write("Mario Kart 64 (USA).srm", b"s" * 2 * 1024)
+        self.write("Mario Kart 64 (U) [!].mpk", b"m" * 1024)
+        self.write("Mario Kart 64 (U) [!].eep", b"e" * 64)
+        result = self.single()
+        self.assertEqual(self.names(result.keep), ["Mario Kart 64 (USA).n64", "Mario Kart 64 (USA).srm"])
+        self.assertEqual(sorted(self.orphan_names(result)), ["Mario Kart 64 (U) [!].eep", "Mario Kart 64 (U) [!].mpk"])
+        note = next(note for entry in result.marked for note in entry.notes if note.kind == "save_orphan")
+        self.assertEqual(note.values["name"], "Mario Kart 64 (U) [!]")
+        self.assertFalse(result.problems)  # clear: no file to ask about
+
+    def test_a_save_of_another_region_is_marked(self):
+        self.write("Title (USA).sfc", b"u" * 4096)
+        self.write("Title (Japan).sav", b"s" * 100)
+        result = self.single()
+        self.assertEqual(self.names(result.keep), ["Title (USA).sfc"])
+        self.assertEqual(self.orphan_names(result), ["Title (Japan).sav"])
+
+    def test_the_save_of_a_marked_rom_is_marked_too(self):
+        self.write("Title (USA).sfc", b"u" * 4096)
+        self.write("Title (Japan).sfc", b"j" * 4096)
+        self.write("Title (Japan).srm", b"s" * 100)
+        result = self.single()
+        self.assertEqual(self.names(result.keep), ["Title (USA).sfc"])
+        self.assertIn("Title (Japan).srm", self.orphan_names(result))
+
+    def test_states_and_case_follow_the_rom_name(self):
+        self.write("Title (USA).sfc", b"u" * 4096)
+        for name in ("title (usa).srm", "Title (USA).state", "Title (USA).state1", "Title (USA).state.auto",
+                     "Title (USA).st0"):
+            self.write(name, b"s" * 100)
+        result = self.single()
+        self.assertEqual(len(result.keep), 6)
+        self.assertEqual(result.marked, [])
+
+    def test_a_delete_keyword_still_applies_to_a_save(self):
+        self.config = rf.replace(self.config, delete_tags=["Hack"])
+        self.write("Title (USA).sfc", b"u" * 4096)
+        self.write("Title (USA) (Hack).srm", b"s" * 100)
+        result = self.single()
+        self.assertEqual(self.names(result.marked), ["Title (USA) (Hack).srm"])
+        self.assertEqual(result.marked[0].notes[0].kind, "extra_info")
+
+    def test_save_file_names(self):
+        self.assertEqual(rf.save_file_stem(Path("A (USA).SRM")), "A (USA)")
+        self.assertEqual(rf.save_file_stem(Path("A (USA).state.auto")), "A (USA)")
+        self.assertEqual(rf.save_file_stem(Path("A (USA).ss9")), "A (USA)")
+        self.assertIsNone(rf.save_file_stem(Path("A (USA).sfc")))
+        self.assertIsNone(rf.save_file_stem(Path("A (USA).cht")))
+
+
 class SameTypeSmallFileTests(RedundanzTestCase):
     """A small file of the same type as the largest file is a ROM, not a status or save file."""
 
@@ -1087,10 +1146,10 @@ class SameTypeSmallFileTests(RedundanzTestCase):
 
     def test_a_small_file_of_another_type_is_still_suspected(self):
         self.write_zip("1941.zip", {"1941.bin": b"r" * 64 * 1024})
-        self.write("1941.state", b"s" * 1024)
+        self.write("1941.cht", b"s" * 1024)
         result = self.single()
-        self.assertEqual(sorted(self.names(result.keep)), ["1941.state", "1941.zip"])
-        state = next(entry for entry in result.keep if entry.path.name == "1941.state")
+        self.assertEqual(sorted(self.names(result.keep)), ["1941.cht", "1941.zip"])
+        state = next(entry for entry in result.keep if entry.path.name == "1941.cht")
         self.assertTrue(any(getattr(note, "kind", "") == "save_suspected" for note in state.notes))
 
 
@@ -2019,7 +2078,7 @@ class ConfirmedSavesInDatabaseTests(PlatformFromDatabaseBase):
 
     def save_game(self):
         self.write_zip("nes", "1941.zip", {"1941.nes": b"r" * 8000})
-        self.write("nes", "1941.state", b"s" * 100)
+        self.write("nes", "1941.cht", b"s" * 100)
 
     def review(self):
         return rf.Review(self.open_platform(), self.config, collection_root=self.roms, directory=self.roms / "nes")
@@ -2034,7 +2093,7 @@ class ConfirmedSavesInDatabaseTests(PlatformFromDatabaseBase):
         self.assertEqual(len(save_files), 1)
         review.remember_save_files(settings, save_files)
         self.assertFalse(settings.exists())  # nothing in the settings file
-        self.assertEqual(self.open().confirmed("nes"), {"1941.state": 100})
+        self.assertEqual(self.open().confirmed("nes"), {"1941.cht": 100})
         again = self.review()
         again.confirm_save_files(again.confirmed_saves(settings))
         self.assertEqual(again.save_file_keys(), {})
@@ -2045,13 +2104,13 @@ class ConfirmedSavesInDatabaseTests(PlatformFromDatabaseBase):
 
         self.save_game()
         settings = self.roms.parent / "settings.json"
-        key = rf.save_file_key(self.roms / "nes" / "1941.state")
-        other = rf.save_file_key(self.roms / "snes" / "x.state")
+        key = rf.save_file_key(self.roms / "nes" / "1941.cht")
+        other = rf.save_file_key(self.roms / "snes" / "x.cht")
         workbench_state.add_confirmed_saves(settings, {key: 100, other: 5})
         review = self.review()
         review.confirm_save_files(review.confirmed_saves(settings))
         self.assertEqual(review.save_file_keys(), {})
-        self.assertEqual(self.open().confirmed("nes"), {"1941.state": 100})  # only its own platform
+        self.assertEqual(self.open().confirmed("nes"), {"1941.cht": 100})  # only its own platform
 
     def test_a_folder_on_its_own_keeps_the_settings_file(self):
         import workbench_state
@@ -2528,15 +2587,15 @@ class ReviewTests(RedundanzTestCase):
 
     def write_save_file_game(self):
         self.write("Title (USA).sfc", b"x" * 1000)
-        self.write("Title.srm", b"x" * 100)
+        self.write("Title.cht", b"x" * 100)
 
     def test_confirmed_save_file_is_kept_but_no_longer_shown(self):
         self.write_save_file_game()
         review, [result] = self.review()
         keys = review.save_file_keys()
-        self.assertEqual(keys, {rf.save_file_key(self.dir / "Title.srm"): 100})
+        self.assertEqual(keys, {rf.save_file_key(self.dir / "Title.cht"): 100})
         review.confirm_save_files(keys)
-        self.assertEqual(self.names(result.keep), ["Title (USA).sfc", "Title.srm"])
+        self.assertEqual(self.names(result.keep), ["Title (USA).sfc", "Title.cht"])
         self.assertEqual(result.keep[1].notes, ["Status or save file, confirmed when deleting"])
         self.assertEqual(result.problems, [])
         self.assertFalse(review.is_visible(result, True))
@@ -2548,7 +2607,7 @@ class ReviewTests(RedundanzTestCase):
     def test_save_file_with_changed_size_is_suspected_again(self):
         self.write_save_file_game()
         review, [result] = self.review()
-        review.confirm_save_files({rf.save_file_key(self.dir / "Title.srm"): 99})
+        review.confirm_save_files({rf.save_file_key(self.dir / "Title.cht"): 99})
         self.assertIn("Suspected status or save file", result.problems)
         self.assertFalse(review.nothing_to_do())
 
@@ -2560,8 +2619,8 @@ class ReviewTests(RedundanzTestCase):
         self.assertEqual(rf.marked_paths(review.results), [self.dir / "Title (Japan).sfc"])
 
     def test_save_file_key_ignores_case_and_relative_paths_on_windows(self):
-        key = rf.save_file_key(self.dir / "Title.srm")
-        self.assertEqual(key, rf.save_file_key(Path(str(self.dir / "Title.srm"))))
+        key = rf.save_file_key(self.dir / "Title.cht")
+        self.assertEqual(key, rf.save_file_key(Path(str(self.dir / "Title.cht"))))
         self.assertTrue(Path(key).is_absolute())
 
     def test_confirm_message_names_save_files_that_become_legitimate(self):
@@ -2574,7 +2633,7 @@ class ReviewTests(RedundanzTestCase):
 
     def test_suspected_save_file_is_visible_in_every_view(self):
         self.write("Title (USA).sfc", b"x" * 1000)
-        self.write("Title.srm", b"x" * 100)
+        self.write("Title.cht", b"x" * 100)
         review, [result] = self.review()
         self.assertEqual(result.marked, [])
         self.assertTrue(review.is_visible(result, True))
@@ -2721,7 +2780,7 @@ class LanguageTests(RedundanzTestCase):
     def test_rules_decide_the_same_in_every_language(self):
         self.write("Title (USA).sfc", b"x" * 1000)
         self.write("Title (Japan).sfc", b"x" * 1000)
-        self.write("Title.srm", b"x" * 100)
+        self.write("Title.cht", b"x" * 100)
         self.write("Other (USA) (Beta 1).bin")
         self.write("Other (USA) (Beta 2).bin")
         self.write("Tie (USA).bin")
@@ -2743,7 +2802,7 @@ class LanguageTests(RedundanzTestCase):
         self.write("Title (USA) (Beta 1).bin")
         self.write("Title (USA) (Beta 2).bin")
         self.write("Save (USA).sfc", b"x" * 1000)
-        self.write("Save.srm", b"x" * 100)
+        self.write("Save.cht", b"x" * 100)
         save, other = self.scan()
         self.assertEqual(save.title, "Save")
         self.assertIn("Ältere Beta", other.marked[0].notes)
@@ -3074,19 +3133,19 @@ class ReviewWindowTests(RedundanzTestCase):
 
         self.write("Title (USA).sfc", b"x" * 1000)
         self.write("Title (Japan).sfc", b"x" * 1000)
-        self.write("Title.srm", b"x" * 100)
+        self.write("Title.cht", b"x" * 100)
         self.write("Other (USA).sfc", b"x" * 1000)
-        self.write("Other.state", b"x" * 10)
+        self.write("Other.cht", b"x" * 10)
         window = self.open_window(only_problems=True)
         self.delete_confirmed(window)
         self.assertEqual(
             sorted(path.name for path in self.dir.iterdir()),
-            ["Other (USA).sfc", "Other.state", "Title (USA).sfc", "Title.srm"],
+            ["Other (USA).sfc", "Other.cht", "Title (USA).sfc", "Title.cht"],
         )
         self.assert_nothing_to_do(window)
         confirmed = rom_cleanup_workbench_window.load_confirmed_saves(window.settings_path)
         self.assertEqual(
-            confirmed, {rf.save_file_key(self.dir / "Title.srm"): 100, rf.save_file_key(self.dir / "Other.state"): 10},
+            confirmed, {rf.save_file_key(self.dir / "Title.cht"): 100, rf.save_file_key(self.dir / "Other.cht"): 10},
         )
         window.analyze = lambda _directory, _progress=None: rf.Review(self.scan(), self.config)
         window.analyze_now()  # Like F5 or a new start: The confirmation lasts.
@@ -3094,7 +3153,7 @@ class ReviewWindowTests(RedundanzTestCase):
 
     def test_ctrl_l_without_marked_files_offers_to_confirm_save_files(self):
         self.write("Title (USA).sfc", b"x" * 1000)
-        self.write("Title.srm", b"x" * 100)
+        self.write("Title.cht", b"x" * 100)
         window = self.open_window(only_problems=True)
         with mock.patch("rom_cleanup_workbench_window.messagebox.askyesno", return_value=False) as ask:
             window.confirm_delete()
@@ -3140,15 +3199,15 @@ class ReviewWindowTests(RedundanzTestCase):
     def write_save_file_game_for_window(self):
         self.write("Title (USA).sfc", b"x" * 1000)
         self.write("Title (Japan).sfc", b"x" * 1000)
-        self.write("Title.srm", b"x" * 100)
+        self.write("Title.cht", b"x" * 100)
 
     def test_window_shows_game_with_only_a_suspected_save_file(self):
         self.write("Title (USA).sfc", b"x" * 1000)
-        self.write("Title.srm", b"x" * 100)
+        self.write("Title.cht", b"x" * 100)
         window = self.open_window(only_problems=True)
         self.assertEqual(window.tree.get_children(), ("g0",))
         self.assertEqual(window.nothing_label.place_info(), {})
-        self.assertIn("Suspected status or save file", window.tree.set(self.row_of(window, "Title.srm"), "hint"))
+        self.assertIn("Suspected status or save file", window.tree.set(self.row_of(window, "Title.cht"), "hint"))
 
     def test_format_kb_rounds_up_like_explorer(self):
         import rom_cleanup_workbench_window
@@ -5086,8 +5145,8 @@ class TerminalVersionTests(unittest.IsolatedAsyncioTestCase):
     async def test_confirmed_save_files_are_not_suspected_again(self):
         import workbench_state
 
-        app = self.app_for({"Title (USA).sfc": b"x" * 1000, "Title.srm": b"x" * 100})
-        save = app.directory / "Title.srm"
+        app = self.app_for({"Title (USA).sfc": b"x" * 1000, "Title.cht": b"x" * 100})
+        save = app.directory / "Title.cht"
         workbench_state.add_confirmed_saves(app.settings_path, {rf.save_file_key(save): 100})
         async with app.run_test() as pilot:
             await self.analyzed(app, pilot)
@@ -5777,18 +5836,18 @@ class TerminalVersionTests(unittest.IsolatedAsyncioTestCase):
         import workbench_state
 
         app = self.app_for({"Title (USA).sfc": b"x" * 1000, "Title (Japan).sfc": b"x" * 1000,
-                            "Title.srm": b"x" * 100, "Other (USA).sfc": b"x" * 1000, "Other.state": b"x" * 10},
+                            "Title.cht": b"x" * 100, "Other (USA).sfc": b"x" * 1000, "Other.cht": b"x" * 10},
                            scope="problems")
         async with app.run_test() as pilot:
             await self.analyzed(app, pilot)
             await self.proceed(app, pilot)
             await pilot.press("enter")
             await pilot.pause()
-            self.assertEqual(self.names(app), ["Other (USA).sfc", "Other.state", "Title (USA).sfc", "Title.srm"])
+            self.assertEqual(self.names(app), ["Other (USA).sfc", "Other.cht", "Title (USA).sfc", "Title.cht"])
             self.assertTrue(app.query_one("#nothing").display)
             self.assertEqual(workbench_state.load_confirmed_saves(app.settings_path), {
-                rf.save_file_key(app.directory / "Title.srm"): 100,
-                rf.save_file_key(app.directory / "Other.state"): 10,
+                rf.save_file_key(app.directory / "Title.cht"): 100,
+                rf.save_file_key(app.directory / "Other.cht"): 10,
             })
         again = self.tui.WorkbenchApp(app.analyze, app.directory, "problems", settings_path=app.settings_path)
         async with again.run_test() as pilot:
@@ -5797,7 +5856,7 @@ class TerminalVersionTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_failed_remembering_is_reported_and_deletes_as_usual(self):
         app = self.app_for({"Title (USA).sfc": b"x" * 1000, "Title (Japan).sfc": b"x" * 1000,
-                            "Title.srm": b"x" * 100})
+                            "Title.cht": b"x" * 100})
         async with app.run_test() as pilot:
             await self.analyzed(app, pilot)
             with mock.patch("workbench_state.add_confirmed_saves", side_effect=PermissionError("locked")):
@@ -5810,7 +5869,7 @@ class TerminalVersionTests(unittest.IsolatedAsyncioTestCase):
             self.assertFalse((app.directory / "Title (Japan).sfc").exists())
 
     async def test_without_marked_files_proceed_offers_to_confirm_save_files(self):
-        app = self.app_for({"Title (USA).sfc": b"x" * 1000, "Title.srm": b"x" * 100}, scope="problems")
+        app = self.app_for({"Title (USA).sfc": b"x" * 1000, "Title.cht": b"x" * 100}, scope="problems")
         async with app.run_test() as pilot:
             await self.analyzed(app, pilot)
             await pilot.press("enter")
@@ -6837,7 +6896,7 @@ class TerminalVersionTests(unittest.IsolatedAsyncioTestCase):
     LONG_NAMES = {
         "Street Fighter II' - Champion Edition (USA) (Rev 1).sfc": b"x" * 3000,
         "Street Fighter II' - Champion Edition (Japan).sfc": b"x" * 3000,
-        "Mega Man X (USA).sfc": b"x" * 3000, "Mega Man X.srm": b"x" * 10,
+        "Mega Man X (USA).sfc": b"x" * 3000, "Mega Man X.cht": b"x" * 10,
     }
 
     async def test_notes_stay_visible_in_a_narrow_terminal(self):
@@ -6864,7 +6923,7 @@ class TerminalVersionTests(unittest.IsolatedAsyncioTestCase):
             await self.analyzed(app, pilot)
             await pilot.pause()
             self.assertFalse(app.query_one("#games").columns_layout[3])
-            line = next(line for line in self.screen_lines(app) if "+ Mega Man X.srm" in line)
+            line = next(line for line in self.screen_lines(app) if "+ Mega Man X.cht" in line)
             self.assertIn("Suspected status or save file", line)
 
     async def test_changing_the_width_lays_the_list_out_again_and_keeps_the_place(self):
