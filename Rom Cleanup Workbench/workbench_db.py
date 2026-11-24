@@ -483,13 +483,21 @@ def record_changes(root: Path, directory: Path, deleted: list[str], renamed: lis
 
 # The overview ----------------------------------------------------------------------------------
 
+# Files a roms folder may hold besides its platform folders: notes, pictures, documents.
+SIDE_FILE_EXTENSIONS = frozenset({
+    ".txt", ".nfo", ".diz", ".md", ".pdf", ".rtf", ".doc", ".docx", ".htm", ".html", ".url", ".log",
+    ".ini", ".xml", ".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp",
+})
+
+
 def is_collection(folder: Path) -> bool:
-    """A roms folder: it has a database, or it holds no ROM files itself but platform folders."""
+    """A roms folder: it has a database, or it holds no ROM files itself (side files such as
+    info.txt do not count) but platform folders."""
     folder = Path(folder)
     if (folder / DATABASE_FOLDER / DATABASE_NAME).is_file():
         return True
     try:
-        if rom_files(folder):
+        if any(path.suffix.casefold() not in SIDE_FILE_EXTENSIONS for path in rom_files(folder)):
             return False
     except OSError:
         return False

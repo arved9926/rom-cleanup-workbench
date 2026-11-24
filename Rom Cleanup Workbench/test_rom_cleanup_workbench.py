@@ -1451,6 +1451,16 @@ class OverviewWindowTests(OverviewWindowBase):
         self.assertEqual(panel.tree.item("nes", "values")[-1], "not scanned")
         self.assertTrue((self.roms / ".rom_cleanup_workbench" / "rom_cleanup_workbench.sqlite").is_file())
 
+    def test_side_files_do_not_hide_a_roms_folder(self):
+        import workbench_db
+
+        self.fill()
+        for name in ("info.txt", "Readme.PDF", "cover.jpg"):
+            (self.roms / name).write_bytes(b"side")
+        self.assertTrue(workbench_db.is_collection(self.roms))
+        (self.roms / "Lost (USA).nes").write_bytes(b"rom")  # a ROM: a folder on its own, as before
+        self.assertFalse(workbench_db.is_collection(self.roms))
+
     def test_opening_a_platform_scans_it_and_the_overview_shows_the_numbers(self):
         self.fill()
         window = self.make_window(self.roms)
