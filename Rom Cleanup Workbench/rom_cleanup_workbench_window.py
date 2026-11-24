@@ -279,17 +279,23 @@ class SettingsPanel:
         self.own = tk.BooleanVar(frame, own)
         if self.platform is not None:
             scope = ttk.Frame(frame)
-            scope.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(0, 8))
-            ttk.Label(scope, text=tr("settings.scope_label")).pack(side="left", padx=(0, 16))
+            scope.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(0, 24))
+            scope.columnconfigure(3, weight=1)
+            ttk.Label(scope, text=tr("settings.scope_label")).grid(row=0, column=0, sticky="w", padx=(0, 16))
             self.scope_buttons = [
                 ttk.Radiobutton(scope, text=text, variable=self.own, value=value, command=self._scope_changed)
                 for text, value in ((tr("settings.scope_default"), False),
                                     (tr("settings.scope_own", platform=self.platform), True))
             ]
-            for button in self.scope_buttons:
-                button.pack(side="left", padx=(0, 16))
+            for column, button in enumerate(self.scope_buttons, start=1):
+                button.grid(row=0, column=column, sticky="w", padx=(0, 16))
+            # What "own" means, in a line of its own below the two choices.
+            scope_hint = ttk.Label(scope, text=tr("settings.scope_own_hint", platform=self.platform),
+                                   foreground=_LIGHT_GRAY)
+            scope_hint.grid(row=1, column=1, columnspan=3, sticky="ew", pady=(4, 0))
+            scope_hint.bind("<Configure>", lambda event: scope_hint.configure(wraplength=max(event.width, 1)))
         heading = ttk.Frame(frame)
-        heading.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 8))
+        heading.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 20))
         # Save and Cancel at the top, so that they stay visible even in a low window.
         ttk.Button(heading, text=tr("settings.cancel"), command=self.close).pack(side="right")
         ttk.Button(heading, text=tr("settings.save"), command=lambda: window.save_settings(self)).pack(side="right", padx=8)
@@ -299,19 +305,19 @@ class SettingsPanel:
         # Two columns side by side, so that the region list keeps its height in a low window.
         left = ttk.Frame(frame)
         left.grid(row=2, column=0, sticky="nsew", padx=(0, 16))
-        left.columnconfigure(0, weight=1)
-        left.rowconfigure(1, weight=1, minsize=4 * window._row_height())
+        left.columnconfigure(2, weight=1)
+        left.rowconfigure(3, weight=1)  # the list keeps its size; free space stays below
         # Wraps like the labels on the right: the text names the keywords after none and is long.
         regions_label = ttk.Label(left, text=tr("settings.regions"))
-        regions_label.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 4))
+        regions_label.grid(row=0, column=0, columnspan=3, sticky="ew", pady=(0, 8))
         regions_label.bind("<Configure>", lambda event: regions_label.configure(wraplength=max(event.width, 1)))
         self.regions_label = regions_label
         self.regions = tk.Listbox(
-            left, height=6, activestyle="none", exportselection=False, font="TkDefaultFont",
+            left, height=max(4, min(8, len(self.values["region_priority"]) + 1)), width=24, activestyle="none", exportselection=False, font="TkDefaultFont",
             background=_DARK_GRAY, foreground=_WHITE, selectbackground=_SELECTED, selectforeground=_WHITE,
             highlightthickness=1, highlightbackground=_GRAY, highlightcolor=_LINE_COLOR, borderwidth=0,
         )
-        self.regions.grid(row=1, column=0, sticky="nsew")
+        self.regions.grid(row=1, column=0, sticky="nw")
         for region in self.values["region_priority"]:
             self.regions.insert("end", region)
         self.regions.bind("<Delete>", lambda _event: self.remove())
@@ -321,16 +327,16 @@ class SettingsPanel:
                              ("settings.remove", self.remove)):
             ttk.Button(buttons, text=tr(key), command=command).pack(fill="x", pady=(0, 4))
         self.new_region = tk.StringVar(frame)
-        new_entry = ttk.Entry(left, textvariable=self.new_region)
-        new_entry.grid(row=2, column=0, sticky="ew", pady=(8, 0))
+        new_entry = ttk.Entry(left, textvariable=self.new_region, width=24)
+        new_entry.grid(row=2, column=0, sticky="nw", pady=(12, 0))
         new_entry.bind("<Return>", lambda _event: self.add())
-        ttk.Button(left, text=tr("settings.add"), command=self.add).grid(row=2, column=1, sticky="ew", padx=(8, 0), pady=(8, 0))
+        ttk.Button(left, text=tr("settings.add"), command=self.add).grid(row=2, column=1, sticky="nw", padx=(8, 0), pady=(12, 0))
 
         right = ttk.Frame(frame)
         right.grid(row=2, column=1, sticky="nsew")
         right.columnconfigure(0, weight=1)
         right.rowconfigure(8, weight=1)
-        ttk.Label(right, text=tr("settings.language")).grid(row=0, column=0, sticky="w", pady=(0, 4))
+        ttk.Label(right, text=tr("settings.language")).grid(row=0, column=0, sticky="w", pady=(0, 8))
         name = LANGUAGE_NAMES.get(self.values["language"], LANGUAGE_NAMES[current_language()])
         self.language = tk.StringVar(frame, name)
         language_box = ttk.Combobox(
@@ -338,10 +344,10 @@ class SettingsPanel:
         )
         language_box.grid(row=1, column=0, sticky="w")
         hint = ttk.Label(right, text=tr("settings.language_hint"))
-        hint.grid(row=2, column=0, sticky="ew", pady=(4, 12))
+        hint.grid(row=2, column=0, sticky="ew", pady=(8, 28))
         hint.bind("<Configure>", lambda event: hint.configure(wraplength=max(event.width, 1)))
         tags_label = ttk.Label(right, text=tr("settings.delete_keywords"))
-        tags_label.grid(row=3, column=0, sticky="ew", pady=(0, 4))
+        tags_label.grid(row=3, column=0, sticky="ew", pady=(0, 8))
         tags_label.bind("<Configure>", lambda event: tags_label.configure(wraplength=max(event.width, 1)))
         # The delete keywords (delete_tags): extra info that marks a file for deletion by default.
         self.tags = tk.StringVar(frame, ", ".join(self.values["delete_tags"]))
@@ -349,7 +355,7 @@ class SettingsPanel:
         tags_entry.grid(row=4, column=0, sticky="ew")
         # prefer_zip: which of the two remains when a game exists as a plain file and as a ZIP file.
         prefer_label = ttk.Label(right, text=tr("settings.prefer"))
-        prefer_label.grid(row=5, column=0, sticky="ew", pady=(12, 4))
+        prefer_label.grid(row=5, column=0, sticky="ew", pady=(28, 8))
         prefer_label.bind("<Configure>", lambda event: prefer_label.configure(wraplength=max(event.width, 1)))
         self.prefer_zip = tk.BooleanVar(frame, bool(self.values["prefer_zip"]))
         self.prefer_buttons = [
@@ -357,7 +363,7 @@ class SettingsPanel:
             for key, value in (("settings.prefer_plain", False), ("settings.prefer_zip", True))
         ]
         for row, button in enumerate(self.prefer_buttons, start=6):
-            button.grid(row=row, column=0, sticky="w")
+            button.grid(row=row, column=0, sticky="w", pady=(0, 6))
 
         # Where text is typed, the window's keys must not fire: An "x" in a region name marks nothing.
         for widget in (language_box, self.regions, new_entry, tags_entry):
@@ -470,9 +476,14 @@ class KeysPanel:
         if self.notes:
             ttk.Label(frame, text=tr("keys.section.notes").upper(), font=window.bold_font).pack(
                 anchor="w", pady=(16, 4))
-            notes = ttk.Label(frame, text=" ".join(self.notes), padding=(16, 0, 0, 0))
-            notes.pack(fill="x", anchor="w")
-            notes.bind("<Configure>", lambda event: notes.configure(wraplength=max(event.width - 16, 1)))
+            for note in self.notes:  # one point each, wrapped under its own text
+                line = ttk.Frame(frame, padding=(16, 0, 0, 2))
+                line.pack(fill="x", anchor="w")
+                ttk.Label(line, text="•", foreground=_KEEP_TEXT).pack(side="left", anchor="n", padx=(0, 10))
+                label = ttk.Label(line, text=note)
+                label.pack(side="left", fill="x", expand=True, anchor="w")
+                label.bind("<Configure>", lambda event, label=label: label.configure(
+                    wraplength=max(event.width, 1)))
 
 
 class OverviewPanel:
@@ -692,6 +703,7 @@ class ReviewWindow:
             self.platform_label.pack(side="left", padx=(0, 6), before=self.info_label)
         else:
             self.platform_label.pack_forget()
+        self.root.after_idle(self._place_short_keys)
 
     def _clear(self) -> None:
         self.review = None
@@ -1133,13 +1145,17 @@ class ReviewWindow:
             ),
         )
 
-        info_row = ttk.Frame(self.root, padding=8)
+        info_row = self.info_row = ttk.Frame(self.root, padding=8)
         info_row.pack(fill="x")
+        info_row.columnconfigure(1, weight=1)
+        platform_part = self.platform_part = ttk.Frame(info_row)
+        platform_part.grid(row=0, column=0, sticky="w")
         self.short_keys = ttk.Frame(info_row)
-        self.short_keys.pack(side="right")
-        self.platform_label = ttk.Label(info_row, text=tr("window.platform"), foreground=_KEEP_TEXT,
+        self.short_keys.grid(row=0, column=1, sticky="e")
+        info_row.bind("<Configure>", lambda _event: self._place_short_keys())
+        self.platform_label = ttk.Label(platform_part, text=tr("window.platform"), foreground=_KEEP_TEXT,
                                         font=self.bold_font)
-        self.info_label = ttk.Label(info_row, textvariable=self.info)
+        self.info_label = ttk.Label(platform_part, textvariable=self.info)
         self.info_label.pack(side="left")
         self._show_short_keys()
 
@@ -1298,6 +1314,15 @@ class ReviewWindow:
             ttk.Label(self.short_keys, text=key, font=self.bold_font, foreground=_KEEP_TEXT).pack(
                 side="left", padx=(0 if index == 0 else 24, 6))
             ttk.Label(self.short_keys, text=text).pack(side="left")
+        self.root.after_idle(self._place_short_keys)
+
+    def _place_short_keys(self) -> None:
+        """Beside "Platform: nes" if both fit, else in a line of their own below it."""
+        width = self.info_row.winfo_width() - 16
+        needed = self.platform_part.winfo_reqwidth() + 24 + self.short_keys.winfo_reqwidth()
+        place = (0, 1) if needed <= width else (1, 0)
+        if (int(self.short_keys.grid_info().get("row", -1)), int(self.short_keys.grid_info().get("column", -1))) != place:
+            self.short_keys.grid(row=place[0], column=place[1], columnspan=2 if place[1] == 0 else 1, sticky="e")
 
     def toggle_keys(self) -> str:
         """F1 and ? show all keys of the current view in place of the list, and a second time close them."""

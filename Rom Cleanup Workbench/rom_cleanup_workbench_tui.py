@@ -839,7 +839,12 @@ class KeysScreen(Screen):
             notes = key_notes(self.context)
             if notes:
                 yield Static(Text(tr("keys.section.notes").upper(), style="bold"), id="keys-notes-title")
-                yield Static(" ".join(notes), id="keys-notes", markup=False)
+                bullet = "-" if getattr(self.app, "ascii", False) else "•"
+                with Vertical(id="keys-notes"):
+                    for note in notes:  # one point each, wrapped under its own text
+                        with Horizontal(classes="keys-note"):
+                            yield Static(Text(bullet, style=green), classes="keys-bullet")
+                            yield Static(note, classes="keys-note-text", markup=False)
 
     @staticmethod
     def _column(sections, green: str) -> Text:
@@ -945,6 +950,8 @@ class SettingsScreen(Screen):
                                         (True, tr("settings.scope_own", platform=self.platform))):
                         button = RadioButton(text, value=value == self.own, id=f"scope-{'own' if value else 'default'}")
                         yield _plain_radio(button) if getattr(self.app, "ascii", False) else button
+            # What "own" means, in a line of its own below the two choices.
+            yield Static(tr("settings.scope_own_hint", platform=self.platform), id="scope-hint", markup=False)
         with Horizontal(id="settings-columns"):
             with Vertical(id="settings-left"):
                 yield Static(tr("settings.regions"), id="regions-label", markup=False)
@@ -1160,8 +1167,8 @@ class WorkbenchApp(App):
     #settings-columns { height: 1fr; }
     #settings-left { width: 1fr; margin-right: 2; }
     #settings-right { width: 1fr; }
-    #regions-row { height: 1fr; min-height: 5; margin-top: 1; }
-    #regions { width: 1fr; height: 1fr; border: none; background: #222222; }
+    #regions-row { height: auto; margin-top: 1; }
+    #regions { width: 1fr; max-width: 26; height: auto; min-height: 5; max-height: 9; border: none; background: #222222; }
     #regions:focus { border: none; }
     #regions > .option-list--option-highlighted { background: #0a4a8a; color: #ffffff; }
     #region-buttons { width: 14; height: auto; margin-left: 1; }
@@ -1194,12 +1201,16 @@ class WorkbenchApp(App):
         background: #000000; color: #ff5555; }
     #keys-notes-title { margin: 1 1 0 1; }
     #keys-notes { margin: 0 1 0 3; height: auto; }
+    .keys-note { height: auto; }
+    .keys-bullet { width: 2; }
+    .keys-note-text { width: 1fr; height: auto; }
     #overview-status { height: 1; margin-top: 1; }
     #prefer-label { margin-top: 1; margin-bottom: 1; }
-    #scope-row { height: auto; margin-bottom: 1; }
+    #scope-row { height: auto; }
     #scope-label { width: auto; padding: 0 2 0 0; }
     #scope { height: auto; layout: horizontal; border: none; background: #000000; }
     #scope > RadioButton { background: #000000; margin-right: 2; }
+    #scope-hint { height: auto; margin: 0 0 1 2; color: #aaaaaa; }
     #settings-hint { height: auto; margin-top: 1; }
 
     /* 16 colors and the Linux console (class -colors16, see wants_16_colors). The values are

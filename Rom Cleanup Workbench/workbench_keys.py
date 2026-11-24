@@ -71,9 +71,10 @@ def key_sections(context: str, window: bool, collection: bool, ascii: bool = Fal
 
 
 def key_notes(context: str) -> list[str]:
-    """Explanations below the keys: in the overview what its states and switches mean."""
+    """Explanations below the keys, one point each: in the overview what its states and switches mean."""
     if context == OVERVIEW:
-        return [tr("overview.hint"), tr("overview.own_hint")]
+        return [tr("keys.note.open"), tr("keys.note.state", changed=tr("overview.state.changed")),
+                tr("keys.note.scan"), tr("keys.note.scan_all")]
     return []
 
 

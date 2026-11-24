@@ -1498,7 +1498,8 @@ class OverviewWindowTests(OverviewWindowBase):
         panel = window.keys_panel
         self.assertEqual(panel.context, "overview")
         self.assertIn(("d", "Deep Scan on/off"), panel.key_labels)
-        self.assertIn("* = own settings", " ".join(panel.notes))  # the overview's explanation lives here now
+        self.assertEqual(len(panel.notes), 4)  # the overview's explanation lives here now, one point each
+        self.assertEqual(panel.notes[1].split(":")[0], "State “changed”")
         self.assertFalse(window._overview_keys_work())  # nothing acts behind the keys
         window._on_escape()
         self.assertIsNone(window.keys_panel)
