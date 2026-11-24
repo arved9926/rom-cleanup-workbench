@@ -271,6 +271,21 @@ class Collection:
                              "WHERE platform_id = ? AND name = ?", (new, mtime_ns, platform_id, old))
             self._db.execute("UPDATE platforms SET summary_key = NULL WHERE id = ?", (platform_id,))
 
+    # Confirmed status or save files ------------------------------------------------------------
+
+    def confirmed(self, folder: str) -> dict[str, int]:
+        """File name -> size of the status or save files confirmed when deleting."""
+        platform_id = self._platform_id(folder, create=False)
+        if platform_id is None:
+            return {}
+        return dict(self._db.execute("SELECT name, size FROM confirmed_saves WHERE platform_id = ?", (platform_id,)))
+
+    def add_confirmed(self, folder: str, files: dict[str, int]) -> None:
+        platform_id = self._platform_id(folder)
+        with self._db:
+            self._db.executemany("INSERT OR REPLACE INTO confirmed_saves (platform_id, name, size) VALUES (?, ?, ?)",
+                                 [(platform_id, name, size) for name, size in files.items()])
+
     # Changes by hand (k and x) -----------------------------------------------------------------
 
     def save_move(self, folder: str, name: str, size: int | None, mtime_ns: int | None, decision: str | None) -> None:
@@ -535,3 +550,29 @@ def scan_all(root: Path, full: bool = False, progress=None) -> list[tuple[str, i
             read = scan_platform(collection, directory, report, full=full)
             finished.append((directory.name, collection.platform(directory.name).files or 0, read))
     return finished
+
+
+def confirmed_saves_of(root: Path, directory: Path, from_settings: dict[str, int]) -> dict[str, int]:
+    """The confirmed files of a platform, keyed as save_file_key does.
+
+    Files confirmed before the collection existed (in the settings file) are taken over once.
+    """
+    from rom_cleanup_workbench import save_file_key
+
+    directory = Path(directory)
+    own = os.path.normcase(os.path.abspath(directory))
+    older = {Path(key).name: size for key, size in from_settings.items()
+             if os.path.normcase(os.path.dirname(key)) == own}
+    with Collection(root) as collection:
+        known = collection.confirmed(directory.name)
+        new = {name: size for name, size in older.items() if name not in known}
+        if new:
+            collection.add_confirmed(directory.name, new)
+            known.update(new)
+    return {save_file_key(directory / name): size for name, size in known.items()}
+
+
+def add_confirmed_saves_to(root: Path, directory: Path, files: dict[str, int]) -> None:
+    """Remembers confirmed files (keyed as save_file_key does) in the platform's database."""
+    with Collection(root) as collection:
+        collection.add_confirmed(Path(directory).name, {Path(key).name: size for key, size in files.items()})

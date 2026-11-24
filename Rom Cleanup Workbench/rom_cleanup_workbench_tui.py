@@ -1246,7 +1246,7 @@ class WorkbenchApp(App):
 
     def show_review(self, review) -> None:
         self.review = review
-        review.confirm_save_files(load_confirmed_saves(self.settings_path))
+        review.confirm_save_files(review.confirmed_saves(self.settings_path))
         # Row keys follow the game's place among all games, so that they stay the same in every view.
         self._file_keys = {}
         self._game_numbers = {}
@@ -1556,7 +1556,7 @@ class WorkbenchApp(App):
         if not save_files:
             return None
         try:
-            add_confirmed_saves(self.settings_path, save_files)
+            self.review.remember_save_files(self.settings_path, save_files)
         except OSError as error:
             return str(error)
         return None

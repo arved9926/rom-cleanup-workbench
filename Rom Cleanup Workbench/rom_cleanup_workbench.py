@@ -1201,6 +1201,28 @@ class Review:
             if entry.size() is not None
         }
 
+    def confirmed_saves(self, settings_path: Path) -> dict[str, int]:
+        """The confirmed status or save files: from the database of a collection, else the settings file."""
+        from workbench_state import load_confirmed_saves
+
+        confirmed = load_confirmed_saves(settings_path)
+        if self.collection_root is None or self.directory is None:
+            return confirmed
+        from workbench_db import confirmed_saves_of
+
+        return confirmed_saves_of(self.collection_root, self.directory, confirmed)
+
+    def remember_save_files(self, settings_path: Path, files: dict[str, int]) -> None:
+        """Keeps confirmed files where confirmed_saves reads them; may raise OSError."""
+        if self.collection_root is None or self.directory is None:
+            from workbench_state import add_confirmed_saves
+
+            add_confirmed_saves(settings_path, files)
+            return
+        from workbench_db import add_confirmed_saves_to
+
+        add_confirmed_saves_to(self.collection_root, self.directory, files)
+
     def confirm_save_files(self, confirmed: dict[str, int]) -> None:
         """Treats remembered files as legitimate, as long as their size has not changed.
 

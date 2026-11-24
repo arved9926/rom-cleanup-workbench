@@ -1734,6 +1734,56 @@ class ManualMovesTests(PlatformFromDatabaseTests):
         self.assertEqual(self.open().moves("nes"), {})
 
 
+class ConfirmedSavesInDatabaseTests(PlatformFromDatabaseTests):
+    """Step 7: confirmed status or save files of a collection live in its database."""
+
+    def save_game(self):
+        self.write_zip("nes", "1941.zip", {"1941.nes": b"r" * 8000})
+        self.write("nes", "1941.state", b"s" * 100)
+
+    def review(self):
+        return rf.Review(self.open_platform(), self.config, collection_root=self.roms, directory=self.roms / "nes")
+
+    def test_confirmed_files_go_into_the_database(self):
+        import workbench_state
+
+        self.save_game()
+        settings = self.roms.parent / "settings.json"
+        review = self.review()
+        save_files = review.save_file_keys()
+        self.assertEqual(len(save_files), 1)
+        review.remember_save_files(settings, save_files)
+        self.assertFalse(settings.exists())  # nothing in the settings file
+        self.assertEqual(self.open().confirmed("nes"), {"1941.state": 100})
+        again = self.review()
+        again.confirm_save_files(again.confirmed_saves(settings))
+        self.assertEqual(again.save_file_keys(), {})
+        self.assertEqual(workbench_state.load_confirmed_saves(settings), {})
+
+    def test_older_confirmations_from_the_settings_file_are_taken_over(self):
+        import workbench_state
+
+        self.save_game()
+        settings = self.roms.parent / "settings.json"
+        key = rf.save_file_key(self.roms / "nes" / "1941.state")
+        other = rf.save_file_key(self.roms / "snes" / "x.state")
+        workbench_state.add_confirmed_saves(settings, {key: 100, other: 5})
+        review = self.review()
+        review.confirm_save_files(review.confirmed_saves(settings))
+        self.assertEqual(review.save_file_keys(), {})
+        self.assertEqual(self.open().confirmed("nes"), {"1941.state": 100})  # only its own platform
+
+    def test_a_folder_on_its_own_keeps_the_settings_file(self):
+        import workbench_state
+
+        self.save_game()
+        settings = self.roms.parent / "settings.json"
+        review = rf.Review(rf.scan_directory(self.roms / "nes", self.config), self.config)
+        review.remember_save_files(settings, review.save_file_keys())
+        self.assertEqual(len(workbench_state.load_confirmed_saves(settings)), 1)
+        self.assertFalse((self.roms / ".rom_cleanup_workbench").exists())
+
+
 class RescanFlagTests(unittest.TestCase):
     """F5 asks for a new scan; analyses without the parameter (as in many tests) still work."""
 
@@ -2665,7 +2715,7 @@ class ReviewWindowTests(RedundanzTestCase):
     def test_failed_remembering_is_reported_and_deletes_as_usual(self):
         self.write_save_file_game_for_window()
         window = self.open_window()
-        with mock.patch("rom_cleanup_workbench_window.add_confirmed_saves", side_effect=PermissionError("locked")), mock.patch(
+        with mock.patch("workbench_state.add_confirmed_saves", side_effect=PermissionError("locked")), mock.patch(
             "rom_cleanup_workbench_window.messagebox.showerror"
         ) as error:
             self.delete_confirmed(window)
@@ -5331,7 +5381,7 @@ class TerminalVersionTests(unittest.IsolatedAsyncioTestCase):
                             "Title.srm": b"x" * 100})
         async with app.run_test() as pilot:
             await self.analyzed(app, pilot)
-            with mock.patch("rom_cleanup_workbench_tui.add_confirmed_saves", side_effect=PermissionError("locked")):
+            with mock.patch("workbench_state.add_confirmed_saves", side_effect=PermissionError("locked")):
                 await self.proceed(app, pilot)
             self.assertEqual(self.text(app.screen, "#question-title"), translations.tr("window.saves_not_remembered"))
             self.assertIn("locked", self.text(app.screen, "#question-text"))

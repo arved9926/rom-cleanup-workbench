@@ -663,7 +663,7 @@ class ReviewWindow:
         self.tree.selection_set(())
         self.review = review
         # Read again every time: The file may have changed in another window since.
-        review.confirm_save_files(load_confirmed_saves(self.settings_path))
+        review.confirm_save_files(review.confirmed_saves(self.settings_path))
         # Each file keeps its row ID, so that the selection survives moving.
         self._group_ids = {}
         self._file_ids = {}
@@ -1475,7 +1475,7 @@ class ReviewWindow:
         if not save_files:
             return
         try:
-            add_confirmed_saves(self.settings_path, save_files)
+            self.review.remember_save_files(self.settings_path, save_files)
         except OSError as error:
             messagebox.showerror(tr("window.saves_not_remembered"), str(error), parent=self.root)
 
