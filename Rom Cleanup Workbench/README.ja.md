@@ -14,31 +14,55 @@ Python 3.10 以降が必要です。ウィンドウに追加のパッケージ�
 
 ## インストール
 
+GitHub アカウントは不要です。コマンドは 1 つずつ枠に入っています。そのとおりに入力して Enter を押してください。
+
 ### Windows
 
-1. **Python のインストール:** [python.org/downloads](https://www.python.org/downloads/) から Python 3.10 以降をダウンロードしてインストールします。インストーラーに "Add python.exe to PATH" があれば、チェックを入れます。ウィンドウ用の `tkinter` も含まれています。その後、新しいターミナルで確認します:
+コマンドはすべて PowerShell に入力します。
+
+1. **Python がインストールされているか確認する:**
 
    ```powershell
    python --version
    ```
 
-2. **プログラムのダウンロード:** Git がなければ、ZIP ファイルがいちばん簡単です。ブラウザーでは: [GitHub のページ](https://github.com/arved9926/rom-cleanup-workbench) で緑のボタン **Code** から **Download ZIP** を選び、エクスプローラーで `rom-cleanup-workbench-main.zip` を右クリックして **すべて展開...** を選び、展開したフォルダー `rom-cleanup-workbench-main` の名前を `rom-cleanup-workbench` に変えます。PowerShell で同じことをするには:
+   - **`Python 3.10` 以上と表示された場合:** Python はあります。手順 2 へ進みます。
+
+   - **エラーまたは古いバージョンが表示された場合:** [python.org/downloads](https://www.python.org/downloads/) から Python 3.10 以降をダウンロードしてインストールします。インストーラーに「Add python.exe to PATH」があれば、チェックを入れます。ウィンドウ用の `tkinter` も含まれます。その後、新しい PowerShell ウィンドウを開いて、もう一度確認します。
+
+2. **Git がインストールされているか確認する:**
 
    ```powershell
-   Invoke-WebRequest https://github.com/arved9926/rom-cleanup-workbench/archive/refs/heads/main.zip -OutFile rom-cleanup-workbench.zip
-   Expand-Archive rom-cleanup-workbench.zip -DestinationPath .
-   Rename-Item rom-cleanup-workbench-main rom-cleanup-workbench
+   git --version
+   ```
+
+   - **バージョン番号 (たとえば `git version 2.47.0`) が表示された場合:** Git でプログラムをダウンロードします:
+
+     ```powershell
+     git clone https://github.com/arved9926/rom-cleanup-workbench.git
+     ```
+
+   - **エラーが表示された場合:** プログラムを ZIP ファイルとしてダウンロードします。ブラウザーでは [GitHub のページ](https://github.com/arved9926/rom-cleanup-workbench) で **Code**、次に **Download ZIP** を選び、ファイルを右クリックで展開し (**すべて展開...**)、フォルダー `rom-cleanup-workbench-main` の名前を `rom-cleanup-workbench` に変更します。または PowerShell で 1 つずつ:
+
+     ```powershell
+     Invoke-WebRequest https://github.com/arved9926/rom-cleanup-workbench/archive/refs/heads/main.zip -OutFile rom-cleanup-workbench.zip
+     ```
+
+     ```powershell
+     Expand-Archive rom-cleanup-workbench.zip -DestinationPath .
+     ```
+
+     ```powershell
+     Rename-Item rom-cleanup-workbench-main rom-cleanup-workbench
+     ```
+
+3. **プログラムのフォルダーに移動する:**
+
+   ```powershell
    cd "rom-cleanup-workbench\Rom Cleanup Workbench"
    ```
 
-   Git をインストールしてあれば、代わりにリポジトリをクローンできます:
-
-   ```powershell
-   git clone https://github.com/arved9926/rom-cleanup-workbench.git
-   cd "rom-cleanup-workbench\Rom Cleanup Workbench"
-   ```
-
-   プログラムはフォルダー `Rom Cleanup Workbench` にあります。ウィンドウには追加のパッケージは不要です。Windows でターミナル版を使う場合だけ、Textual もインストールします:
+   ウィンドウには追加のパッケージは不要です。Windows でターミナル版を使う場合だけ、Textual も追加でインストールします:
 
    ```powershell
    python -m pip install textual==8.2.8
@@ -46,33 +70,67 @@ Python 3.10 以降が必要です。ウィンドウに追加のパッケージ�
 
 ### Linux
 
-1. **Python のインストール:** たいてい Python 3 はすでに入っています (`python3 --version`)。なければ Debian または Ubuntu で:
+コマンドはすべてターミナルに入力します。例は Debian と Ubuntu 用です。
+
+1. **Python がインストールされているか確認する:**
 
    ```bash
-   sudo apt install python3 python3-venv wget unzip
+   python3 --version
    ```
 
-   パッケージ `python3-tk` は、グラフィカルな画面のある Linux でターミナル版の代わりにウィンドウを使う場合にだけ必要です。
+   - **`Python 3.10` 以上と表示された場合:** Python はあります。手順 2 へ進みます。
 
-2. **プログラムのダウンロード:** Git がなければ、GitHub から ZIP ファイルとしてダウンロードして展開します:
+   - **エラーまたは古いバージョンが表示された場合:** Python をインストールします:
+
+     ```bash
+     sudo apt install python3 python3-venv
+     ```
+
+   パッケージ `python3-tk` は、グラフィカル表示のある Linux でターミナル版ではなくウィンドウを使いたい場合にだけ必要です。
+
+2. **Git がインストールされているか確認する:**
 
    ```bash
-   wget https://github.com/arved9926/rom-cleanup-workbench/archive/refs/heads/main.zip -O rom-cleanup-workbench.zip
-   unzip rom-cleanup-workbench.zip
-   mv rom-cleanup-workbench-main rom-cleanup-workbench
+   git --version
    ```
 
-   Git をインストールしてあれば (`sudo apt install git`)、代わりにリポジトリをクローンできます:
+   - **バージョン番号が表示された場合:** Git でプログラムをダウンロードします:
 
-   ```bash
-   git clone https://github.com/arved9926/rom-cleanup-workbench.git
-   ```
+     ```bash
+     git clone https://github.com/arved9926/rom-cleanup-workbench.git
+     ```
 
-3. **仮想環境に Textual をインストール:**
+   - **エラーが表示された場合:** プログラムを ZIP ファイルとしてダウンロードして展開します。1 つずつ:
+
+     ```bash
+     sudo apt install wget unzip
+     ```
+
+     ```bash
+     wget https://github.com/arved9926/rom-cleanup-workbench/archive/refs/heads/main.zip -O rom-cleanup-workbench.zip
+     ```
+
+     ```bash
+     unzip rom-cleanup-workbench.zip
+     ```
+
+     ```bash
+     mv rom-cleanup-workbench-main rom-cleanup-workbench
+     ```
+
+3. **プログラムのフォルダーに移動する:**
 
    ```bash
    cd "rom-cleanup-workbench/Rom Cleanup Workbench"
+   ```
+
+4. **仮想環境に Textual をインストールする:**
+
+   ```bash
    python3 -m venv ~/venvs/rom-cleanup-workbench
+   ```
+
+   ```bash
    ~/venvs/rom-cleanup-workbench/bin/pip install textual==8.2.8
    ```
 
@@ -84,6 +142,9 @@ Python 3.10 以降が必要です。ウィンドウに追加のパッケージ�
 
 ```powershell
 cd "rom-cleanup-workbench\Rom Cleanup Workbench"
+```
+
+```powershell
 python rom_cleanup_workbench.py "D:\Games"
 ```
 
@@ -95,6 +156,9 @@ python rom_cleanup_workbench.py "D:\Games"
 
 ```bash
 cd "rom-cleanup-workbench/Rom Cleanup Workbench"
+```
+
+```bash
 ~/venvs/rom-cleanup-workbench/bin/python rom_cleanup_workbench.py ~/roms
 ```
 
