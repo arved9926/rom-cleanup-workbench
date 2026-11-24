@@ -262,7 +262,7 @@ Waagerechte Linien trennen die Spiele, und jedes zweite Spiel hat einen dunkelgr
 
 Das Filterfeld links in der unteren Zeile schränkt die aktuelle Ansicht auf Spiele ein, deren Dateiname das Muster enthält. Ein Spiel bleibt vollständig, wenn eine seiner Dateien passt. Die Liste folgt kurz nach dem Tippen; der Inhalt der Dateien wird nicht gelesen.
 
-- `*` steht für beliebig viele Zeichen, `?` für genau eines. Alle anderen Zeichen, auch `[` und `]`, zählen wörtlich, und Groß- und Kleinschreibung zählt nicht.
+- `*` steht für beliebig viele Zeichen, `?` für genau eines. Alle anderen Zeichen, auch `[` und `]`, zählen wörtlich, und Groß- und Kleinschreibung zählt nicht. Leerzeichen am Anfang und am Ende zählen nur in Anführungszeichen: `" by "` findet `Mario by Mick`, aber nicht `Moby Dick`; ohne Anführungszeichen findet `by` beide.
 - Das Muster darf irgendwo im Namen stehen: `Beta`, `*Beta*` und `Mario?2` finden alle auch `Super Mario 2 (Beta).nes`. Entsprechend findet `S*` jeden Namen, der ein `S` enthält, nicht nur Namen, die damit beginnen.
 - `Enter`, `Tab` und der Pfeil nach unten führen zurück in die Liste; `Esc` leert den Filter und führt zurück in die Liste.
 - Solange der Cursor im Feld steht, schreiben Tasten nur dort: `x`, `k`, `Enter`, `f`, `r`, `F5` und `Esc` führen ihre Listenfunktionen nicht aus.

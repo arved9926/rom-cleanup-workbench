@@ -2610,6 +2610,19 @@ class ReviewTests(RedundanzTestCase):
         self.assertFalse(rf.matches_search(result, "[abc]"))
         self.assertFalse(rf.matches_search(result, "T.tle"))
 
+    def test_search_in_quotation_marks_counts_exactly(self):
+        self.write("Moby Dick (USA).bin")
+        self.write("Mario by Mick (USA).bin")
+        _, results = self.review()
+        by, moby = sorted(results, key=lambda result: result.title)
+        self.assertTrue(rf.matches_search(moby, " by "))  # without quotation marks the spaces do not count
+        self.assertFalse(rf.matches_search(moby, '" by "'))
+        self.assertTrue(rf.matches_search(by, '" by "'))
+        self.assertTrue(rf.matches_search(by, '" BY "'))  # case still does not count
+        self.assertTrue(rf.matches_search(by, '"Mario * Mick"'))  # * and ? still work
+        self.assertTrue(rf.matches_search(moby, '""'))  # empty: everything
+        self.assertFalse(rf.matches_search(moby, '"'))  # a single quotation mark is just a character
+
     def test_search_looks_at_every_file_of_the_game(self):
         self.write("Title (USA).bin")
         self.write("Title (Japan).bin")

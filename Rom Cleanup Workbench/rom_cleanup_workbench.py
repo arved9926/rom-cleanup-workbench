@@ -1133,8 +1133,12 @@ def matches_search(result: GroupResult, pattern: str) -> bool:
 
     Only * and ? are wildcards: ROM names often contain square brackets such as [!], so
     they stay ordinary characters here, unlike in fnmatch. Case does not count.
+    Spaces at the start and the end do not count, unless the pattern is in quotation marks:
+    " by " finds "Game by Mick" but not "Moby".
     """
     pattern = pattern.strip()
+    if len(pattern) >= 2 and pattern[0] == pattern[-1] == '"':
+        pattern = pattern[1:-1]  # exactly as typed, spaces included
     if not pattern:
         return True
     parts = (".*" if char == "*" else "." if char == "?" else re.escape(char) for char in pattern)
