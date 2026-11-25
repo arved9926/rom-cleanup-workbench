@@ -41,7 +41,7 @@ CHANGED = "changed"
 
 DATABASE_FOLDER = ".rom_cleanup_workbench"
 DATABASE_NAME = "rom_cleanup_workbench.sqlite"
-SCHEMA_VERSION = 2  # 2: platforms.no_games
+SCHEMA_VERSION = 3  # 2: platforms.no_games; 3: game_info, media, gamelist_files
 _HIDDEN_ATTRIBUTE = 0x2  # FILE_ATTRIBUTE_HIDDEN
 
 _SCHEMA = """
@@ -91,6 +91,43 @@ CREATE TABLE IF NOT EXISTS manual_moves (
     UNIQUE (platform_id, name)
 );
 CREATE INDEX IF NOT EXISTS zip_members_file ON zip_members (file_id);
+-- What the gamelist.xml (and later the workbench) knows about a ROM; rom is relative to the platform folder.
+CREATE TABLE IF NOT EXISTS game_info (
+    platform_id INTEGER NOT NULL REFERENCES platforms(id) ON DELETE CASCADE,
+    rom TEXT NOT NULL,
+    kind TEXT NOT NULL DEFAULT 'game',
+    name TEXT, sortname TEXT, description TEXT, rating REAL, release_date TEXT,
+    developer TEXT, publisher TEXT, genre TEXT, players TEXT, region TEXT, lang TEXT,
+    favorite INTEGER, hidden INTEGER, kidgame INTEGER, playcount INTEGER, playtime INTEGER, last_played TEXT,
+    xml_id TEXT,
+    extra_json TEXT,
+    edited_json TEXT,
+    created INTEGER NOT NULL DEFAULT 0,
+    UNIQUE (platform_id, rom)
+);
+-- 1:n: the media of a ROM, one row per category (one file may serve several categories).
+CREATE TABLE IF NOT EXISTS media (
+    platform_id INTEGER NOT NULL REFERENCES platforms(id) ON DELETE CASCADE,
+    rom TEXT,
+    category TEXT NOT NULL,
+    path TEXT NOT NULL,
+    origin TEXT NOT NULL,
+    size INTEGER,
+    mtime_ns INTEGER,
+    UNIQUE (platform_id, rom, category, path)
+);
+-- The gamelist.xml read last: to see whether it changed, and what its import reported.
+CREATE TABLE IF NOT EXISTS gamelist_files (
+    platform_id INTEGER NOT NULL UNIQUE REFERENCES platforms(id) ON DELETE CASCADE,
+    size INTEGER,
+    mtime_ns INTEGER,
+    sha256 TEXT,
+    imported_at TEXT,
+    provider_json TEXT,
+    entries INTEGER,
+    problems_json TEXT,
+    notes_json TEXT
+);
 """
 
 
@@ -145,6 +182,9 @@ class Collection:
             with self._db:
                 self._db.execute("ALTER TABLE platforms ADD COLUMN no_games INTEGER NOT NULL DEFAULT 0")
                 self._db.execute("UPDATE schema_info SET version = 2")
+        if version < 3:  # the new tables were created above
+            with self._db:
+                self._db.execute("UPDATE schema_info SET version = 3")
 
     def close(self) -> None:
         self._db.close()
@@ -263,7 +303,9 @@ class Collection:
             return NOT_SCANNED
         if stamps is None:
             stamps = _stamps(directory)
-        return CURRENT if stamps == self.file_stamps(directory.name) else CHANGED
+        if stamps != self.file_stamps(directory.name):
+            return CHANGED
+        return CHANGED if gamelist_changed(self, directory) else CURRENT
 
     def update_checksums(self, folder: str, checksums: dict[str, str]) -> None:
         """Keeps checksums of plain files that were computed while deciding."""
@@ -282,6 +324,10 @@ class Collection:
         with self._db:
             self._db.executemany("DELETE FROM files WHERE platform_id = ? AND name = ?",
                                  [(platform_id, name) for name in names])
+            # Deleted is deleted: what was known about the game goes as well.
+            for table in ("game_info", "media"):
+                self._db.executemany(f"DELETE FROM {table} WHERE platform_id = ? AND rom = ?",
+                                     [(platform_id, name) for name in names])
             self._db.execute("UPDATE platforms SET files = (SELECT COUNT(*) FROM files WHERE platform_id = ?), "
                              "summary_key = NULL WHERE id = ?", (platform_id, platform_id))
 
@@ -292,6 +338,9 @@ class Collection:
         with self._db:
             self._db.execute("UPDATE files SET name = ?, mtime_ns = COALESCE(?, mtime_ns) "
                              "WHERE platform_id = ? AND name = ?", (new, mtime_ns, platform_id, old))
+            for table in ("game_info", "media"):
+                self._db.execute(f"UPDATE {table} SET rom = ? WHERE platform_id = ? AND rom = ?",
+                                 (new, platform_id, old))
             self._db.execute("UPDATE platforms SET summary_key = NULL WHERE id = ?", (platform_id,))
 
     # Confirmed status or save files ------------------------------------------------------------
@@ -333,6 +382,137 @@ class Collection:
             with self._db:
                 self._db.execute("DELETE FROM manual_moves WHERE platform_id = ?", (platform_id,))
 
+    # What the gamelist.xml says ----------------------------------------------------------------
+
+    def gamelist_record(self, folder: str) -> dict | None:
+        """The gamelist.xml read last: stamp, number of entries, problems and notes; None if none."""
+        platform_id = self._platform_id(folder, create=False)
+        if platform_id is None:
+            return None
+        row = self._db.execute("SELECT size, mtime_ns, sha256, imported_at, provider_json, entries, problems_json, "
+                               "notes_json FROM gamelist_files WHERE platform_id = ?", (platform_id,)).fetchone()
+        if row is None:
+            return None
+        return {"size": row[0], "mtime_ns": row[1], "sha256": row[2], "imported_at": row[3],
+                "provider": json.loads(row[4]) if row[4] else None, "entries": row[5],
+                "problems": json.loads(row[6] or "[]"), "notes": json.loads(row[7] or "[]")}
+
+    def save_gamelist(self, folder: str, gamelist, stamp: tuple, sha256: str | None, media_stamps: dict,
+                      when: datetime | None = None) -> None:
+        """Takes over a checked gamelist: new values replace the old ones, except fields edited by hand.
+        Entries the gamelist no longer has stay: the gamelist.xml is input, not the master."""
+        from workbench_gamelist import COLUMNS
+
+        platform_id = self._platform_id(folder)
+        moment = (when or datetime.now()).isoformat(timespec="seconds")
+        with self._db:
+            if not gamelist.unreadable:
+                edited = {rom: set(json.loads(value or "[]")) for rom, value in self._db.execute(
+                    "SELECT rom, edited_json FROM game_info WHERE platform_id = ?", (platform_id,))}
+                for entry in gamelist.entries:
+                    keep = edited.get(entry.rom, set())
+                    values = {column: entry.values.get(column) for column in COLUMNS if column not in keep}
+                    values.update(kind=entry.kind, xml_id=entry.xml_id, created=0,
+                                  extra_json=json.dumps(entry.extra, ensure_ascii=False) if entry.extra else None)
+                    names = ", ".join(values)
+                    marks = ", ".join("?" * len(values))
+                    updates = ", ".join(f"{name} = excluded.{name}" for name in values)
+                    self._db.execute(f"INSERT INTO game_info (platform_id, rom, {names}) VALUES (?, ?, {marks}) "
+                                     f"ON CONFLICT (platform_id, rom) DO UPDATE SET {updates}",
+                                     (platform_id, entry.rom, *values.values()))
+                    for category, path in entry.media:
+                        size, mtime = media_stamps.get(path, (None, None))
+                        self._db.execute("INSERT INTO media (platform_id, rom, category, path, origin, size, mtime_ns) "
+                                         "VALUES (?, ?, ?, ?, 'gamelist', ?, ?) ON CONFLICT DO UPDATE SET "
+                                         "size = excluded.size, mtime_ns = excluded.mtime_ns",
+                                         (platform_id, entry.rom, category, path, size, mtime))
+            entries = None if gamelist.unreadable else len(gamelist.entries)
+            self._db.execute(
+                "INSERT INTO gamelist_files (platform_id, size, mtime_ns, sha256, imported_at, provider_json, "
+                "entries, problems_json, notes_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) "
+                "ON CONFLICT (platform_id) DO UPDATE SET size = excluded.size, mtime_ns = excluded.mtime_ns, "
+                "sha256 = excluded.sha256, imported_at = excluded.imported_at, "
+                "provider_json = COALESCE(excluded.provider_json, provider_json), "
+                "entries = excluded.entries, problems_json = excluded.problems_json, "
+                "notes_json = excluded.notes_json",
+                (platform_id, stamp[0], stamp[1], sha256, moment,
+                 json.dumps(gamelist.provider, ensure_ascii=False) if gamelist.provider else None, entries,
+                 json.dumps([item.as_dict() for item in gamelist.problems], ensure_ascii=False),
+                 json.dumps([item.as_dict() for item in gamelist.notes], ensure_ascii=False)))
+
+    def touch_gamelist(self, folder: str, stamp: tuple) -> None:
+        """The gamelist.xml has a new change time but the same content: only the stamp is new."""
+        platform_id = self._platform_id(folder)
+        with self._db:
+            self._db.execute("UPDATE gamelist_files SET size = ?, mtime_ns = ? WHERE platform_id = ?",
+                             (stamp[0], stamp[1], platform_id))
+
+    def forget_missing_info(self, folder: str, directory: Path, rom_names) -> None:
+        """The folder is what counts: information on ROMs that are gone, and media whose file is gone, go."""
+        platform_id = self._platform_id(folder, create=False)
+        if platform_id is None:
+            return
+        directory = Path(directory)
+        rom_names = set(rom_names)
+        rows = self._db.execute("SELECT rom, kind FROM game_info WHERE platform_id = ?", (platform_id,)).fetchall()
+        gone = [rom for rom, kind in rows
+                if ((not (directory / rom).is_dir()) if kind == "folder" else rom not in rom_names)]
+        known = {rom for rom, _kind in rows} - set(gone)
+        media = self._db.execute("SELECT rom, category, path FROM media WHERE platform_id = ?",
+                                 (platform_id,)).fetchall()
+        listings: dict[Path, set] = {}
+
+        def present(path: str) -> bool:  # one listing per folder, not a call per file (network drives)
+            if Path(path).is_absolute():
+                return Path(path).is_file()
+            parent, _, file_name = path.rpartition("/")
+            folder = directory / parent if parent else directory
+            if folder not in listings:
+                try:
+                    with os.scandir(folder) as entries:
+                        listings[folder] = {entry.name for entry in entries if entry.is_file()}
+                except OSError:
+                    listings[folder] = set()
+            return file_name in listings[folder]
+
+        lost = [(rom, category, path) for rom, category, path in media
+                if (rom is not None and rom not in known) or not present(path)]
+        if not gone and not lost:
+            return
+        with self._db:
+            self._db.executemany("DELETE FROM game_info WHERE platform_id = ? AND rom = ?",
+                                 [(platform_id, rom) for rom in gone])
+            self._db.executemany("DELETE FROM media WHERE platform_id = ? AND rom IS ? AND category = ? "
+                                 "AND path = ?", [(platform_id, *item) for item in lost])
+
+    def info_count(self, folder: str) -> int:
+        """ROMs of the list with information."""
+        platform_id = self._platform_id(folder, create=False)
+        if platform_id is None:
+            return 0
+        return self._db.execute("SELECT COUNT(*) FROM game_info WHERE platform_id = ? AND kind = 'game'",
+                                (platform_id,)).fetchone()[0]
+
+    def game_info(self, folder: str) -> dict[str, dict]:
+        """rom -> its information: the columns, extra, xml_id, created and media by category."""
+        from workbench_gamelist import COLUMNS
+
+        platform_id = self._platform_id(folder, create=False)
+        if platform_id is None:
+            return {}
+        info = {}
+        for row in self._db.execute(f"SELECT rom, kind, {', '.join(COLUMNS)}, xml_id, extra_json, created "
+                                    "FROM game_info WHERE platform_id = ?", (platform_id,)):
+            values = dict(zip(COLUMNS, row[2:2 + len(COLUMNS)]))
+            values.update(rom=row[0], kind=row[1], xml_id=row[-3], extra=json.loads(row[-2] or "[]"),
+                          created=bool(row[-1]), media={})
+            info[row[0]] = values
+        for rom, category, path in self._db.execute("SELECT rom, category, path FROM media WHERE platform_id = ? "
+                                                    "ORDER BY category, path", (platform_id,)):
+            if rom in info:
+                info[rom]["media"].setdefault(category, []).append(path)
+        return info
+
     # Summary for the overview ------------------------------------------------------------------
 
     def save_summary(self, folder: str, games: int, marked: int, problematic: int, key: str) -> None:
@@ -357,7 +537,8 @@ class Collection:
         platform_id = self._platform_id(folder)
         with self._db:
             if no_games:
-                for table in ("files", "manual_moves", "confirmed_saves"):
+                for table in ("files", "manual_moves", "confirmed_saves", "game_info", "media",
+                              "gamelist_files"):
                     self._db.execute(f"DELETE FROM {table} WHERE platform_id = ?", (platform_id,))
                 self._db.execute("UPDATE platforms SET last_scan = NULL, files = NULL, games = NULL, marked = NULL, "
                                  "problematic = NULL, summary_key = NULL WHERE id = ?", (platform_id,))
@@ -447,7 +628,74 @@ def scan_platform(collection: "Collection", directory: Path, progress=None, full
         facts, read = quick_scan_facts(directory, old, progress)
     collection.save_facts(name, facts)
     collection.clear_moves(name)  # a new scan starts from the rules again
+    import_gamelist(collection, directory, [item.name for item in facts], force=full)
     return read
+
+
+def _gamelist_stamp(directory: Path) -> tuple | None:
+    from workbench_gamelist import GAMELIST_NAME
+
+    try:
+        stat = (Path(directory) / GAMELIST_NAME).stat()
+    except OSError:
+        return None
+    return stat.st_size, stat.st_mtime_ns
+
+
+def gamelist_changed(collection: "Collection", directory: Path) -> bool:
+    """A gamelist.xml that is new or changed since it was read; a deleted one changes nothing."""
+    stamp = _gamelist_stamp(directory)
+    if stamp is None:
+        return False
+    record = collection.gamelist_record(Path(directory).name)
+    return record is None or (record["size"], record["mtime_ns"]) != stamp
+
+
+def import_gamelist(collection: "Collection", directory: Path, rom_names, force: bool = False) -> bool:
+    """Reads the platform's gamelist.xml if it changed (or force) and takes over what checks out.
+    Afterwards information on ROMs and media that are gone is dropped. Returns whether it was read."""
+    from workbench_gamelist import GAMELIST_NAME, read_gamelist
+
+    directory = Path(directory)
+    name = directory.name
+    read = False
+    stamp = _gamelist_stamp(directory)
+    if stamp is not None and (force or gamelist_changed(collection, directory)):
+        path = directory / GAMELIST_NAME
+        try:
+            sha = hashlib.sha256(path.read_bytes()).hexdigest()
+        except OSError:
+            sha = None
+        record = collection.gamelist_record(name)
+        if not force and sha is not None and record is not None and record["sha256"] == sha:
+            collection.touch_gamelist(name, stamp)
+        else:
+            gamelist = read_gamelist(path, directory, rom_names)
+            collection.save_gamelist(name, gamelist, stamp, sha, gamelist.media_stamps)
+            read = True
+    collection.forget_missing_info(name, directory, rom_names)
+    return read
+
+
+def gamelist_summary(directory: Path | None) -> str:
+    """For the platform line: what the last gamelist.xml brought; empty without one."""
+    from translations import tr
+
+    if directory is None:
+        return ""
+    directory = Path(directory)
+    root = collection_root(directory)
+    if root is None:
+        return ""
+    with Collection(root) as collection:
+        record = collection.gamelist_record(directory.name)
+    if record is None:
+        return ""
+    if record["entries"] is None:
+        line = next((item.get("line") for item in record["problems"] if item.get("kind") == "xml_error"), None)
+        return tr("gamelist.unreadable", line=line or "?")
+    return tr("gamelist.summary", entries=record["entries"], problems=len(record["problems"]),
+              notes=len(record["notes"]))
 
 
 def open_platform(root: Path, directory: Path, config: Config, progress=None,
@@ -565,6 +813,8 @@ class OverviewRow:
     last_scan: str | None = None
     has_own_config: bool = False
     has_games: bool = True  # False: not a single game file in the folder (side files do not count)
+    info: int | None = None  # ROMs of the list with information from the gamelist.xml
+    gamelist_problems: int | None = None  # what the last gamelist.xml import did not take over; None: none read
 
 
 def overview(root: Path, config: Config) -> list[OverviewRow]:
@@ -590,8 +840,11 @@ def _overview_row(collection: "Collection", directory: Path, config: Config) -> 
         collection.update_checksums(name, known_checksums(results))
         collection.save_summary(name, *summary_of(results), key=key)
         row = collection.platform(name)
+    record = collection.gamelist_record(name)
     return OverviewRow(name, state, row.files, row.games, row.marked, row.problematic,
-                       row.last_scan, row.has_own_config, has_game_files(stamps))
+                       row.last_scan, row.has_own_config, has_game_files(stamps),
+                       None if state == NOT_SCANNED else collection.info_count(name),
+                       None if record is None else len(record["problems"]))
 
 
 def has_game_files(names) -> bool:

@@ -675,7 +675,7 @@ class OverviewScreen(Screen):
         self.sort_column, self.sort_descending = load_overview_sort(self.app.settings_path)
         table = self.query_one("#overview-table", DataTable)
         table.add_column(tr("overview.platform"), key="platform")
-        for column in ("files", "games", "marked", "problematic", "last_scan", "state"):
+        for column in (*self._NUMBERS, "last_scan", "state"):
             table.add_column(tr(f"overview.{column}"), key=column)
         self._show_sort_arrow()
         self.query_one("#overview-cancel", Button).display = False
@@ -690,7 +690,7 @@ class OverviewScreen(Screen):
         rows = [row for row in self.rows.values() if row.has_games or not hide]
         return sort_rows(rows, self.sort_column, self.sort_descending)
 
-    _SORTABLE = ("platform", "files", "games", "marked", "problematic")
+    _SORTABLE = ("platform", "files", "games", "marked", "problematic", "info", "gamelist_problems")
 
     def on_data_table_header_selected(self, event: DataTable.HeaderSelected) -> None:
         """A click on a column heading sorts by it; a second click turns the order round."""
@@ -729,10 +729,9 @@ class OverviewScreen(Screen):
         # A line above the total, as wide as each column's widest entry.
         names = [tr("overview.total")] + [row.folder + (" *" if row.has_own_config else "") for row in visible]
         widths = [max(cell_len(text) for text in names) + 2]
-        for index in range(6):
-            texts = [str(self._cells(row)[index]) for row in visible] + [tr(f"overview.{column}") for column in
-                                                                          ("files", "games", "marked", "problematic",
-                                                                           "last_scan", "state")[index:index + 1]]
+        columns = (*self._NUMBERS, "last_scan", "state")
+        for index, column in enumerate(columns):
+            texts = [str(self._cells(row)[index]) for row in visible] + [tr(f"overview.{column}")]
             widths.append(max(cell_len(text) for text in texts) + 2)
         line = "-" if getattr(self.app, "ascii", False) else "─"
         table.add_row(*(Text(line * width, style="#888888") for width in widths), key=self.LINE)
@@ -755,7 +754,7 @@ class OverviewScreen(Screen):
         box = self.query_one("#overview-hide", Checkbox)
         box.value = not box.value
 
-    _NUMBERS = ("files", "games", "marked", "problematic")
+    _NUMBERS = ("files", "games", "marked", "problematic", "info", "gamelist_problems")
 
     def _cells(self, row) -> list[Text]:
         # "changed" in yellow: the platform should be scanned again.
@@ -1506,11 +1505,13 @@ class WorkbenchApp(App):
             self._game_numbers[id(result)] = game_index
             for file_index, entry in enumerate(result.keep + result.marked):
                 self._file_keys[id(entry)] = f"g{game_index}f{file_index}"
-        from workbench_db import platform_label
+        from workbench_db import gamelist_summary, platform_label
 
         green = _green(self)
+        summary = gamelist_summary(self.directory)
         self.query_one("#info", Static).update(
-            Text.assemble((tr("window.platform"), f"bold {green}"), " ", (platform_label(self.directory), "bold")))
+            Text.assemble((tr("window.platform"), f"bold {green}"), " ", (platform_label(self.directory), "bold"),
+                          *((("    " + summary, "#888888"),) if summary else ())))
         self.show_games()
 
     # The list ---------------------------------------------------------------------------------

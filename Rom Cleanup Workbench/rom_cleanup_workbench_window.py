@@ -501,7 +501,8 @@ class KeysPanel:
 class OverviewPanel:
     """The collection: one row per platform folder, in place of the file list. The start page."""
 
-    _COLUMNS = ("files", "games", "marked", "problematic", "last_scan", "state")
+    _NUMERIC = ("files", "games", "marked", "problematic", "info", "gamelist_problems")
+    _COLUMNS = (*_NUMERIC, "last_scan", "state")
 
     def __init__(self, window: "ReviewWindow", rows):
         self.window = window
@@ -533,7 +534,7 @@ class OverviewPanel:
         self.tree.heading("#0", text=tr("overview.platform"), anchor="w", command=lambda: self.sort_by("platform"))
         self.tree.column("#0", width=200, stretch=True)
         for column in self._COLUMNS:
-            numeric = column in ("files", "games", "marked", "problematic")
+            numeric = column in self._NUMERIC
             self.tree.heading(column, text=tr(f"overview.{column}"), anchor="e" if numeric else "w")
             if numeric:  # a click on the heading sorts by this column, a second click the other way round
                 self.tree.heading(column, command=lambda column=column: self.sort_by(column))
@@ -576,7 +577,7 @@ class OverviewPanel:
     def _show_sort_arrow(self) -> None:
         arrow = " ▼" if self.sort_descending else " ▲"
         self.tree.heading("#0", text=tr("overview.platform") + (arrow if self.sort_column == "platform" else ""))
-        for column in ("files", "games", "marked", "problematic"):
+        for column in self._NUMERIC:
             self.tree.heading(column, text=tr(f"overview.{column}") + (arrow if self.sort_column == column else ""))
 
     @staticmethod
@@ -616,12 +617,11 @@ class OverviewPanel:
 
     @staticmethod
     def _values(row) -> tuple:
-        return (*(_count(value) for value in (row.files, row.games, row.marked, row.problematic)),
+        return (*(_count(getattr(row, name)) for name in OverviewPanel._NUMERIC),
                 _when(row.last_scan), tr(f"overview.state.{row.state}"))
 
     def _update_total(self) -> list[int]:
-        totals = [sum(getattr(row, name) or 0 for row in self.visible())
-                  for name in ("files", "games", "marked", "problematic")]
+        totals = [sum(getattr(row, name) or 0 for row in self.visible()) for name in self._NUMERIC]
         self.tree.item(self._TOTAL, values=(*(_count(value) for value in totals), "", ""))
         return totals
 
@@ -640,7 +640,7 @@ class OverviewPanel:
         texts = {column: [tr(f"overview.{column}")] for column in self._COLUMNS}
         texts["#0"] = [tr("overview.platform"), tr("overview.total")] + [row.folder for row in rows]
         texts["files"].append(_count(999999))
-        for column in ("games", "marked", "problematic"):
+        for column in ("games", "marked", "problematic", "info", "gamelist_problems"):
             texts[column].append(_count(99999))
         texts["last_scan"].append("2026-11-24 13:15")
         texts["state"] += [tr(f"overview.state.{state}") for state in ("not_scanned", "current", "changed",
@@ -759,6 +759,9 @@ class ReviewWindow:
         """The folder in the title row; below it "Platform: nes" while a platform's list is shown."""
         self.folder.set(tr("window.folder", directory=self.directory) if self.directory else tr("window.no_folder"))
         self.info.set(platform or "")
+        from workbench_db import gamelist_summary
+
+        self.gamelist_info.set(gamelist_summary(self.directory) if platform else "")
         if platform:
             self.platform_label.pack(side="left", padx=(0, 6), before=self.info_label)
         else:
@@ -1232,6 +1235,10 @@ class ReviewWindow:
                                         font=self.bold_font)
         self.info_label = ttk.Label(platform_part, textvariable=self.info, font=self.bold_font)
         self.info_label.pack(side="left")
+        # What the platform's gamelist.xml brought, in gray behind the name.
+        self.gamelist_info = tk.StringVar(self.root)
+        ttk.Label(platform_part, textvariable=self.gamelist_info, foreground=_LINE_COLOR).pack(side="left",
+                                                                                              padx=(16, 0))
         self._show_short_keys()
 
         # The status has a row of its own, so that it does not push out the buttons.

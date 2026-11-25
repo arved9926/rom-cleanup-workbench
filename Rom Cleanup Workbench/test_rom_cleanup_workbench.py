@@ -1288,7 +1288,7 @@ class CollectionDatabaseTests(CollectionDatabaseBase):
         self.assertEqual(collection.path, folder / "rom_cleanup_workbench.sqlite")
         if os.name == "nt":
             self.assertTrue(folder.stat().st_file_attributes & 0x2)
-        self.assertEqual(workbench_db.SCHEMA_VERSION, 2)
+        self.assertEqual(workbench_db.SCHEMA_VERSION, 3)
 
     def test_platforms_are_the_visible_subfolders(self):
         (self.roms / ".git").mkdir()
@@ -1823,7 +1823,9 @@ class OverviewWindowTests(OverviewWindowBase):
             collection.set_no_games("nes", True)
             self.assertTrue(collection.is_no_games("nes"))
             version = collection._db.execute("SELECT version FROM schema_info").fetchone()[0]
-        self.assertEqual(version, 2)
+            tables = {name for (name,) in collection._db.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
+        self.assertEqual(version, 3)  # and the tables of version 3 are there as well
+        self.assertTrue({"game_info", "media", "gamelist_files"} <= tables)
 
     def test_a_deleted_folder_is_dropped_from_the_database(self):
         import shutil
@@ -2251,7 +2253,7 @@ class OverviewTerminalTests(OverviewTerminalBase):
             app.screen.set_row(workbench_db.OverviewRow("nes", "current", 2, 1, 1, 0, "2026-11-24T20:15:00"))
             await pilot.pause()
             rows = self.overview_rows(app)
-            self.assertEqual(rows["nes"][1:], ["2", "1", "1", "0", "2026-11-24 20:15", "current"])
+            self.assertEqual(rows["nes"][1:], ["2", "1", "1", "0", "–", "–", "2026-11-24 20:15", "current"])
             self.assertEqual(rows["*total*"][1:5], ["2", "1", "1", "0"])
 
     async def test_the_last_collection_opens_at_the_start(self):
@@ -7288,3 +7290,221 @@ class TerminalVersionTests(unittest.IsolatedAsyncioTestCase):
             await pilot.pause()
             self.assertEqual(app.query_one("#filter").value, "x")
         self.assertEqual(len(list(app.directory.iterdir())), 4)
+
+
+class GamelistTests(OverviewWindowBase):
+    """The gamelist.xml of a platform: checked, then taken over into the database (input, not master)."""
+
+    GAMELIST = """<?xml version="1.0" encoding="utf-8"?>
+<gameList>
+  <provider><system>nes</system><software>ARRM</software><web>https://example.org</web></provider>
+  <game id="39870">
+    <path>./Title (USA).nes</path>
+    <name>Title</name>
+    <desc>A game.</desc>
+    <rating>0.3</rating>
+    <releasedate>19840101T000000</releasedate>
+    <players>1-2</players>
+    <favorite>true</favorite>
+    <playcount>4</playcount>
+    <genreid>1538</genreid>
+    <temporary>Clone Of : x</temporary>
+    <wheel>./downloaded_images/Title (USA)-wheel.png</wheel>
+    <logo>./downloaded_images/Title (USA)-wheel.png</logo>
+    <image>./downloaded_images/Title (USA)-image.png</image>
+    <video>./downloaded_images/Title (USA)-video.mp4</video>
+  </game>
+  <game><path>./Gone (USA).nes</path><name>Gone</name></game>
+  <game><path>./Hacks/Hack.nes</path><name>Hack</name></game>
+  <game><name>No path</name></game>
+  <game><path>/home/pi/RetroPie/roms/nes/title (japan).NES</path><name>Old</name></game>
+  <game><path>./Title (Japan).nes</path><name>Japan</name>
+    <image>/userdata/roms/nes/downloaded_images/japan.png</image></game>
+</gameList>
+"""
+
+    def setUp(self):
+        super().setUp()
+        self.fill()
+        (self.roms / "nes" / "downloaded_images").mkdir()
+        for name in ("Title (USA)-wheel.png", "Title (USA)-image.png", "japan.png"):
+            self.write("nes", "downloaded_images/" + name, b"png")
+        (self.roms / "nes" / "Hacks").mkdir()
+        self.write("nes", "Hacks/Hack.nes", b"hack")
+        self.write_gamelist(self.GAMELIST)
+
+    def write_gamelist(self, text, nudge=0):
+        path = self.roms / "nes" / "gamelist.xml"
+        path.write_text(text, encoding="utf-8")
+        stat = path.stat()
+        os.utime(path, ns=(stat.st_atime_ns, stat.st_mtime_ns + nudge))
+
+    def read(self):
+        import workbench_gamelist
+
+        directory = self.roms / "nes"
+        names = [path.name for path in rf.rom_files(directory)]
+        return workbench_gamelist.read_gamelist(directory / "gamelist.xml", directory, names)
+
+    def info(self):
+        import workbench_db
+
+        with workbench_db.Collection(self.roms) as collection:
+            return collection.game_info("nes"), collection.gamelist_record("nes")
+
+    def test_the_gamelist_is_not_a_rom(self):
+        self.assertNotIn("gamelist.xml", [path.name for path in rf.rom_files(self.roms / "nes")])
+
+    def test_fields_media_and_everything_else_are_read(self):
+        gamelist = self.read()
+        entry = next(item for item in gamelist.entries if item.rom == "Title (USA).nes")
+        self.assertEqual(entry.xml_id, "39870")
+        self.assertEqual(entry.values["rating"], 0.3)  # as it is, no rounding
+        self.assertEqual(entry.values["release_date"], "1984-01-01")
+        self.assertEqual(entry.values["players"], "1-2")
+        self.assertEqual((entry.values["favorite"], entry.values["playcount"]), (1, 4))
+        self.assertEqual([tag for tag, _text, _attrib in entry.extra], ["genreid", "temporary"])
+        # One file in two categories; categories stay as they are.
+        self.assertIn(("wheel", "downloaded_images/Title (USA)-wheel.png"), entry.media)
+        self.assertIn(("logo", "downloaded_images/Title (USA)-wheel.png"), entry.media)
+        self.assertEqual(gamelist.provider, [["system", "nes"], ["software", "ARRM"], ["web", "https://example.org"]])
+
+    def test_what_does_not_check_out_is_reported_and_not_taken_over(self):
+        gamelist = self.read()
+        problems = {(item.kind, item.path) for item in gamelist.problems}
+        self.assertIn(("media_missing", "./downloaded_images/Title (USA)-video.mp4"), problems)
+        self.assertIn(("rom_missing", "./Gone (USA).nes"), problems)
+        self.assertIn(("rom_not_in_list", "./Hacks/Hack.nes"), problems)
+        self.assertIn(("no_path", "No path"), problems)
+        self.assertNotIn("Gone (USA).nes", [entry.rom for entry in gamelist.entries])
+
+    def test_paths_of_another_machine_and_another_spelling(self):
+        gamelist = self.read()
+        notes = {(item.kind, item.path) for item in gamelist.notes}
+        # The old path names the Japanese file in other case: mapped (and the spelling differs).
+        self.assertTrue(any(kind in ("mapped", "wrong_case") and "title (japan)" in path for kind, path in notes))
+        self.assertIn(("mapped", "/userdata/roms/nes/downloaded_images/japan.png"), notes)
+        japan = [entry for entry in gamelist.entries if entry.rom == "Title (Japan).nes"]
+        self.assertEqual(len(japan), 1)  # two entries for one ROM: the last one counts
+        self.assertEqual(japan[0].values["name"], "Japan")
+        self.assertIn(("duplicate", "Title (Japan).nes"), {(item.kind, item.path) for item in gamelist.problems})
+        self.assertEqual(japan[0].media, [("image", "downloaded_images/japan.png")])
+
+    def test_broken_xml_takes_over_nothing(self):
+        self.write_gamelist("<gameList><game><path>./x.nes</path>\n<desc>Tom & Jerry</desc></game></gameList>")
+        gamelist = self.read()
+        self.assertTrue(gamelist.unreadable)
+        self.assertEqual([item.kind for item in gamelist.problems], ["xml_error"])
+        self.assertEqual(gamelist.problems[0].line, 2)
+
+    def test_a_scan_takes_it_over_and_the_overview_counts_it(self):
+        import workbench_db
+
+        workbench_db.scan_all(self.roms)
+        info, record = self.info()
+        self.assertEqual(sorted(info), ["Title (Japan).nes", "Title (USA).nes"])
+        usa = info["Title (USA).nes"]
+        self.assertEqual((usa["name"], usa["rating"], usa["favorite"], usa["xml_id"]), ("Title", 0.3, 1, "39870"))
+        self.assertEqual(usa["media"]["logo"], usa["media"]["wheel"])
+        self.assertEqual(record["entries"], 2)
+        rows = {row.folder: row for row in workbench_db.overview(self.roms, self.config)}
+        self.assertEqual((rows["nes"].info, rows["nes"].state), (2, "current"))
+        self.assertEqual(rows["nes"].gamelist_problems, len(record["problems"]))
+        self.assertEqual((rows["snes"].info, rows["snes"].gamelist_problems), (0, None))
+        self.assertIn("2 taken over", workbench_db.gamelist_summary(self.roms / "nes"))
+
+    def test_it_is_read_again_only_when_it_changed(self):
+        import workbench_db
+
+        workbench_db.scan_all(self.roms)
+        with workbench_db.Collection(self.roms) as collection:
+            names = [path.name for path in rf.rom_files(self.roms / "nes")]
+            self.assertFalse(workbench_db.import_gamelist(collection, self.roms / "nes", names))
+            self.write_gamelist(self.GAMELIST, nudge=5_000_000_000)  # same content, other time
+            self.assertEqual(collection.state(self.roms / "nes"), "changed")
+            self.assertFalse(workbench_db.import_gamelist(collection, self.roms / "nes", names))
+            self.assertEqual(collection.state(self.roms / "nes"), "current")
+            self.write_gamelist(self.GAMELIST.replace("<name>Title</name>", "<name>New</name>"), 9_000_000_000)
+            self.assertTrue(workbench_db.import_gamelist(collection, self.roms / "nes", names))
+            self.assertEqual(collection.game_info("nes")["Title (USA).nes"]["name"], "New")
+
+    def test_a_deleted_gamelist_leaves_the_information(self):
+        import workbench_db
+
+        workbench_db.scan_all(self.roms)
+        (self.roms / "nes" / "gamelist.xml").unlink()
+        workbench_db.scan_all(self.roms)
+        info, _record = self.info()
+        self.assertEqual(len(info), 2)
+        rows = {row.folder: row for row in workbench_db.overview(self.roms, self.config)}
+        self.assertEqual(rows["nes"].state, "current")
+
+    def test_an_entry_the_gamelist_drops_stays(self):
+        import workbench_db
+
+        workbench_db.scan_all(self.roms)
+        self.write_gamelist(self.GAMELIST.replace("<path>./Title (Japan).nes</path>", "<path>./x.nes</path>"),
+                            9_000_000_000)
+        workbench_db.scan_all(self.roms)
+        self.assertIn("Title (Japan).nes", self.info()[0])
+
+    def test_the_folder_counts_for_roms_and_media(self):
+        import workbench_db
+
+        workbench_db.scan_all(self.roms)
+        (self.roms / "nes" / "Title (Japan).nes").unlink()
+        (self.roms / "nes" / "downloaded_images" / "Title (USA)-image.png").unlink()
+        workbench_db.scan_all(self.roms)
+        info, _record = self.info()
+        self.assertEqual(sorted(info), ["Title (USA).nes"])
+        self.assertNotIn("image", info["Title (USA).nes"]["media"])
+
+    def test_deleted_and_renamed_files_take_their_information_along(self):
+        import workbench_db
+
+        workbench_db.scan_all(self.roms)
+        with workbench_db.Collection(self.roms) as collection:
+            collection.remove_files("nes", ["Title (Japan).nes"])
+            collection.rename_file("nes", "Title (USA).nes", "Renamed (USA).nes")
+            info = collection.game_info("nes")
+        self.assertEqual(sorted(info), ["Renamed (USA).nes"])
+        self.assertIn("wheel", info["Renamed (USA).nes"]["media"])
+
+    def test_fields_edited_by_hand_stay(self):
+        import workbench_db
+
+        workbench_db.scan_all(self.roms)
+        with workbench_db.Collection(self.roms) as collection:
+            collection._db.execute("UPDATE game_info SET name = 'Mine', edited_json = '[\"name\"]' "
+                                   "WHERE rom = 'Title (USA).nes'")
+            collection._db.commit()
+        self.write_gamelist(self.GAMELIST.replace("<desc>A game.</desc>", "<desc>Other.</desc>"), 9_000_000_000)
+        workbench_db.scan_all(self.roms)
+        usa = self.info()[0]["Title (USA).nes"]
+        self.assertEqual((usa["name"], usa["description"]), ("Mine", "Other."))
+
+    def test_broken_xml_keeps_what_was_known(self):
+        import workbench_db
+
+        workbench_db.scan_all(self.roms)
+        self.write_gamelist("<gameList><game>", 9_000_000_000)
+        workbench_db.scan_all(self.roms)
+        info, record = self.info()
+        self.assertEqual(len(info), 2)
+        self.assertIsNone(record["entries"])
+        self.assertIn("cannot be read", workbench_db.gamelist_summary(self.roms / "nes"))
+
+    def test_the_window_shows_the_columns_and_the_platform_line(self):
+        import workbench_db
+
+        workbench_db.scan_all(self.roms)
+        window = self.make_window(self.roms)
+        window.open_folder(self.roms)
+        self.wait(window)
+        panel = window.overview_panel
+        self.assertIn("info", panel.tree["columns"])
+        self.assertEqual(panel.tree.set("nes", "info"), "2")
+        window.open_platform("nes")
+        self.wait(window)
+        self.assertIn("2 taken over", window.gamelist_info.get())
+

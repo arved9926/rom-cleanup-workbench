@@ -97,7 +97,7 @@ def save_last_collection(path: Path, folder: Path) -> None:
     _save_settings(path, **{_COLLECTION_KEY: str(folder)})
 
 
-SORT_COLUMNS = ("platform", "files", "games", "marked", "problematic")
+SORT_COLUMNS = ("platform", "files", "games", "marked", "problematic", "info", "gamelist_problems")
 
 
 def load_overview_sort(path: Path) -> tuple[str, bool]:
