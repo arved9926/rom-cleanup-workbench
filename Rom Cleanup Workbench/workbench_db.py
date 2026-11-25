@@ -172,6 +172,19 @@ class Collection:
             folders.append(child)
         return sorted(folders, key=lambda path: path.name.casefold())
 
+    def forget_missing(self) -> list[str]:
+        """The folder is what counts: drops every platform whose folder is gone, with its files, its
+        changes by hand, its confirmed saves, its own settings and its "no games" mark. Nothing is
+        dropped while the roms folder itself cannot be reached (a share that is offline, say)."""
+        if not self.root.is_dir():
+            return []
+        gone = [folder for (folder,) in self._db.execute("SELECT folder FROM platforms")
+                if not (self.root / folder).is_dir()]
+        if gone:
+            with self._db:  # files, zip members, saves and changes by hand go with it (ON DELETE CASCADE)
+                self._db.executemany("DELETE FROM platforms WHERE folder = ?", [(folder,) for folder in gone])
+        return gone
+
     def _platform_id(self, folder: str, create: bool = True) -> int | None:
         row = self._db.execute("SELECT id FROM platforms WHERE folder = ?", (folder,)).fetchone()
         if row:
@@ -555,8 +568,10 @@ class OverviewRow:
 
 
 def overview(root: Path, config: Config) -> list[OverviewRow]:
-    """The platforms of a collection; numbers computed with other settings are computed again (no scan)."""
+    """The platforms of a collection; numbers computed with other settings are computed again (no scan).
+    What the database knows about folders that are gone is dropped first."""
     with Collection(root) as collection:
+        collection.forget_missing()
         return [_overview_row(collection, directory, config) for directory in collection.platform_folders()]
 
 

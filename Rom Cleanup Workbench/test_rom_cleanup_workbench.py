@@ -1825,6 +1825,40 @@ class OverviewWindowTests(OverviewWindowBase):
             version = collection._db.execute("SELECT version FROM schema_info").fetchone()[0]
         self.assertEqual(version, 2)
 
+    def test_a_deleted_folder_is_dropped_from_the_database(self):
+        import shutil
+
+        import workbench_db
+
+        self.fill()
+        workbench_db.scan_all(self.roms)
+        with workbench_db.Collection(self.roms) as collection:
+            collection.set_own_config("nes", {"delete_tags": ["Beta"]})
+        shutil.rmtree(self.roms / "nes")
+        rows = workbench_db.overview(self.roms, self.config)
+        self.assertEqual([row.folder for row in rows], ["snes"])
+        with workbench_db.Collection(self.roms) as collection:
+            folders = [folder for (folder,) in collection._db.execute("SELECT folder FROM platforms")]
+            files = collection._db.execute("SELECT COUNT(*) FROM files f JOIN platforms p ON p.id = f.platform_id "
+                                           "WHERE p.folder = 'nes'").fetchone()[0]
+            orphans = collection._db.execute("SELECT COUNT(*) FROM files WHERE platform_id NOT IN "
+                                             "(SELECT id FROM platforms)").fetchone()[0]
+        self.assertEqual(folders, ["snes"])
+        self.assertEqual((files, orphans), (0, 0))
+        (self.roms / "nes").mkdir()  # a new folder of the same name starts from scratch
+        row = next(row for row in workbench_db.overview(self.roms, self.config) if row.folder == "nes")
+        self.assertEqual((row.state, row.has_own_config), ("not_scanned", False))
+
+    def test_nothing_is_dropped_while_the_roms_folder_is_out_of_reach(self):
+        import workbench_db
+
+        self.fill()
+        workbench_db.scan_all(self.roms)
+        with workbench_db.Collection(self.roms) as collection:
+            with mock.patch.object(Path, "is_dir", return_value=False):
+                self.assertEqual(collection.forget_missing(), [])
+            self.assertEqual(len(collection._db.execute("SELECT folder FROM platforms").fetchall()), 2)
+
     def test_a_folder_on_its_own_opens_again_at_the_next_start(self):
         self.fill()
         window = self.make_window(None)
