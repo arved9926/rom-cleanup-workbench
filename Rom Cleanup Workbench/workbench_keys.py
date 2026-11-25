@@ -49,7 +49,7 @@ def key_sections(context: str, window: bool, collection: bool, ascii: bool = Fal
         sections = [
             ("keys.section.platforms", [(up_down, "keys.select_platform"), ("Enter", "keys.open_platform"),
                                         ("r  F5", "keys.scan"), ("a", "keys.scan_all")]),
-            ("keys.section.switches", [("d", "keys.deep_scan"), ("h", "keys.hide_empty")]),
+            ("keys.section.switches", [("d", "keys.deep_scan"), ("h", "keys.hide_empty"), ("n", "keys.no_games")]),
             ("keys.section.program", [("f", "keys.other_roms_folder"), *zoom, ("c", "keys.credits"),
                                       (f"q  {esc}", "keys.close"), ("F1  ?", "keys.this_overview")]),
         ]
@@ -74,7 +74,8 @@ def key_notes(context: str) -> list[str]:
     """Explanations below the keys, one point each: in the overview what its states and switches mean."""
     if context == OVERVIEW:
         return [tr("keys.note.open"), tr("keys.note.state", changed=tr("overview.state.changed")),
-                tr("keys.note.scan"), tr("keys.note.scan_all")]
+                tr("keys.note.scan"), tr("keys.note.scan_all"),
+                tr("keys.note.no_games", no_games=tr("overview.state.no_games"))]
     return []
 
 

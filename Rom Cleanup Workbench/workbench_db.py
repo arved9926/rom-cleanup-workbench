@@ -35,12 +35,13 @@ from rom_cleanup_workbench import (
 
 # The state of a platform in the overview.
 NOT_SCANNED = "not_scanned"
+NO_GAMES = "no_games"  # set by hand: the folder holds no games; never scanned, never opened
 CURRENT = "current"
 CHANGED = "changed"
 
 DATABASE_FOLDER = ".rom_cleanup_workbench"
 DATABASE_NAME = "rom_cleanup_workbench.sqlite"
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2  # 2: platforms.no_games
 _HIDDEN_ATTRIBUTE = 0x2  # FILE_ATTRIBUTE_HIDDEN
 
 _SCHEMA = """
@@ -54,7 +55,8 @@ CREATE TABLE IF NOT EXISTS platforms (
     marked INTEGER,
     problematic INTEGER,
     summary_key TEXT,
-    config_json TEXT
+    config_json TEXT,
+    no_games INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS files (
     id INTEGER PRIMARY KEY,
@@ -139,6 +141,10 @@ class Collection:
         if version > SCHEMA_VERSION:
             self.close()
             raise ValueError(f"database version {version} is newer than this program ({SCHEMA_VERSION})")
+        if version < 2:  # an older database gets the new column; nothing else changes
+            with self._db:
+                self._db.execute("ALTER TABLE platforms ADD COLUMN no_games INTEGER NOT NULL DEFAULT 0")
+                self._db.execute("UPDATE schema_info SET version = 2")
 
     def close(self) -> None:
         self._db.close()
@@ -236,8 +242,10 @@ class Collection:
             "SELECT name, size, mtime_ns FROM files WHERE platform_id = ?", (platform_id,))}
 
     def state(self, directory: Path, stamps: dict | None = None) -> str:
-        """not_scanned, current or changed: compares names, sizes and change times only (fast)."""
+        """no_games, not_scanned, current or changed: compares names, sizes and change times only (fast)."""
         directory = Path(directory)
+        if self.is_no_games(directory.name):
+            return NO_GAMES
         if self.platform(directory.name).last_scan is None:
             return NOT_SCANNED
         if stamps is None:
@@ -326,6 +334,21 @@ class Collection:
     def own_config(self, folder: str) -> dict | None:
         row = self._db.execute("SELECT config_json FROM platforms WHERE folder = ?", (folder,)).fetchone()
         return json.loads(row[0]) if row and row[0] is not None else None
+
+    def is_no_games(self, folder: str) -> bool:
+        row = self._db.execute("SELECT no_games FROM platforms WHERE folder = ?", (folder,)).fetchone()
+        return bool(row and row[0])
+
+    def set_no_games(self, folder: str, no_games: bool) -> None:
+        """Marks a folder as holding no games; what the database knew about it is dropped."""
+        platform_id = self._platform_id(folder)
+        with self._db:
+            if no_games:
+                for table in ("files", "manual_moves", "confirmed_saves"):
+                    self._db.execute(f"DELETE FROM {table} WHERE platform_id = ?", (platform_id,))
+                self._db.execute("UPDATE platforms SET last_scan = NULL, files = NULL, games = NULL, marked = NULL, "
+                                 "problematic = NULL, summary_key = NULL WHERE id = ?", (platform_id,))
+            self._db.execute("UPDATE platforms SET no_games = ? WHERE id = ?", (int(no_games), platform_id))
 
     def set_own_config(self, folder: str, values: dict | None) -> None:
         """Stores the platform's own configuration; None goes back to the default configuration."""
@@ -418,9 +441,15 @@ def open_platform(root: Path, directory: Path, config: Config, progress=None,
                   rescan: bool = False, full: bool = False) -> list[GroupResult]:
     """Decides a platform from the database; scans it first if it was never scanned or rescan is set.
 
-    A rescan is quick (only new and changed files) unless full is set.
+    A rescan is quick (only new and changed files) unless full is set. A folder marked "no games"
+    is neither scanned nor opened (ValueError).
     """
     name = Path(directory).name
+    with Collection(root) as collection:
+        if collection.is_no_games(name):
+            from translations import tr
+
+            raise ValueError(tr("overview.no_games_locked", platform=name))
     with Collection(root) as collection:
         facts = None if rescan else collection.load_facts(name)
         if facts is None:
@@ -534,6 +563,8 @@ def overview(root: Path, config: Config) -> list[OverviewRow]:
 def _overview_row(collection: "Collection", directory: Path, config: Config) -> OverviewRow:
     """One platform's row; numbers computed with other settings are computed again (no scan)."""
     name = directory.name
+    if collection.is_no_games(name):
+        return OverviewRow(name, NO_GAMES, has_own_config=collection.own_config(name) is not None, has_games=False)
     stamps = _stamps(directory)
     state = collection.state(directory, stamps)
     row = collection.platform(name)
@@ -567,7 +598,8 @@ def scan_all(root: Path, full: bool = False, progress=None, config: Config | Non
     """
     finished = []
     with Collection(root) as collection:
-        folders = collection.platform_folders()
+        folders = [directory for directory in collection.platform_folders()
+                   if not collection.is_no_games(directory.name)]
         for number, directory in enumerate(folders, 1):
             def report(done, total, directory=directory, number=number):
                 if progress:
@@ -699,3 +731,10 @@ def sort_rows(rows: list, column: str, descending: bool) -> list:
     unknown = [row for row in rows if getattr(row, column) is None]
     known.sort(key=lambda row: (getattr(row, column), row.folder.casefold()), reverse=descending)
     return known + sorted(unknown, key=lambda row: row.folder.casefold())
+
+
+def toggle_no_games(root: Path, folder: str, config: Config) -> OverviewRow:
+    """Key n in the overview: switches "no games" for a folder; returns its new row."""
+    with Collection(root) as collection:
+        collection.set_no_games(folder, not collection.is_no_games(folder))
+        return _overview_row(collection, Path(root) / folder, config)

@@ -640,6 +640,7 @@ class OverviewScreen(Screen):
         Binding("a,A", "scan_all", show=False),
         Binding("d,D", "toggle_full", show=False),
         Binding("h,H", "toggle_hide_empty", show=False),
+        Binding("n,N", "toggle_no_games", show=False),
         Binding("f,F", "folder", show=False),
     ]
     TOTAL = "*total*"
@@ -805,8 +806,22 @@ class OverviewScreen(Screen):
 
     def action_open(self, rescan: bool = False) -> None:
         platform = self.selected()
-        if platform is not None and not self.scanning:
-            self.dismiss((platform, rescan, self._full() if rescan else False))
+        if platform is None or self.scanning:
+            return
+        if self.rows[platform].state == "no_games":  # never scanned, never opened
+            self.show_status(tr("overview.no_games_locked", platform=platform))
+            return
+        self.dismiss((platform, rescan, self._full() if rescan else False))
+
+    def action_toggle_no_games(self) -> None:
+        """n: the highlighted folder holds no games (or does again)."""
+        from workbench_db import toggle_no_games
+
+        platform = self.selected()
+        if platform is None or self.scanning:
+            return
+        self.rows[platform] = toggle_no_games(self.root_folder, platform, self.app.config_loader())
+        self._fill()
 
     def action_scan(self) -> None:
         self.action_open(rescan=True)

@@ -1288,7 +1288,7 @@ class CollectionDatabaseTests(CollectionDatabaseBase):
         self.assertEqual(collection.path, folder / "rom_cleanup_workbench.sqlite")
         if os.name == "nt":
             self.assertTrue(folder.stat().st_file_attributes & 0x2)
-        self.assertEqual(workbench_db.SCHEMA_VERSION, 1)
+        self.assertEqual(workbench_db.SCHEMA_VERSION, 2)
 
     def test_platforms_are_the_visible_subfolders(self):
         (self.roms / ".git").mkdir()
@@ -1623,7 +1623,7 @@ class OverviewWindowTests(OverviewWindowBase):
         panel = window.keys_panel
         self.assertEqual(panel.context, "overview")
         self.assertIn(("d", "Deep Scan on/off"), panel.key_labels)
-        self.assertEqual(len(panel.notes), 4)  # the overview's explanation lives here now, one point each
+        self.assertEqual(len(panel.notes), 5)  # the overview's explanation lives here now, one point each
         self.assertEqual(panel.notes[1].split(":")[0], "State “changed”")
         self.assertFalse(window._overview_keys_work())  # nothing acts behind the keys
         window._on_escape()
@@ -1763,6 +1763,67 @@ class OverviewWindowTests(OverviewWindowBase):
         self.assertEqual(tree.item("nes", "values")[-1], "changed")
         self.assertEqual(tree.item("nes", "tags"), ("changed",))
         self.assertEqual(str(tree.tag_configure("changed", "foreground")), "#e3b341")
+
+    def test_n_marks_a_folder_without_games(self):
+        import workbench_db
+
+        self.fill()
+        window = self.make_window(self.roms)
+        window.open_folder(self.roms)
+        window.overview_panel.open(rescan=True)  # nes is scanned
+        self.wait(window)
+        window.show_overview()
+        panel = window.overview_panel
+        panel.tree.selection_set("nes")
+        window._no_games_key()
+        panel = window.overview_panel
+        self.assertEqual(panel.tree.item("nes", "values")[-1], "no games")
+        self.assertEqual(panel.tree.item("nes", "values")[0], "–")  # what the database knew is gone
+        with workbench_db.Collection(self.roms) as collection:
+            self.assertIsNone(collection.load_facts("nes"))
+        with mock.patch.object(window, "open_platform") as open_platform:
+            panel.open()
+            panel.open(rescan=True)
+        open_platform.assert_not_called()
+        self.assertIn("no games", window.status.get())
+        panel.toggle_hide_empty()  # hidden like an empty folder
+        self.assertFalse(panel.tree.exists("nes"))
+        panel.toggle_hide_empty()
+        panel.tree.selection_set("nes")
+        window._no_games_key()  # and back
+        self.assertEqual(window.overview_panel.tree.item("nes", "values")[-1], "not scanned")
+
+    def test_scan_all_and_opening_skip_a_folder_without_games(self):
+        import workbench_db
+
+        self.fill()
+        with workbench_db.Collection(self.roms) as collection:
+            collection.set_no_games("nes", True)
+        finished = workbench_db.scan_all(self.roms)
+        self.assertEqual([name for name, _files, _read in finished], ["snes"])
+        with self.assertRaises(ValueError):
+            workbench_db.open_platform(self.roms, self.roms / "nes", self.config)
+
+    def test_an_older_database_gets_the_new_column(self):
+        import sqlite3
+
+        import workbench_db
+
+        folder = self.roms / ".rom_cleanup_workbench"
+        folder.mkdir(parents=True)
+        db = sqlite3.connect(folder / "rom_cleanup_workbench.sqlite")
+        db.executescript(workbench_db._SCHEMA.replace(",\n    no_games INTEGER NOT NULL DEFAULT 0", ""))
+        db.execute("INSERT INTO schema_info (version) VALUES (1)")
+        db.execute("INSERT INTO platforms (folder, last_scan) VALUES ('nes', '2026-11-24T10:00:00')")
+        db.commit()
+        db.close()
+        with workbench_db.Collection(self.roms) as collection:
+            self.assertFalse(collection.is_no_games("nes"))
+            self.assertEqual(collection.platform("nes").last_scan, "2026-11-24T10:00:00")
+            collection.set_no_games("nes", True)
+            self.assertTrue(collection.is_no_games("nes"))
+            version = collection._db.execute("SELECT version FROM schema_info").fetchone()[0]
+        self.assertEqual(version, 2)
 
     def test_escape_closes_a_folder_on_its_own(self):
         self.fill()
@@ -2093,6 +2154,18 @@ class OverviewTerminalTests(OverviewTerminalBase):
             self.assertTrue(str(screen.query_one("#overview-table").columns["platform"].label).endswith(" ▼"))
             self.assertEqual(self.tui.load_overview_sort(self.settings), ("platform", True))
             self.assertTrue(self.overview_rows(app)["*line*"][0].startswith("─"))
+
+    async def test_n_marks_a_folder_without_games(self):
+        app = self.app(self.roms)
+        async with app.run_test(size=(140, 30)) as pilot:
+            await self.settle(app, pilot)
+            await pilot.press("n")  # nes, the first row
+            await pilot.pause()
+            self.assertEqual(self.overview_rows(app)["nes"][-1], "no games")
+            await pilot.press("enter")
+            await pilot.pause()
+            self.assertTrue(app.overview_open())  # not opened
+            self.assertIn("no games", str(app.screen.query_one("#overview-status").render()))
 
     async def test_a_scans_all_platforms(self):
         app = self.app(self.roms)

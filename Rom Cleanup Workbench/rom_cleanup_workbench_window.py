@@ -643,7 +643,8 @@ class OverviewPanel:
         for column in ("games", "marked", "problematic"):
             texts[column].append(_count(99999))
         texts["last_scan"].append("2026-11-24 13:15")
-        texts["state"] += [tr(f"overview.state.{state}") for state in ("not_scanned", "current", "changed")]
+        texts["state"] += [tr(f"overview.state.{state}") for state in ("not_scanned", "current", "changed",
+                                                                        "no_games")]
         for column, values in texts.items():
             width = max(font.measure(text) for text in values) + (48 if column == "problematic" else 32)
             self.tree.column(column, width=width, minwidth=width, stretch=column == "#0")
@@ -662,8 +663,22 @@ class OverviewPanel:
 
     def open(self, rescan: bool = False, full: bool = False) -> None:
         folder = self.selected()
-        if folder is not None and self.window._batch is None:
-            self.window.open_platform(folder, rescan=rescan, full=full)
+        if folder is None or self.window._batch is not None:
+            return
+        if self.rows[folder].state == "no_games":  # never scanned, never opened
+            self.window.status.set(tr("overview.no_games_locked", platform=folder))
+            return
+        self.window.open_platform(folder, rescan=rescan, full=full)
+
+    def toggle_no_games(self) -> None:
+        """Key n: the highlighted folder holds no games (or does again)."""
+        from workbench_db import toggle_no_games
+
+        folder = self.selected()
+        if folder is None or self.window._batch is not None:
+            return
+        self.rows[folder] = toggle_no_games(self.window.collection_root, folder, self.window.config_loader())
+        self._fill()
 
     def set_scanning(self, scanning: bool) -> None:
         """While all platforms are scanned, only Cancel works."""
@@ -1294,6 +1309,7 @@ class ReviewWindow:
             "x": self.demote_selected, "k": self.promote_selected, "s": self.toggle_settings,
             "f": self.choose_directory, "r": self.reanalyze, "c": self.show_credits, "q": self._quit_key,
             "a": self._scan_all_key, "d": self._toggle_full_key, "h": self._hide_empty_key,
+            "n": self._no_games_key,
         }
         for key, action in keys.items():
             for variant in (key, key.upper()):
@@ -1419,6 +1435,10 @@ class ReviewWindow:
     def _scan_all_key(self) -> None:
         if self._overview_keys_work():
             self.scan_all()
+
+    def _no_games_key(self) -> None:
+        if self._overview_keys_work():
+            self.overview_panel.toggle_no_games()
 
     def _hide_empty_key(self) -> None:
         if self._overview_keys_work():
