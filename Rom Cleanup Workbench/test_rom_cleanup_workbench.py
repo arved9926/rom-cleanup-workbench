@@ -8370,3 +8370,48 @@ class FrontendPlacesTests(OverviewWindowBase):
             version = collection._db.execute("SELECT version FROM schema_info").fetchone()[0]
         self.assertIn("source", columns)
         self.assertEqual(version, 4)
+
+
+class GameViewKeysTests(GameViewWindowTests):
+    """F1 and ? in the game view show its own keys and give the view back (2026-11-25)."""
+
+    test_the_name_column = test_i_opens_the_game_view_and_esc_and_q_close_it = None
+    test_a_double_click_opens_it = test_n_marks_no_game_and_g_shows_the_report = None
+
+    def test_f1_in_the_game_view(self):
+        window = self.opened()
+        row = self.row_of(window, "Title (USA).nes")
+        window.tree.selection_set(row)
+        window.tree.focus(row)
+        window._enter_key()
+        window.toggle_keys()
+        self.assertEqual(window.keys_panel.context, "game")
+        self.assertIn(("e", "Edit the game's information"), window.keys_panel.key_labels)
+        self.assertFalse(window.info_panel.frame.winfo_manager())  # hidden behind the keys
+        window._enter_key()  # does nothing while the keys are shown
+        window._edit_key()
+        self.assertIsNone(window.edit_panel)
+        window._on_escape()  # closes the keys only
+        self.assertIsNone(window.keys_panel)
+        self.assertEqual(window.info_panel.kind, "game")
+        self.assertTrue(window.info_panel.frame.winfo_manager())
+
+
+class GameViewKeysTerminalTests(GameViewTerminalTests):
+    """F1 in the terminal version's game view."""
+
+    test_name_column_game_view_n_and_report = test_no_name_column_without_information = None
+
+    async def test_f1_in_the_game_view(self):
+        app = self.app(self.roms / "nes")
+        async with app.run_test(size=(160, 50)) as pilot:
+            await self.settle(app, pilot)
+            usa = self.row_key(app, "Title (USA).nes")
+            app._place_cursor(usa, [usa])
+            await pilot.press("enter", "f1")
+            await pilot.pause()
+            self.assertIsInstance(app.screen, self.tui.KeysScreen)
+            self.assertEqual(app.screen.context, "game")
+            await pilot.press("escape")
+            await pilot.pause()
+            self.assertIsInstance(app.screen, self.tui.InfoScreen)

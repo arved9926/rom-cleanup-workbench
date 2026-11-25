@@ -1558,18 +1558,22 @@ class ReviewWindow:
         if self.keys_panel is not None:
             self.close_keys()
         elif (not self._questions and self.settings_panel is None and self.folder_panel is None
-              and self.info_panel is None and self.edit_panel is None):
+              and self.edit_panel is None):
             self.open_keys()
         return "break"
 
     def open_keys(self) -> None:
-        from workbench_keys import LIST, OVERVIEW
+        from workbench_keys import GAME, LIST, OVERVIEW
 
         if self.keys_panel is not None:
             return
-        context = OVERVIEW if self.overview_panel is not None else LIST
+        context = OVERVIEW if self.overview_panel is not None else GAME if self.info_panel is not None else LIST
         panel = self.keys_panel = KeysPanel(self, context)
-        if self.overview_panel is not None:
+        if self.info_panel is not None:  # over the game view or the report, which come back afterwards
+            self.info_panel.frame.pack_forget()
+            panel.frame.pack(fill="both", expand=True)
+            self._refresh_locks()
+        elif self.overview_panel is not None:
             self.overview_panel.frame.pack_forget()  # comes back when the keys close
             panel.frame.pack(fill="both", expand=True)
             self._refresh_locks()
@@ -1582,7 +1586,10 @@ class ReviewWindow:
             return
         self.keys_panel.frame.destroy()
         self.keys_panel = None
-        if self.overview_panel is not None:
+        if self.info_panel is not None:
+            self.info_panel.frame.pack(fill="both", expand=True)
+            self._refresh_locks()
+        elif self.overview_panel is not None:
             self.overview_panel.frame.pack(fill="both", expand=True)
             self._refresh_locks()
             self._fit_bottom_row()
@@ -1697,7 +1704,7 @@ class ReviewWindow:
 
     def _enter_key(self) -> None:
         """Enter in the list opens the game view, and in the game view closes it again."""
-        if self._questions or self.edit_panel is not None:
+        if self._questions or self.edit_panel is not None or self.keys_panel is not None:
             return
         if self.info_panel is not None and self.info_panel.kind == "game":
             self.close_info()
@@ -1706,7 +1713,8 @@ class ReviewWindow:
 
     def _edit_key(self) -> None:
         """e in the game view: the form for the game's information."""
-        if self.info_panel is not None and self.info_panel.kind == "game" and not self._questions:
+        if (self.info_panel is not None and self.info_panel.kind == "game" and not self._questions
+                and self.keys_panel is None):
             self.open_edit()
 
     def open_edit(self) -> None:
@@ -1756,6 +1764,8 @@ class ReviewWindow:
         self._toggle_info("report")
 
     def _toggle_info(self, kind: str) -> None:
+        if self.keys_panel is not None:
+            return
         if self.info_panel is not None:
             if self.info_panel.kind == kind:
                 self.close_info()

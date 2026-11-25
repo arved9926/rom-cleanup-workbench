@@ -23,6 +23,7 @@ from translations import tr
 
 LIST = "list"
 OVERVIEW = "overview"
+GAME = "game"  # the game view (Enter) and the gamelist report (g)
 
 ALL_KEYS = "F1 / ?"
 
@@ -46,6 +47,13 @@ def key_sections(context: str, window: bool, collection: bool, ascii: bool = Fal
     up_down = "Up Down" if ascii else "↑ ↓"
     esc = tr("keys.esc")
     zoom = [(tr("keys.zoom_key"), "keys.font_size")] if window else []
+    if context == GAME:
+        sections = [
+            ("keys.section.game", [("e", "keys.edit_game_here"), ("Enter", "keys.close_game_view"),
+                                   ("g", "keys.close_report"), (f"q  {esc}", "keys.back_to_list"),
+                                   *zoom, ("F1  ?", "keys.this_overview")]),
+        ]
+        return [(tr(title), [(key, tr(text)) for key, text in rows]) for title, rows in sections]
     if context == OVERVIEW:
         sections = [
             ("keys.section.platforms", [(up_down, "keys.select_platform"), ("Enter", "keys.open_platform"),
@@ -85,4 +93,5 @@ def key_notes(context: str) -> list[str]:
 
 
 def keys_title(context: str) -> str:
-    return tr("keys.title", where=tr("keys.where.overview" if context == OVERVIEW else "keys.where.list"))
+    where = {OVERVIEW: "keys.where.overview", GAME: "keys.where.game"}.get(context, "keys.where.list")
+    return tr("keys.title", where=tr(where))

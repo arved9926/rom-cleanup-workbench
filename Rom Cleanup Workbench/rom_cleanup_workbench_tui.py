@@ -905,7 +905,7 @@ class KeysScreen(Screen):
             yield Static(tr("keys.close_hint"), id="keys-hint", markup=False)
         sections = key_sections(self.context, window=False, collection=self.collection, ascii=ascii)
         left = (len(sections) + 1) // 2
-        columns = [self._column(part, green) for part in (sections[:left], sections[left:])]
+        columns = [self._column(part, green) for part in (sections[:left], sections[left:]) if part]  # one section: one column
         # Side by side only if both fit (each with its padding); a narrow terminal shows them one below the other.
         widths = [max(cell_len(line) for line in text.plain.split("\n")) for text in columns]
         side_by_side = sum(widths) + 7 * len(widths) <= self.app.size.width
@@ -946,7 +946,8 @@ class InfoScreen(Screen):
     """The game view (i) or the gamelist report (g) in place of the list: blocks of workbench_view."""
 
     BINDINGS = [Binding("escape,q,Q", "close", show=False), Binding("enter", "close_kind('game')", show=False),
-                Binding("g,G", "close_kind('report')", show=False), Binding("e,E", "edit", show=False)]
+                Binding("g,G", "close_kind('report')", show=False), Binding("e,E", "edit", show=False),
+                Binding("f1,question_mark", "show_keys", show=False)]
 
     def __init__(self, kind: str, title: str, subtitle: str, blocks: list):
         super().__init__()
@@ -993,6 +994,10 @@ class InfoScreen(Screen):
     def action_close_kind(self, kind: str) -> None:
         if kind == self.kind:
             self.dismiss(None)
+
+    def action_show_keys(self) -> None:
+        """F1 and ?: the keys of the game view; F1, ? or Esc close them again."""
+        self.app.push_screen(KeysScreen("game", True))
 
     def action_edit(self) -> None:
         """e: the form for the game's information (the app opens it once this view is closed)."""
