@@ -126,6 +126,8 @@ def report_blocks(report: dict) -> list:
     ]
     if not report["has_gamelist"]:
         blocks.append(("note", tr("report.no_gamelist")))
+    elif report.get("source"):
+        blocks.append(("note", tr("gamelist.from", path=report["source"])))
     for key, lines in sections:
         blocks.append(("heading", f"{tr(key)} ({len(lines)})"))
         if not lines:

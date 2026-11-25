@@ -1669,7 +1669,12 @@ class ReviewWindow:
             return False
         question = tr("gamelist.offer_after_cleanup" if after_cleanup else "gamelist.write_question",
                       platform=directory.name, count=count)
-        if (directory / GAMELIST_NAME).exists():
+        from workbench_db import gamelist_path
+
+        target = gamelist_path(directory)
+        if target.parent != directory:  # ES-DE or RetroPie keep it outside the platform folder
+            question += "\n\n" + tr("gamelist.from", path=target)
+        if target.exists():
             question += "\n\n" + tr("gamelist.backup_note")
         if not messagebox.askyesno(tr("gamelist.write_title"), question, parent=self.root):
             return False
@@ -2091,10 +2096,10 @@ class ReviewWindow:
     def _offer_gamelist(self) -> None:
         """After a cleanup: a gamelist.xml that names deleted files may be written anew."""
         from workbench_db import collection_root
-        from workbench_gamelist import GAMELIST_NAME
+        from workbench_gamelist import find_gamelist
 
         if (self.directory is not None and deleted_files(self.review)
-                and collection_root(self.directory) is not None and (self.directory / GAMELIST_NAME).exists()):
+                and collection_root(self.directory) is not None and find_gamelist(self.directory) is not None):
             self.write_gamelist(self.directory, after_cleanup=True)
 
     def toggle_settings(self) -> str:

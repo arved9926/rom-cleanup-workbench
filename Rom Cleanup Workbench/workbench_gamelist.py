@@ -165,6 +165,11 @@ class Resolver:
             return None, "missing"
         if raw.startswith("~/"):
             return self._outside(Path.home() / raw[2:])
+        if raw.upper().startswith("%ROMPATH%/"):  # ES-DE: the roms folder, then the platform
+            parts = raw.split("/")[1:]
+            if parts and parts[0].casefold() == self.directory.name.casefold():
+                parts = parts[1:]
+            return self._here(parts, MAPPED)
         if raw.startswith("/") or _DRIVE.match(raw):
             inside = self._inside_parts(raw)
             if inside is not None:
@@ -347,7 +352,7 @@ class FoundMedia:
     unassigned: list = field(default_factory=list)  # (category or "other", path, (size, change time))
 
 
-def find_media(directory: Path, rom_names, known_paths=()) -> FoundMedia:
+def find_media(directory: Path, rom_names, known_paths=(), root: Path | None = None) -> FoundMedia:
     """Media in the subfolders of a platform, assigned to a ROM only where the name says so clearly.
 
     Two ways of keeping them are recognised:
@@ -355,8 +360,11 @@ def find_media(directory: Path, rom_names, known_paths=()) -> FoundMedia:
     2. any folder, the ROM's name, a separator (- . _) and a category: 10yard-wheel.png, game.image.jpg.
     If several ROM names fit, the longest wins (sf2ce-image.png is sf2ce, not sf2). Files the
     gamelist.xml already links (known_paths) are left out; files directly in the platform folder too.
+    root: search there instead (a frontend's media folder outside the collection); the paths are then
+    absolute, so that nothing outside the collection is ever deleted or renamed.
     """
     directory = Path(directory)
+    base = Path(root) if root is not None else directory
     known = set(known_paths)
     stems: dict[str, list[str]] = {}
     exact: dict[str, list[str]] = {}
@@ -365,7 +373,7 @@ def find_media(directory: Path, rom_names, known_paths=()) -> FoundMedia:
         exact.setdefault(stem, []).append(name)
         stems.setdefault(stem.casefold(), []).append(name)
     result = FoundMedia()
-    pending = [directory]
+    pending = [base]
     while pending:
         folder = pending.pop()
         try:
@@ -380,14 +388,14 @@ def find_media(directory: Path, rom_names, known_paths=()) -> FoundMedia:
                 if entry.is_dir():
                     pending.append(Path(entry.path))
                     continue
-                if folder == directory or not entry.is_file():
+                if folder == base or not entry.is_file():
                     continue
                 if Path(entry.name).suffix.casefold() not in MEDIA_EXTENSIONS:
                     continue
                 stat = entry.stat()
             except OSError:
                 continue
-            path = Path(entry.path).relative_to(directory).as_posix()
+            path = Path(entry.path).relative_to(directory).as_posix() if root is None else str(Path(entry.path))
             if path in known:
                 continue
             stamp = (stat.st_size, stat.st_mtime_ns)
@@ -537,4 +545,52 @@ def build_gamelist(entries: list[dict], provider: list | None, system: str) -> s
 
 BACKUP_RE = re.compile(r"^gamelist\.xml\.\d{4}-\d{2}-\d{2}_\d{6}\.bak$")
 BACKUPS_KEPT = 3
+
+
+# Stage 7: the places of the frontends outside the platform folder -----------------------------------
+
+def frontend_home() -> Path:
+    """The home folder where ES-DE and RetroPie keep their files; RCW_FRONTEND_HOME overrides it (tests)."""
+    override = os.environ.get("RCW_FRONTEND_HOME")
+    return Path(override) if override else Path.home()
+
+
+def gamelist_places(directory: Path) -> list[Path]:
+    """Where a platform's gamelist.xml may be, in this order: its own folder (RetroPie, Batocera),
+    ES-DE's ~/ES-DE/gamelists/<platform>, EmulationStation's ~/.emulationstation/gamelists/<platform>
+    and, on Linux, /etc/emulationstation/gamelists/<platform>. The platform folder's name is the system."""
+    directory = Path(directory)
+    name, home = directory.name, frontend_home()
+    places = [directory / GAMELIST_NAME, home / "ES-DE" / "gamelists" / name / GAMELIST_NAME,
+              home / ".emulationstation" / "gamelists" / name / GAMELIST_NAME]
+    if os.name != "nt" and not os.environ.get("RCW_FRONTEND_HOME"):
+        places.append(Path("/etc/emulationstation/gamelists") / name / GAMELIST_NAME)
+    return places
+
+
+def find_gamelist(directory: Path) -> Path | None:
+    """The first gamelist.xml of gamelist_places that exists; None if there is none."""
+    return next((place for place in gamelist_places(directory) if place.is_file()), None)
+
+
+def media_places(directory: Path) -> list[Path]:
+    """Media folders of the frontends for this platform that exist: ES-DE's downloaded_media (or the
+    folder set as MediaDirectory in its es_settings.xml) and EmulationStation's downloaded_media and
+    downloaded_images below the home folder."""
+    name, home = Path(directory).name, frontend_home()
+    bases = [home / "ES-DE" / "downloaded_media"]
+    settings = home / "ES-DE" / "settings" / "es_settings.xml"
+    try:
+        match = re.search(r'name="MediaDirectory"\s+value="([^"]+)"', settings.read_text(encoding="utf-8"))
+    except OSError:
+        match = None
+    if match and "%" not in match.group(1):
+        bases.insert(0, Path(os.path.expanduser(match.group(1))))
+    bases += [home / ".emulationstation" / "downloaded_media", home / ".emulationstation" / "downloaded_images"]
+    places = []
+    for base in bases:
+        place = base / name
+        if place.is_dir() and place not in places:
+            places.append(place)
+    return places
 

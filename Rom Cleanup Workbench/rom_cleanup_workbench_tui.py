@@ -1987,10 +1987,10 @@ class WorkbenchApp(App):
         self._apply_filter()  # A filter typed just before deleting.
         # The offer to write the gamelist.xml anew lies below the message, so it comes after it.
         from workbench_db import collection_root
-        from workbench_gamelist import GAMELIST_NAME
+        from workbench_gamelist import find_gamelist
 
         if (deleted and self.directory is not None and collection_root(self.directory) is not None
-                and (self.directory / GAMELIST_NAME).exists()):
+                and find_gamelist(self.directory) is not None):
             self.write_gamelist(self.directory, after_cleanup=True)
         if errors:
             self.had_errors = True
@@ -2446,7 +2446,12 @@ class WorkbenchApp(App):
             return
         question = tr("gamelist.offer_after_cleanup" if after_cleanup else "gamelist.write_question",
                       platform=directory.name, count=count)
-        if (directory / GAMELIST_NAME).exists():
+        from workbench_db import gamelist_path
+
+        target = gamelist_path(directory)
+        if target.parent != directory:  # ES-DE or RetroPie keep it outside the platform folder
+            question += "\n\n" + tr("gamelist.from", path=target)
+        if target.exists():
             question += "\n\n" + tr("gamelist.backup_note")
 
         def answered(yes) -> None:

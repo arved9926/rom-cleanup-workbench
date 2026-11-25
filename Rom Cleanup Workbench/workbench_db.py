@@ -41,7 +41,7 @@ CHANGED = "changed"
 
 DATABASE_FOLDER = ".rom_cleanup_workbench"
 DATABASE_NAME = "rom_cleanup_workbench.sqlite"
-SCHEMA_VERSION = 3  # 2: platforms.no_games; 3: game_info, media, gamelist_files
+SCHEMA_VERSION = 4  # 2: platforms.no_games; 3: game_info, media, gamelist_files; 4: gamelist_files.source
 _HIDDEN_ATTRIBUTE = 0x2  # FILE_ATTRIBUTE_HIDDEN
 
 _SCHEMA = """
@@ -126,7 +126,8 @@ CREATE TABLE IF NOT EXISTS gamelist_files (
     provider_json TEXT,
     entries INTEGER,
     problems_json TEXT,
-    notes_json TEXT
+    notes_json TEXT,
+    source TEXT
 );
 """
 
@@ -191,6 +192,12 @@ class Collection:
         if version < 3:  # the new tables were created above
             with self._db:
                 self._db.execute("UPDATE schema_info SET version = 3")
+        if version < 4:  # where the gamelist.xml was read; a table created above has it already
+            columns = {row[1] for row in self._db.execute("PRAGMA table_info(gamelist_files)")}
+            with self._db:
+                if "source" not in columns:
+                    self._db.execute("ALTER TABLE gamelist_files ADD COLUMN source TEXT")
+                self._db.execute("UPDATE schema_info SET version = 4")
 
     def close(self) -> None:
         self._db.close()
@@ -396,12 +403,18 @@ class Collection:
         if platform_id is None:
             return None
         row = self._db.execute("SELECT size, mtime_ns, sha256, imported_at, provider_json, entries, problems_json, "
-                               "notes_json FROM gamelist_files WHERE platform_id = ?", (platform_id,)).fetchone()
+                               "notes_json, source FROM gamelist_files WHERE platform_id = ?", (platform_id,)).fetchone()
         if row is None:
             return None
         return {"size": row[0], "mtime_ns": row[1], "sha256": row[2], "imported_at": row[3],
                 "provider": json.loads(row[4]) if row[4] else None, "entries": row[5],
-                "problems": json.loads(row[6] or "[]"), "notes": json.loads(row[7] or "[]")}
+                "problems": json.loads(row[6] or "[]"), "notes": json.loads(row[7] or "[]"), "source": row[8]}
+
+    def set_gamelist_source(self, folder: str, source: str | None) -> None:
+        """Where the gamelist.xml was read or written: None for the platform folder, else its full path."""
+        platform_id = self._platform_id(folder)
+        with self._db:
+            self._db.execute("UPDATE gamelist_files SET source = ? WHERE platform_id = ?", (source, platform_id))
 
     def save_gamelist(self, folder: str, gamelist, stamp: tuple, sha256: str | None, media_stamps: dict,
                       when: datetime | None = None) -> None:
@@ -810,18 +823,31 @@ def update_media(collection: "Collection", directory: Path, rom_names) -> None:
     name = Path(directory).name
     no_games = collection.ensure_entries(name, rom_names)
     games = [rom for rom in rom_names if rom not in no_games]
-    found = find_media(directory, games, collection.gamelist_media_paths(name))
+    known = collection.gamelist_media_paths(name)
+    found = find_media(directory, games, known)
+    from workbench_gamelist import media_places
+
+    for place in media_places(directory):  # ES-DE's downloaded_media, RetroPie's downloaded_images ...
+        more = find_media(directory, games, known, root=place)
+        found.assigned += more.assigned
+        found.unassigned += more.unassigned
     collection.save_found_media(name, found)
 
 
 def _gamelist_stamp(directory: Path) -> tuple | None:
-    from workbench_gamelist import GAMELIST_NAME
+    from workbench_gamelist import find_gamelist
 
+    path = find_gamelist(directory)
     try:
-        stat = (Path(directory) / GAMELIST_NAME).stat()
+        stat = path.stat() if path is not None else None
     except OSError:
         return None
-    return stat.st_size, stat.st_mtime_ns
+    return None if stat is None else (stat.st_size, stat.st_mtime_ns)
+
+
+def _source_of(directory: Path, path: Path) -> str | None:
+    """None for the platform folder's own gamelist.xml, else the full path (ES-DE, RetroPie)."""
+    return None if Path(path).parent == Path(directory) else str(path)
 
 
 def gamelist_changed(collection: "Collection", directory: Path) -> bool:
@@ -836,14 +862,14 @@ def gamelist_changed(collection: "Collection", directory: Path) -> bool:
 def import_gamelist(collection: "Collection", directory: Path, rom_names, force: bool = False) -> bool:
     """Reads the platform's gamelist.xml if it changed (or force) and takes over what checks out.
     Afterwards information on ROMs and media that are gone is dropped. Returns whether it was read."""
-    from workbench_gamelist import GAMELIST_NAME, read_gamelist
+    from workbench_gamelist import find_gamelist, read_gamelist
 
     directory = Path(directory)
     name = directory.name
     read = False
     stamp = _gamelist_stamp(directory)
     if stamp is not None and (force or gamelist_changed(collection, directory)):
-        path = directory / GAMELIST_NAME
+        path = find_gamelist(directory)  # the platform folder's own, else ES-DE's or RetroPie's
         try:
             sha = hashlib.sha256(path.read_bytes()).hexdigest()
         except OSError:
@@ -854,6 +880,7 @@ def import_gamelist(collection: "Collection", directory: Path, rom_names, force:
         else:
             gamelist = read_gamelist(path, directory, rom_names)
             collection.save_gamelist(name, gamelist, stamp, sha, gamelist.media_stamps)
+            collection.set_gamelist_source(name, _source_of(directory, path))
             read = True
     collection.forget_missing_info(name, directory, rom_names)
     return read
@@ -879,6 +906,8 @@ def gamelist_summary(directory: Path | None) -> str:
     elif record is not None:
         parts.append(tr("gamelist.summary", entries=record["entries"], problems=len(record["problems"]),
                         notes=len(record["notes"])))
+    if record is not None and record.get("source"):
+        parts[-1] += "  " + tr("gamelist.from", path=record["source"])
     if assigned or unassigned:
         parts.append(tr("media.summary", assigned=assigned, unassigned=unassigned))
     return "    ".join(parts)
@@ -1323,6 +1352,7 @@ def gamelist_report(directory: Path | None) -> dict | None:
     from workbench_view import shows_info
 
     return {
+        "source": (record or {}).get("source"),
         "has_gamelist": record is not None,
         "problems": record["problems"] if record else [],
         "notes": record["notes"] if record else [],
@@ -1365,18 +1395,20 @@ def write_gamelist(directory: Path, when: datetime | None = None) -> tuple[int, 
         record = collection.gamelist_record(name)
         provider = (record or {}).get("provider")
         text = build_gamelist(entries, provider, name)
-        path = directory / GAMELIST_NAME
+        # Where it was read (ES-DE or RetroPie keep it outside), else in the platform folder.
+        path = Path(record["source"]) if record and record.get("source") else directory / GAMELIST_NAME
+        place = path.parent
         backup = None
         if path.exists():
             backup = f"{GAMELIST_NAME}.{(when or datetime.now()).strftime('%Y-%m-%d_%H%M%S')}.bak"
-            shutil.copy2(path, directory / backup)
-        temporary = directory / (GAMELIST_NAME + ".tmp")
+            shutil.copy2(path, place / backup)
+        temporary = place / (GAMELIST_NAME + ".tmp")
         temporary.write_bytes(text.encode("utf-8"))
         os.replace(temporary, path)
-        backups = sorted(item for item in os.listdir(directory) if BACKUP_RE.match(item))
+        backups = sorted(item for item in os.listdir(place) if BACKUP_RE.match(item))
         for old in backups[:-BACKUPS_KEPT]:
             try:
-                (directory / old).unlink()
+                (place / old).unlink()
             except OSError:
                 pass
         stat = path.stat()
@@ -1392,6 +1424,7 @@ def write_gamelist(directory: Path, when: datetime | None = None) -> tuple[int, 
                 lines.append([tag, value])
         collection.mark_gamelist_written(name, (stat.st_size, stat.st_mtime_ns),
                                          hashlib.sha256(text.encode("utf-8")).hexdigest(), len(entries), lines)
+        collection.set_gamelist_source(name, _source_of(directory, path))
     return len(entries), backup
 
 
@@ -1428,4 +1461,19 @@ def edit_game(directory: Path, rom: str, form: dict) -> list[str]:
     values = parse_form(form)
     with Collection(root) as collection:
         return collection.save_edits(directory.name, rom, values)
+
+
+def gamelist_path(directory: Path) -> Path:
+    """Where the platform's gamelist.xml is read and written: the place recorded, the one found, or
+    the platform folder."""
+    from workbench_gamelist import GAMELIST_NAME, find_gamelist
+
+    directory = Path(directory)
+    root = collection_root(directory)
+    if root is not None:
+        with Collection(root) as collection:
+            record = collection.gamelist_record(directory.name)
+        if record and record.get("source"):
+            return Path(record["source"])
+    return find_gamelist(directory) or directory / GAMELIST_NAME
 

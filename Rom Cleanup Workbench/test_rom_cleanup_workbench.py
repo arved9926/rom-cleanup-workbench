@@ -29,6 +29,9 @@ from dataclasses import replace
 from pathlib import Path
 from unittest import mock
 
+# ES-DE and RetroPie keep gamelists and media in the home folder; the tests never look at the real one.
+os.environ["RCW_FRONTEND_HOME"] = str(Path(tempfile.gettempdir()) / "rcw-tests-no-frontend-home")
+
 import rom_cleanup_workbench as rf
 import translations
 
@@ -1288,7 +1291,7 @@ class CollectionDatabaseTests(CollectionDatabaseBase):
         self.assertEqual(collection.path, folder / "rom_cleanup_workbench.sqlite")
         if os.name == "nt":
             self.assertTrue(folder.stat().st_file_attributes & 0x2)
-        self.assertEqual(workbench_db.SCHEMA_VERSION, 3)
+        self.assertEqual(workbench_db.SCHEMA_VERSION, 4)
 
     def test_platforms_are_the_visible_subfolders(self):
         (self.roms / ".git").mkdir()
@@ -1824,7 +1827,7 @@ class OverviewWindowTests(OverviewWindowBase):
             self.assertTrue(collection.is_no_games("nes"))
             version = collection._db.execute("SELECT version FROM schema_info").fetchone()[0]
             tables = {name for (name,) in collection._db.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
-        self.assertEqual(version, 3)  # and the tables of version 3 are there as well
+        self.assertEqual(version, 4)  # and the tables of versions 3 and 4 are there as well
         self.assertTrue({"game_info", "media", "gamelist_files"} <= tables)
 
     def test_a_deleted_folder_is_dropped_from_the_database(self):
@@ -8268,3 +8271,102 @@ class EnterAndF12Tests(GameViewWindowTests):
             self.assertIsNone(window.info_panel)
             cleanup.assert_not_called()
         self.assertTrue(window.root.bind("<F12>"))  # Tk names no method here; key events need focus
+
+
+class FrontendPlacesTests(OverviewWindowBase):
+    """Stage 7: gamelists and media that ES-DE and RetroPie keep outside the platform folder."""
+
+    def setUp(self):
+        super().setUp()
+        self.fill()
+        self.home = self.roms.parent / "home"
+        patcher = mock.patch.dict(os.environ, {"RCW_FRONTEND_HOME": str(self.home)})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.esde = self.home / "ES-DE" / "gamelists" / "nes"
+        self.esde.mkdir(parents=True)
+        (self.esde / "gamelist.xml").write_text(
+            "<gameList><game><path>./Title (USA).nes</path><name>From ES-DE</name></game>"
+            "<game><path>%ROMPATH%/nes/Title (Japan).nes</path><name>Japan</name></game></gameList>",
+            encoding="utf-8")
+        covers = self.home / "ES-DE" / "downloaded_media" / "nes" / "covers"
+        covers.mkdir(parents=True)
+        (covers / "Title (USA).png").write_bytes(b"png")
+
+    def info(self):
+        import workbench_db
+
+        return workbench_db.load_game_info(self.roms / "nes")
+
+    def test_the_es_de_gamelist_and_media_are_found(self):
+        import workbench_db
+
+        workbench_db.scan_all(self.roms)
+        info = self.info()
+        self.assertEqual((info["Title (USA).nes"]["name"], info["Title (Japan).nes"]["name"]), ("From ES-DE", "Japan"))
+        cover = str(self.home / "ES-DE" / "downloaded_media" / "nes" / "covers" / "Title (USA).png")
+        self.assertEqual(info["Title (USA).nes"]["media"]["cover"], [cover])
+        summary = workbench_db.gamelist_summary(self.roms / "nes")
+        self.assertIn("read from", summary)
+        self.assertIn("ES-DE", summary)
+        with workbench_db.Collection(self.roms) as collection:
+            self.assertEqual(collection.media_only_of("nes", ["Title (USA).nes"]), [])  # never deleted outside
+
+    def test_the_platform_folders_own_gamelist_comes_first(self):
+        import workbench_db
+
+        (self.roms / "nes" / "gamelist.xml").write_text(
+            "<gameList><game><path>./Title (USA).nes</path><name>Own</name></game></gameList>", encoding="utf-8")
+        workbench_db.scan_all(self.roms)
+        self.assertEqual(self.info()["Title (USA).nes"]["name"], "Own")
+        self.assertNotIn("read from", workbench_db.gamelist_summary(self.roms / "nes"))
+
+    def test_a_changed_es_de_gamelist_is_read_again_and_written_there(self):
+        import workbench_db
+
+        workbench_db.scan_all(self.roms)
+        path = self.esde / "gamelist.xml"
+        path.write_text(path.read_text(encoding="utf-8").replace("From ES-DE", "Changed"), encoding="utf-8")
+        stat = path.stat()
+        os.utime(path, ns=(stat.st_atime_ns, stat.st_mtime_ns + 9_000_000_000))
+        with workbench_db.Collection(self.roms) as collection:
+            self.assertEqual(collection.state(self.roms / "nes"), "changed")
+        workbench_db.scan_all(self.roms)
+        self.assertEqual(self.info()["Title (USA).nes"]["name"], "Changed")
+        count, backup = workbench_db.write_gamelist(self.roms / "nes")
+        self.assertEqual(count, 2)
+        self.assertTrue((self.esde / backup).exists())
+        self.assertFalse((self.roms / "nes" / "gamelist.xml").exists())
+        self.assertIn("RCW", path.read_text(encoding="utf-8"))
+        self.assertEqual(workbench_db.gamelist_path(self.roms / "nes"), path)
+
+    def test_the_media_directory_of_es_de_settings_counts(self):
+        import workbench_gamelist
+
+        media = self.roms.parent / "media"
+        (media / "nes" / "screenshots").mkdir(parents=True)
+        settings = self.home / "ES-DE" / "settings"
+        settings.mkdir(parents=True)
+        (settings / "es_settings.xml").write_text(
+            f'<string name="MediaDirectory" value="{media.as_posix()}" />', encoding="utf-8")
+        places = workbench_gamelist.media_places(self.roms / "nes")
+        self.assertEqual(places[0], media / "nes")
+        self.assertIn(self.home / "ES-DE" / "downloaded_media" / "nes", places)
+
+    def test_an_older_database_gets_the_source_column(self):
+        import sqlite3
+
+        import workbench_db
+
+        folder = self.roms / ".rom_cleanup_workbench"
+        folder.mkdir(parents=True)
+        db = sqlite3.connect(folder / "rom_cleanup_workbench.sqlite")
+        db.executescript(workbench_db._SCHEMA.replace(",\n    source TEXT", ""))
+        db.execute("INSERT INTO schema_info (version) VALUES (3)")
+        db.commit()
+        db.close()
+        with workbench_db.Collection(self.roms) as collection:
+            columns = {row[1] for row in collection._db.execute("PRAGMA table_info(gamelist_files)")}
+            version = collection._db.execute("SELECT version FROM schema_info").fetchone()[0]
+        self.assertIn("source", columns)
+        self.assertEqual(version, 4)
