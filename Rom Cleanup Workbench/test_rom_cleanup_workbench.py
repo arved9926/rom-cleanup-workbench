@@ -3097,7 +3097,7 @@ class ConfigFileTests(RedundanzTestCase):
         values = self.config_file().read()
         self.assertEqual(values, {
             "language": "en", "region_priority": ["USA", "Europe", "none", "Japan", "Beta"],
-            "delete_tags": [], "prefer_zip": False,
+            "delete_tags": [], "prefer_zip": False, "prefer_played": False,
         })
 
     def test_write_keeps_other_entries_and_their_order(self):
@@ -6823,7 +6823,8 @@ class TerminalVersionTests(unittest.IsolatedAsyncioTestCase):
                              ["Speichern", "Abbrechen", "Hoch", "Runter", "Entfernen", "Hinzufügen"])
             self.assertEqual([str(button.label) for button in screen.query(RadioButton)],
                              ["English", "Deutsch", "Italiano", "Español", "Français", "日本語",
-                              "Normale Datei behalten", "ZIP-Datei behalten"])
+                              "Normale Datei behalten", "ZIP-Datei behalten",
+                              "Nur Hinweis in der Liste", "Bevorzugt behalten"])
             self.assertEqual(self.text(screen, "#prefer-label"),
                              "Gleiches Spiel als normale Datei und als ZIP-Datei:")
             self.assertTrue(screen.query_one("#language-de").value)
@@ -7814,4 +7815,115 @@ class GameViewTerminalTests(OverviewTerminalBase):
             await self.settle(app, pilot)
             table = app.query_one("#games")
             self.assertEqual([column.key.value for column in table.ordered_columns], ["file", "size", "note"])
+
+
+class MediaFollowTests(OverviewWindowBase):
+    """Stage 4: the media of deleted ROMs go with them; media named after a renamed ROM are renamed."""
+
+    def setUp(self):
+        super().setUp()
+        nes = self.roms / "nes"
+        (nes / "images").mkdir()
+        for name in ("Game (USA).nes", "Game (Europe).nes"):
+            self.write("nes", name, name.encode())
+        for name in ("Game (USA)-image.png", "Game (Europe)-image.png", "Game (Europe)-video.mp4", "shared.png"):
+            self.write("nes", "images/" + name, b"m")
+        (nes / "gamelist.xml").write_text(
+            "<gameList><game><path>./Game (USA).nes</path><name>G</name><box>./images/shared.png</box></game>"
+            "<game><path>./Game (Europe).nes</path><name>G</name><box>./images/shared.png</box></game></gameList>",
+            encoding="utf-8")
+        import workbench_db
+
+        workbench_db.scan_all(self.roms)
+
+    def test_media_of_deleted_roms_are_deleted_shared_ones_stay(self):
+        review = self.analyze(self.roms / "nes")
+        self.assertEqual([entry.path.name for result in review.results for entry in result.marked],
+                         ["Game (Europe).nes"])
+        message = review.confirm_message(False, True)
+        self.assertIn("2 media file(s)", message)
+        deleted, errors = review.delete()
+        self.assertEqual((deleted, errors, review.media_deleted), (1, [], 2))
+        images = sorted(path.name for path in (self.roms / "nes" / "images").iterdir())
+        self.assertEqual(images, ["Game (USA)-image.png", "shared.png"])
+        self.assertIn("2 media file(s) deleted", review.done_message(deleted))
+        import workbench_db
+
+        info = workbench_db.load_game_info(self.roms / "nes")
+        self.assertNotIn("Game (Europe).nes", info)
+        self.assertEqual(info["Game (USA).nes"]["media"]["box"], ["images/shared.png"])
+
+    def test_media_named_after_a_renamed_rom_are_renamed(self):
+        nes = self.roms / "nes"
+        for name in ("01 - Alpha (USA).nes", "02 - Beta (USA).nes"):
+            self.write("nes", name, name.encode())
+        self.write("nes", "images/01 - Alpha (USA)-image.png", b"m")
+        import workbench_db
+
+        workbench_db.scan_all(self.roms)
+        review = self.analyze(nes)
+        review.delete()
+        self.assertTrue((nes / "Alpha (USA).nes").exists())
+        self.assertTrue((nes / "images" / "Alpha (USA)-image.png").exists())
+        self.assertFalse((nes / "images" / "01 - Alpha (USA)-image.png").exists())
+        self.assertEqual(review.media_renamed, 1)
+        info = workbench_db.load_game_info(nes)
+        self.assertEqual(info["Alpha (USA).nes"]["media"]["image"], ["images/Alpha (USA)-image.png"])
+
+
+class PlayedSettingTests(OverviewWindowBase):
+    """Stage 4: favorites and played games, only noted or kept (a setting, also per platform)."""
+
+    def setUp(self):
+        super().setUp()
+        for name in ("Game (USA).nes", "Game (Europe).nes", "Game (Europe).srm", "Game (USA).srm"):
+            self.write("nes", name, name.encode())
+        (self.roms / "nes" / "gamelist.xml").write_text(
+            "<gameList><game><path>./Game (Europe).nes</path><name>G</name><favorite>true</favorite>"
+            "<playtime>600</playtime></game></gameList>", encoding="utf-8")
+        import workbench_db
+
+        workbench_db.scan_all(self.roms)
+
+    def decided(self, prefer):
+        import workbench_db
+
+        config = replace(self.config, prefer_played=prefer)
+        result = workbench_db.open_platform(self.roms, self.roms / "nes", config)[0]
+        return ([entry.path.name for entry in result.keep], [entry.path.name for entry in result.marked],
+                {entry.path.name: [getattr(note, "kind", "") for note in entry.notes]
+                 for entry in result.keep + result.marked})
+
+    def test_only_a_note_by_default(self):
+        keep, marked, notes = self.decided(False)
+        self.assertEqual(keep, ["Game (USA).nes", "Game (USA).srm"])
+        self.assertIn("Game (Europe).nes", marked)
+        self.assertIn("played_marked", notes["Game (Europe).nes"])
+
+    def test_prefer_keeps_the_favorite_and_its_save(self):
+        keep, marked, notes = self.decided(True)
+        self.assertEqual(keep[0], "Game (Europe).nes")
+        self.assertIn("Game (Europe).srm", keep)
+        self.assertEqual(sorted(marked), ["Game (USA).nes", "Game (USA).srm"])
+        self.assertIn("kept_played", notes["Game (Europe).nes"])
+        self.assertIn("replaced_by_played", notes["Game (USA).nes"])
+
+    def test_the_overview_counts_with_the_setting(self):
+        import workbench_db
+
+        self.assertNotEqual(workbench_db.config_key(self.config),
+                            workbench_db.config_key(replace(self.config, prefer_played=True)))
+
+    def test_the_setting_is_saved_in_the_file_and_per_platform(self):
+        import workbench_db
+
+        config_file = rf.ConfigFile(self.roms.parent / "redundanz_config.json")
+        workbench_db.save_settings_for(config_file, None, None, False, "en", ["USA", "none"], [], False, True)
+        self.assertTrue(config_file.read()["prefer_played"])
+        self.assertTrue(rf.Config.load(config_file.path).prefer_played)
+        workbench_db.save_settings_for(config_file, self.roms, "nes", True, "en", ["USA", "none"], [], False, False)
+        values, own = workbench_db.settings_for(config_file, self.roms, "nes")
+        self.assertTrue(own)
+        self.assertFalse(values["prefer_played"])
+        self.assertTrue(config_file.read()["prefer_played"])  # the general setting stays
 

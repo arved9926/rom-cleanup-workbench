@@ -159,6 +159,12 @@ def _hide(path: Path) -> None:
         pass  # Hiding is a courtesy; the database works without it.
 
 
+def tr_error(key: str, **values) -> str:
+    from translations import tr
+
+    return tr(key, **values)
+
+
 class Collection:
     """A roms folder and its database. Opening it creates the database if it is missing."""
 
@@ -541,6 +547,51 @@ class Collection:
                              ("no_game" if no_game else "game", json.dumps(sorted(edited)) if edited else None, name,
                               platform_id, rom))
 
+    def media_only_of(self, folder: str, roms) -> list[str]:
+        """The media files (inside the platform folder) that belong to these ROMs and to no other one."""
+        platform_id = self._platform_id(folder, create=False)
+        if platform_id is None or not roms:
+            return []
+        gone = set(roms)
+        rows = self._db.execute("SELECT rom, path FROM media WHERE platform_id = ? AND rom IS NOT NULL",
+                                (platform_id,)).fetchall()
+        used_elsewhere = {path for rom, path in rows if rom not in gone}
+        return sorted({path for rom, path in rows
+                       if rom in gone and path not in used_elsewhere and not Path(path).is_absolute()})
+
+    def rename_media(self, folder: str, directory: Path, old: str, new: str) -> tuple[int, list[str]]:
+        """Renames the media named after a ROM with it: "001 Game-image.png" with "001 Game.nes".
+        A medium another ROM uses too, or whose new name is taken, stays. Returns (renamed, errors)."""
+        platform_id = self._platform_id(folder, create=False)
+        if platform_id is None:
+            return 0, []
+        old_stem, new_stem = Path(old).stem, Path(new).stem
+        rows = self._db.execute("SELECT rom, path FROM media WHERE platform_id = ?", (platform_id,)).fetchall()
+        mine = sorted({path for rom, path in rows if rom == old})
+        others = {path for rom, path in rows if rom != old}
+        count, errors = 0, []
+        for path in mine:
+            medium = Path(path)
+            name = medium.name
+            rest = name[len(old_stem):]
+            if (medium.is_absolute() or path in others or not name.casefold().startswith(old_stem.casefold())
+                    or not rest or rest[0] not in "-._"):
+                continue
+            target = medium.parent / (new_stem + rest)
+            if (directory / target).exists():
+                errors.append(tr_error("error.rename_exists", name=name, new=target.name))
+                continue
+            try:
+                (directory / medium).rename(directory / target)
+            except OSError as error:
+                errors.append(f"{path}: {error}")
+                continue
+            with self._db:
+                self._db.execute("UPDATE media SET path = ? WHERE platform_id = ? AND path = ?",
+                                 (target.as_posix(), platform_id, path))
+            count += 1
+        return count, errors
+
     def gamelist_media_paths(self, folder: str) -> set[str]:
         platform_id = self._platform_id(folder, create=False)
         if platform_id is None:
@@ -650,6 +701,7 @@ def config_key(config: Config) -> str:
         "rules": RULES_VERSION,
         "region_priority": config.region_priority, "region_aliases": config.region_aliases,
         "delete_tags": config.delete_tags, "part_tags": config.part_tags, "prefer_zip": config.prefer_zip,
+        "prefer_played": config.prefer_played,
     }
     return hashlib.sha256(json.dumps(values, sort_keys=True).encode("utf-8")).hexdigest()[:16]
 
@@ -812,6 +864,7 @@ def open_platform(root: Path, directory: Path, config: Config, progress=None,
             scan_platform(collection, directory, progress, full=full)
             facts = collection.load_facts(name)
         results = decide(directory, facts, config)
+        apply_played(results, collection.game_info(name), config.prefer_played)
         collection.update_checksums(name, known_checksums(results))
         collection.save_summary(name, *summary_of(results), key=config_key(config))
         _apply_moves(collection, name, facts, results, config)
@@ -857,19 +910,93 @@ def record_move(root: Path, directory: Path, entry, kept: bool) -> None:
 
 
 def record_changes(root: Path, directory: Path, deleted: list[str], renamed: list[tuple[str, str]],
-                   results: list[GroupResult], config: Config) -> None:
-    """After Proceed: deleted and renamed files go into the database, and the overview numbers."""
+                   results: list[GroupResult], config: Config) -> tuple[int, int, list[str]]:
+    """After Proceed: deleted and renamed files go into the database, and the overview numbers.
+
+    The media of deleted ROMs are deleted as well, unless a remaining ROM uses them too; media named
+    after a renamed ROM are renamed with it. Returns (media deleted, media renamed, errors).
+    """
     name = Path(directory).name
+    directory = Path(directory)
+    errors: list[str] = []
+    removed = renamed_media = 0
     with Collection(root) as collection:
+        for path in collection.media_only_of(name, deleted):
+            try:
+                (directory / path).unlink()
+                removed += 1
+            except FileNotFoundError:
+                pass
+            except OSError as error:
+                errors.append(f"{path}: {error}")
         collection.clear_moves(name)  # Proceed has carried out the changes by hand
         collection.remove_files(name, deleted)
         for old, new in renamed:
             try:
-                mtime = (Path(directory) / new).stat().st_mtime_ns
+                mtime = (directory / new).stat().st_mtime_ns
             except OSError:
                 mtime = None
+            count, problems = collection.rename_media(name, directory, old, new)
+            renamed_media += count
+            errors.extend(problems)
             collection.rename_file(name, old, new, mtime)
         collection.save_summary(name, *summary_of(results), key=config_key(config))
+    return removed, renamed_media, errors
+
+
+def media_to_delete(root: Path, directory: Path, names: list[str]) -> list[str]:
+    """For the question before deleting: the media that go with these ROMs."""
+    with Collection(root) as collection:
+        return collection.media_only_of(Path(directory).name, names)
+
+
+def is_played(info: dict | None) -> bool:
+    """A favorite, or a game with play time or a play count (gamelist.xml)."""
+    return bool(info) and info.get("kind") == "game" and bool(
+        info.get("favorite") or (info.get("playtime") or 0) > 0 or (info.get("playcount") or 0) > 0)
+
+
+def apply_played(results: list[GroupResult], info: dict[str, dict], prefer: bool) -> None:
+    """The setting "favorites and played games" after the rules have decided.
+
+    Always: a file to delete that is a favorite or was played gets a note. With prefer: within a
+    game, the favorite (else the file played longest, else most often) is kept; if the rules kept
+    a single other file, that one gives way. Save files follow the kept file of their name.
+    """
+    from rom_cleanup_workbench import Note, _has_note, find_problems, save_file_stem
+
+    for result in results:
+        if prefer:
+            candidates = [entry for entry in result.keep + result.marked
+                          if is_played(info.get(entry.path.name)) and save_file_stem(entry.path) is None]
+            if candidates:
+                best = max(candidates, key=lambda entry: (bool(info[entry.path.name].get("favorite")),
+                                                          info[entry.path.name].get("playtime") or 0,
+                                                          info[entry.path.name].get("playcount") or 0))
+                if best in result.marked:
+                    result.marked.remove(best)
+                    roms = [entry for entry in result.keep if save_file_stem(entry.path) is None]
+                    if len(roms) == 1:
+                        gone = roms[0]
+                        result.keep.remove(gone)
+                        gone.notes.append(Note("replaced_by_played", name=best.path.name))
+                        result.marked.insert(0, gone)
+                        for save in [entry for entry in result.keep if save_file_stem(entry.path) is not None
+                                     and save_file_stem(entry.path).casefold() == gone.path.stem.casefold()]:
+                            result.keep.remove(save)
+                            save.notes.append(Note("save_orphan", name=save_file_stem(save.path)))
+                            result.marked.append(save)
+                    best.notes.append(Note("kept_played"))
+                    result.keep.insert(0, best)
+                    for save in [entry for entry in result.marked if _has_note(entry.notes, "save_orphan")
+                                 and (save_file_stem(entry.path) or "").casefold() == best.path.stem.casefold()]:
+                        result.marked.remove(save)
+                        save.notes[:] = [note for note in save.notes if getattr(note, "kind", None) != "save_orphan"]
+                        result.keep.append(save)
+                    result.problems = find_problems(result.keep, result.marked)
+        for entry in result.marked:
+            if is_played(info.get(entry.path.name)) and not _has_note(entry.notes, "played_marked"):
+                entry.notes.append(Note("played_marked"))
 
 
 # The overview ----------------------------------------------------------------------------------
@@ -932,6 +1059,7 @@ def _overview_row(collection: "Collection", directory: Path, config: Config) -> 
     key = config_key(effective)
     if state != NOT_SCANNED and row.summary_key != key:
         results = decide(directory, collection.load_facts(name), effective)
+        apply_played(results, collection.game_info(name), effective.prefer_played)
         collection.update_checksums(name, known_checksums(results))
         collection.save_summary(name, *summary_of(results), key=key)
         row = collection.platform(name)
@@ -1005,7 +1133,7 @@ def add_confirmed_saves_to(root: Path, directory: Path, files: dict[str, int]) -
 
 # A platform's own settings --------------------------------------------------------------------
 
-OWN_KEYS = ("region_priority", "delete_tags", "prefer_zip")
+OWN_KEYS = ("region_priority", "delete_tags", "prefer_zip", "prefer_played")
 
 
 def with_own_settings(config: Config, own: dict | None) -> Config:
@@ -1041,13 +1169,14 @@ def settings_for(config_file, root: Path | None, platform: str | None, own: bool
 
 
 def save_settings_for(config_file, root: Path | None, platform: str | None, own: bool, language: str,
-                      region_priority: list[str], delete_tags: list[str], prefer_zip: bool) -> None:
+                      region_priority: list[str], delete_tags: list[str], prefer_zip: bool,
+                      prefer_played: bool | None = None) -> None:
     """Saves the settings: into the default file, or as the platform's own (the language always into the file)."""
     from rom_cleanup_workbench import Config, _clean_names
     from translations import tr
 
     if root is None or platform is None or not own:
-        config_file.write(language, region_priority, delete_tags, prefer_zip)
+        config_file.write(language, region_priority, delete_tags, prefer_zip, prefer_played)
         if root is not None and platform is not None:
             with Collection(root) as collection:
                 collection.set_own_config(platform, None)
@@ -1058,10 +1187,14 @@ def save_settings_for(config_file, root: Path | None, platform: str | None, own:
     tags = _clean_names(delete_tags)
     Config(regions, {}, tags, [], prefer_zip=bool(prefer_zip))  # the same checks as for the file
     current = config_file.read()
-    config_file.write(language, current["region_priority"], current["delete_tags"], current["prefer_zip"])
+    config_file.write(language, current["region_priority"], current["delete_tags"], current["prefer_zip"],
+                      current["prefer_played"])
+    if prefer_played is None:
+        prefer_played = current["prefer_played"]
     with Collection(root) as collection:
         collection.set_own_config(platform, {"region_priority": regions, "delete_tags": tags,
-                                             "prefer_zip": bool(prefer_zip)})
+                                             "prefer_zip": bool(prefer_zip),
+                                             "prefer_played": bool(prefer_played)})
 
 
 def settings_location(config_file, root: Path | None, own: bool) -> str:

@@ -372,6 +372,17 @@ class SettingsPanel:
         ]
         for row, button in enumerate(self.prefer_buttons, start=6):
             button.grid(row=row, column=0, sticky="w", pady=(0, 6))
+        # prefer_played: favorites and played games (gamelist.xml) only noted, or kept.
+        played_label = ttk.Label(right, text=tr("settings.played"))
+        played_label.grid(row=8, column=0, sticky="ew", pady=(28, 8))
+        played_label.bind("<Configure>", lambda event: played_label.configure(wraplength=max(event.width, 1)))
+        self.prefer_played = tk.BooleanVar(frame, bool(self.values["prefer_played"]))
+        self.played_buttons = [
+            ttk.Radiobutton(right, text=tr(key), variable=self.prefer_played, value=value)
+            for key, value in (("settings.played_note", False), ("settings.played_keep", True))
+        ]
+        for row, button in enumerate(self.played_buttons, start=9):
+            button.grid(row=row, column=0, sticky="w", pady=(0, 6))
 
         # Where text is typed, the window's keys must not fire: An "x" in a region name marks nothing.
         for widget in (language_box, self.regions, new_entry, tags_entry):
@@ -394,6 +405,9 @@ class SettingsPanel:
     def prefers_zip(self) -> bool:
         return bool(self.prefer_zip.get())
 
+    def prefers_played(self) -> bool:
+        return bool(self.prefer_played.get())
+
     def _scope_changed(self) -> None:
         """Default or own: the fields show the values of that choice (own starts from the default)."""
         from workbench_db import settings_for
@@ -408,6 +422,7 @@ class SettingsPanel:
             self.regions.insert("end", region)
         self.tags.set(", ".join(values["delete_tags"]))
         self.prefer_zip.set(bool(values["prefer_zip"]))
+        self.prefer_played.set(bool(values["prefer_played"]))
 
     def _select(self, index: int) -> None:
         self.regions.selection_clear(0, "end")
@@ -1942,16 +1957,17 @@ class ReviewWindow:
         from workbench_db import save_settings_for
 
         language, regions, tags = panel.language_code(), panel.region_list(), panel.tag_list()
-        prefer_zip = panel.prefers_zip()
+        prefer_zip, prefer_played = panel.prefers_zip(), panel.prefers_played()
         own = panel.own.get()
         before = panel.values
         rules_changed = (regions != before["region_priority"] or tags != before["delete_tags"]
-                         or prefer_zip != before["prefer_zip"] or own != panel.own_before)
+                         or prefer_zip != before["prefer_zip"] or prefer_played != before["prefer_played"]
+                         or own != panel.own_before)
         if rules_changed and not self._may_discard_changes(tr("settings.discard")):
             return
         try:
             save_settings_for(self.config_file, panel.root_folder, panel.platform, own, language, regions, tags,
-                              prefer_zip)
+                              prefer_zip, prefer_played)
         except (OSError, ValueError) as error:
             messagebox.showerror(tr("settings.error_title"), str(error), parent=self.root)
             return

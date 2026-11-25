@@ -1098,6 +1098,14 @@ class SettingsScreen(Screen):
                     for key, value in (("settings.prefer_plain", False), ("settings.prefer_zip", True)):
                         button = RadioButton(tr(key), value=value == prefer_zip, id=f"prefer-{str(value).lower()}")
                         yield _plain_radio(button) if getattr(self.app, "ascii", False) else button
+                # prefer_played: favorites and played games (gamelist.xml) only noted, or kept.
+                yield Static(tr("settings.played"), id="played-label", markup=False)
+                with RadioSet(id="played"):
+                    prefer_played = bool(self.values["prefer_played"])
+                    for key, value in (("settings.played_note", False), ("settings.played_keep", True)):
+                        button = RadioButton(tr(key), value=value == prefer_played,
+                                             id=f"played-{str(value).lower()}")
+                        yield _plain_radio(button) if getattr(self.app, "ascii", False) else button
         yield Static(tr("settings.tui_hint"), id="settings-hint", markup=False)
 
     def on_mount(self) -> None:
@@ -1117,6 +1125,9 @@ class SettingsScreen(Screen):
 
     def prefers_zip(self) -> bool:
         return self.query_one("#prefer-true", RadioButton).value
+
+    def prefers_played(self) -> bool:
+        return self.query_one("#played-true", RadioButton).value
 
     # Editing the regions ---------------------------------------------------------------------
 
@@ -1185,6 +1196,8 @@ class SettingsScreen(Screen):
         self.query_one("#tags", Input).value = ", ".join(values["delete_tags"])
         self.query_one("#prefer-true", RadioButton).value = bool(values["prefer_zip"])
         self.query_one("#prefer-false", RadioButton).value = not values["prefer_zip"]
+        self.query_one("#played-true", RadioButton).value = bool(values["prefer_played"])
+        self.query_one("#played-false", RadioButton).value = not values["prefer_played"]
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         event.stop()
@@ -1218,9 +1231,11 @@ class WorkbenchApp(App):
         scrollbar-corner-color: #000000; }
     /* Textual marks the view under its keyboard cursor in blue; the views never get the focus here. */
     #views > RadioButton.-selected, #languages > RadioButton.-selected, #prefer > RadioButton.-selected,
+    #views > RadioButton.-selected, #languages > RadioButton.-selected, #played > RadioButton.-selected,
     #views > RadioButton.-selected > .toggle--label,
     #languages > RadioButton.-selected > .toggle--label,
     #prefer > RadioButton.-selected > .toggle--label { background: #000000; }
+    #played > RadioButton.-selected > .toggle--label { background: #000000; }
     #title-row { height: 1; background: #1a7f37; color: #ffffff; }
     #title { width: auto; text-style: bold; padding: 0 1; }
     #folder { width: 1fr; text-align: right; padding: 0 1; }
@@ -1300,10 +1315,15 @@ class WorkbenchApp(App):
     #new-region { width: 1fr; }
     #new-region-row > Button { margin-left: 1; width: 14; }
     #languages, #prefer { height: auto; border: none; background: #000000; margin-top: 1; }
+    #languages, #played { height: auto; border: none; background: #000000; margin-top: 1; }
     #languages:focus-within, #prefer:focus-within { border: none; }
+    #languages:focus-within, #played:focus-within { border: none; }
     #languages > RadioButton, #prefer > RadioButton { background: #000000; color: #ffffff; border: none; }
+    #languages > RadioButton, #played > RadioButton { background: #000000; color: #ffffff; border: none; }
     #languages > RadioButton > .toggle--button, #prefer > RadioButton > .toggle--button { color: #222222; background: #222222; }
+    #languages > RadioButton > .toggle--button, #played > RadioButton > .toggle--button { color: #222222; background: #222222; }
     #languages > RadioButton.-on > .toggle--button, #prefer > RadioButton.-on > .toggle--button { color: #e5383b; background: #222222; }
+    #languages > RadioButton.-on > .toggle--button, #played > RadioButton.-on > .toggle--button { color: #e5383b; background: #222222; }
     #language-hint { margin: 1 0 1 0; color: #aaaaaa; }
     #tags-label { margin-bottom: 1; }
     #overview-head { height: 1; }
@@ -1329,6 +1349,7 @@ class WorkbenchApp(App):
     .keys-note-text { width: 1fr; height: auto; }
     #overview-status { height: 1; margin-top: 1; }
     #prefer-label { margin-top: 1; margin-bottom: 1; }
+    #played-label { margin-top: 1; margin-bottom: 1; }
     #scope-row { height: auto; }
     #scope-label { width: auto; padding: 0 2 0 0; }
     #scope { height: auto; layout: horizontal; border: none; background: #000000; }
@@ -1345,12 +1366,14 @@ class WorkbenchApp(App):
        would make colors between them. Each rule names the same ids as the normal one, which it
        must outrank. */
     .-colors16 Screen, .-colors16 #games, .-colors16 #views, .-colors16 #languages, .-colors16 #prefer,
+    .-colors16 Screen, .-colors16 #games, .-colors16 #views, .-colors16 #languages, .-colors16 #played,
     .-colors16 #folder-tree, .-colors16 #question, .-colors16 QuestionScreen,
     .-colors16 FolderScreen, .-colors16 SettingsScreen { background: #000000; color: #aaaaaa; }
     /* Textual highlights the radio item under the keyboard cursor half-transparently, which would
        make a color between the 16 (the focus tint is off everywhere, see above). */
     .-colors16 #views > RadioButton.-selected, .-colors16 #languages > RadioButton.-selected,
     .-colors16 #prefer > RadioButton.-selected,
+    .-colors16 #played > RadioButton.-selected,
     .-colors16 RadioButton > .toggle--label { background: #000000; }
     .-colors16 * { scrollbar-background: #000000; scrollbar-background-hover: #000000;
                    scrollbar-background-active: #000000; scrollbar-color: #aaaaaa;
@@ -1379,12 +1402,15 @@ class WorkbenchApp(App):
     .-colors16 SettingsScreen Button:focus { background: #0000aa; color: #ffffff; }
     .-colors16 #views > RadioButton, .-colors16 #languages > RadioButton,
     .-colors16 #prefer > RadioButton { background: #000000; color: #aaaaaa; }
+    .-colors16 #played > RadioButton { background: #000000; color: #aaaaaa; }
     .-colors16 #views > RadioButton > .toggle--button,
     .-colors16 #languages > RadioButton > .toggle--button,
     .-colors16 #prefer > RadioButton > .toggle--button { background: #000000; color: #000000; }
+    .-colors16 #played > RadioButton > .toggle--button { background: #000000; color: #000000; }
     .-colors16 #views > RadioButton.-on > .toggle--button,
     .-colors16 #languages > RadioButton.-on > .toggle--button,
     .-colors16 #prefer > RadioButton.-on > .toggle--button { background: #000000; color: #ff5555; }
+    .-colors16 #played > RadioButton.-on > .toggle--button { background: #000000; color: #ff5555; }
     .-colors16 #folder-tree > .tree--guides, .-colors16 #folder-tree > .tree--guides-hover,
     .-colors16 #folder-tree > .tree--guides-selected { color: #aaaaaa; }
     .-colors16 #question-dot { color: #00aa00; }
@@ -2082,15 +2108,16 @@ class WorkbenchApp(App):
         from workbench_db import save_settings_for
 
         language, regions, tags = screen.language_code(), screen.region_list(), screen.tag_list()
-        prefer_zip = screen.prefers_zip()
+        prefer_zip, prefer_played = screen.prefers_zip(), screen.prefers_played()
         before = screen.values
         rules_changed = (regions != before["region_priority"] or tags != before["delete_tags"]
-                         or prefer_zip != before["prefer_zip"] or screen.own != screen.own_before)
+                         or prefer_zip != before["prefer_zip"] or prefer_played != before["prefer_played"]
+                         or screen.own != screen.own_before)
 
         def write() -> None:
             try:
                 save_settings_for(self.config_file, screen.root_folder, screen.platform, screen.own, language,
-                                  regions, tags, prefer_zip)
+                                  regions, tags, prefer_zip, prefer_played)
             except (OSError, ValueError) as error:
                 self.show_message("error", tr("settings.error_title"), str(error))  # the settings stay open
                 return

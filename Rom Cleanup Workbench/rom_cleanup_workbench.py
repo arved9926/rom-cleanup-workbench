@@ -56,6 +56,8 @@ DEFAULT_CONFIG = {
     "language": DEFAULT_LANGUAGE,
     # The same game as a plain file and as a ZIP file: false keeps the plain file, true the ZIP.
     "prefer_zip": False,
+    # Favorites and played games (gamelist.xml): false only notes them in the list, true keeps them.
+    "prefer_played": False,
 }
 
 # Brackets with extra information: (USA), [!] and {Hack}.
@@ -292,6 +294,7 @@ class Config:
     low_priority_tags: list[str] = field(default_factory=list)
     language: str = DEFAULT_LANGUAGE
     prefer_zip: bool = False
+    prefer_played: bool = False
     _canonical: dict[str, str] = field(init=False, repr=False)
 
     def __post_init__(self):
@@ -445,7 +448,7 @@ class Config:
 
 
 # The entries the settings may change; all others stay as they are.
-EDITABLE_CONFIG_KEYS = ("language", "region_priority", "delete_tags", "prefer_zip")
+EDITABLE_CONFIG_KEYS = ("language", "region_priority", "delete_tags", "prefer_zip", "prefer_played")
 
 
 def _format_json(value, indent: int = 0) -> str:
@@ -490,7 +493,7 @@ class ConfigFile:
         return values
 
     def write(self, language: str, region_priority: list[str], delete_tags: list[str],
-              prefer_zip: bool | None = None) -> None:
+              prefer_zip: bool | None = None, prefer_played: bool | None = None) -> None:
         """Checks the values and saves them; the file stays unchanged if anything is wrong.
 
         An old entry low_priority_tags is dropped: read() has put its tags into the priority list.
@@ -505,6 +508,8 @@ class ConfigFile:
         raw.update({"language": language, "region_priority": regions, "delete_tags": tags})
         if prefer_zip is not None:
             raw["prefer_zip"] = bool(prefer_zip)
+        if prefer_played is not None:
+            raw["prefer_played"] = bool(prefer_played)
         # The same checks as when loading, before anything is written.
         temporary = self.path.with_name(self.path.name + ".tmp")
         temporary.write_text(_format_json(raw) + "\n", encoding="utf-8")
@@ -1239,7 +1244,7 @@ class Review:
         to_delete = marked_paths(self.results)
         deleted, errors = delete_files(to_delete, progress)
         self._forget_deleted_files()
-        self.renamed = 0
+        self.renamed = self.media_deleted = self.media_renamed = 0
         done_renames = []
         for entry, target in renames:
             if target.exists():  # a marked file of that name could not be deleted
@@ -1260,7 +1265,10 @@ class Review:
             from workbench_db import record_changes  # only for a collection
 
             gone = [path.name for path in to_delete if not path.exists()]
-            record_changes(self.collection_root, self.directory, gone, done_renames, self.results, self.config)
+            # The media of deleted ROMs go with them; media named like a renamed ROM are renamed too.
+            self.media_deleted, self.media_renamed, media_errors = record_changes(
+                self.collection_root, self.directory, gone, done_renames, self.results, self.config)
+            errors.extend(media_errors)
         return deleted, errors
 
     def done_message(self, deleted: int) -> str:
@@ -1268,6 +1276,10 @@ class Review:
         text = tr("terminal.deleted", count=deleted)
         if getattr(self, "renamed", 0):
             text += "\n" + tr("terminal.renamed", count=self.renamed)
+        if getattr(self, "media_deleted", 0):
+            text += "\n" + tr("terminal.media_deleted", count=self.media_deleted)
+        if getattr(self, "media_renamed", 0):
+            text += "\n" + tr("terminal.media_renamed", count=self.media_renamed)
         return text
 
     def has_work(self) -> bool:
@@ -1423,6 +1435,12 @@ class Review:
             ]
             if renames:
                 lines.append(tr("confirm.rename", count=len(renames), example=example))
+            if self.collection_root is not None and self.directory is not None:
+                from workbench_db import media_to_delete  # only for a collection
+
+                media = media_to_delete(self.collection_root, self.directory, [path.name for path in paths])
+                if media:
+                    lines.append(tr("confirm.media", count=len(media)))
         else:
             lines = [tr("confirm.rename_only", count=len(renames), example=example)]
         if skipped:
