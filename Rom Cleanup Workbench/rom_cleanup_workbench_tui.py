@@ -1811,16 +1811,15 @@ class WorkbenchApp(App):
 
     def _fill_table(self) -> None:
         from workbench_genres import list_label
-        from workbench_view import game_genre, genre_of, list_title
+        from workbench_view import file_notes, game_genre, game_heading, genre_of
 
         table = self.query_one("#games", GameTable)
         table.clear()
-        titled = any(list_title(info) for info in self.game_info.values())
+        # The name from the gamelist.xml is the game's: it stands in the heading, not in a column.
         genred = any(list_label(genre_of(info)) for info in self.game_info.values())
-        extras = [key for key, shown in (("title", titled), ("genre", genred)) if shown]
+        extras = ["genre"] if genred else []
         self._show_extra_columns(extras)
         blank = ("",) * len(extras)
-        titled = bool(extras)  # the name cell is written when either column is shown
         self.files = {}
         moved = set()
         rows = []  # (cells, key); collected first, so that the column widths are known before adding
@@ -1831,7 +1830,8 @@ class WorkbenchApp(App):
                 rows.append((("", "", "") + blank, f"s{game_index}"))
             # The title row: bold, and dashes up to the right edge, so that a new game stands out.
             problems = "; ".join(result.problems)
-            cells = (DashLine(f" {result.title} "), DashLine(), DashLine(f" {problems} " if problems else ""))
+            heading = game_heading(result, self.game_info)
+            cells = (DashLine(f" {heading} "), DashLine(), DashLine(f" {problems} " if problems else ""))
             genre = list_label(game_genre(result, self.game_info))
             more = tuple(DashLine(f" {genre} " if key == "genre" and genre else "") for key in extras)
             rows.append((cells + more, f"g{game_index}"))
@@ -1848,7 +1848,7 @@ class WorkbenchApp(App):
                     self.files[key] = (result, entry)
                     if entry.moved:
                         moved.add(key)
-                    notes = ([tr(moved_note)] if entry.moved else []) + list(entry.notes)
+                    notes = ([tr(moved_note)] if entry.moved else []) + file_notes(entry, self.game_info) + list(entry.notes)
                     # With 16 colors a moved row is black on brown (yellow in PuTTY): no green or red there.
                     style = color_style
                     if entry.moved and self.colors16:
@@ -1858,9 +1858,7 @@ class WorkbenchApp(App):
                         _cell(format_kb(entry.size()), justify="right", style=style),
                         _cell("; ".join(notes), style="italic") if notes else "",
                     )
-                    for column in extras:  # not "key": that is the row's key
-                        title = list_title(self.game_info.get(entry.path.name), ascii=self.ascii) if column == "title" else ""
-                        cells += (_cell(title, style=style) if title else "",)
+                    cells += blank  # the genre stands in the game's heading row
                     rows.append((cells, key))
         widths = [0] * len(table.ordered_columns)
         for cells, _key in rows + [((column.label for column in table.ordered_columns), None)]:

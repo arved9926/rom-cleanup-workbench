@@ -7723,9 +7723,11 @@ class GameViewWindowTests(GameViewDataTests):
         return next(row for row, (_result, entry) in window._files.items() if entry.path.name == name)
 
     def test_the_name_column(self):
+        # No name column: the scraper's name is the game's and stands in its heading, our title in brackets.
         window = self.opened()
-        self.assertIn("title", window.tree["displaycolumns"])
-        self.assertEqual(window.tree.set(self.row_of(window, "Title (USA).nes"), "title"), "★ Title Fight")
+        self.assertNotIn("title", window.tree["columns"])
+        row = self.row_of(window, "Title (USA).nes")
+        self.assertEqual(window.tree.item(window.tree.parent(window.tree.parent(row)), "text"), "Title Fight (Title)")
 
     def test_i_opens_the_game_view_and_esc_and_q_close_it(self):
         window = self.opened()
@@ -7759,7 +7761,7 @@ class GameViewWindowTests(GameViewDataTests):
         row = self.row_of(window, "Title (Japan).nes")
         window.tree.selection_set(row)
         window._no_games_key()
-        self.assertEqual(window.tree.set(self.row_of(window, "Title (Japan).nes"), "title"), "no game")
+        self.assertIn("no game", window.tree.set(self.row_of(window, "Title (Japan).nes"), "hint"))
         self.assertIn("1 file(s) marked as no game", window.status.get())
         window.toggle_report()
         self.assertEqual(window.info_panel.kind, "report")
@@ -7786,9 +7788,10 @@ class GameViewTerminalTests(OverviewTerminalBase):
         async with app.run_test(size=(160, 40)) as pilot:
             await self.settle(app, pilot)
             table = app.query_one("#games")
-            self.assertIn("title", [column.key.value for column in table.ordered_columns])
+            self.assertNotIn("title", [column.key.value for column in table.ordered_columns])
             usa = self.row_key(app, "Title (USA).nes")
-            self.assertIn("★ Title Fight", str(table.get_row(usa)[3]))
+            headings = [getattr(row[0], "text", str(row[0])) for row in (table.get_row(key) for key in table.rows)]
+            self.assertIn(" Title Fight (Title) ", headings)
             app._place_cursor(usa, [usa])
             await pilot.press("enter")
             await pilot.pause()
@@ -7803,7 +7806,7 @@ class GameViewTerminalTests(OverviewTerminalBase):
             app._place_cursor(japan, [japan])
             await pilot.press("n")
             await pilot.pause()
-            self.assertIn("no game", str(table.get_row(self.row_key(app, "Title (Japan).nes"))[3]))
+            self.assertIn("no game", str(table.get_row(self.row_key(app, "Title (Japan).nes"))[2]))
             await pilot.press("g")
             await pilot.pause()
             self.assertEqual(app.screen.kind, "report")
@@ -8195,7 +8198,8 @@ class EditGameWindowTests(GameViewWindowTests):
         self.assertEqual(window.info_panel.kind, "game")
         self.assertIn("New Name  ✎", window.info_panel.plain_text())
         self.assertIn("2 field(s) saved", window.status.get())
-        self.assertEqual(window.tree.set(self.row_of(window, "Title (USA).nes"), "title"), "★ New Name")
+        row = self.row_of(window, "Title (USA).nes")
+        self.assertEqual(window.tree.item(window.tree.parent(window.tree.parent(row)), "text"), "New Name (Title)")
 
     def test_a_wrong_value_keeps_the_form_and_esc_goes_back_unsaved(self):
         import rom_cleanup_workbench_window as wm
@@ -8547,7 +8551,7 @@ class GenreTerminalTests(OverviewTerminalBase):
             await self.settle(app, pilot)
             table = app.query_one("#games")
             self.assertEqual([column.key.value for column in table.ordered_columns],
-                             ["file", "size", "note", "title", "genre"])
+                             ["file", "size", "note", "genre"])
             self.assertEqual([result.title for result in app._visible][:3], ["Alpha", "Mid", "Title"])
             app.sort_list("genre")
             await pilot.pause()
@@ -8558,4 +8562,28 @@ class GenreTerminalTests(OverviewTerminalBase):
             app.sort_list("name")
             await pilot.pause()
             self.assertEqual([result.title for result in app._visible][0], "Alpha")
+
+
+class GameHeadingTests(unittest.TestCase):
+    """The heading of a game: the scraper's name of the kept file, our title in brackets."""
+
+    def test_heading(self):
+        import workbench_view
+
+        def entry(name):
+            item = mock.Mock()
+            item.path = Path(name)
+            return item
+
+        usa, japan = entry("10yard (USA).zip"), entry("10yard (Japan).zip")
+        result = mock.Mock(keep=[usa], marked=[japan], title="10yard")
+        info = {"10yard (USA).zip": {"kind": "game", "name": "10-Yard Fight", "created": False},
+                "10yard (Japan).zip": {"kind": "game", "name": "Japan name", "created": False}}
+        self.assertEqual(workbench_view.game_heading(result, info), "10-Yard Fight (10yard)")
+        info["10yard (USA).zip"]["name"] = "10YARD"
+        self.assertEqual(workbench_view.game_heading(result, info), "10YARD")  # the same: once
+        info["10yard (USA).zip"]["created"] = True  # an empty entry has no name of the scraper
+        self.assertEqual(workbench_view.game_heading(result, info), "10yard")
+        self.assertEqual(workbench_view.game_heading(mock.Mock(keep=[], marked=[japan], title="10yard"), info),
+                         "10yard")  # only the kept file counts
 

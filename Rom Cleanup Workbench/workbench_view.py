@@ -248,3 +248,20 @@ def parse_form(values: dict) -> dict:
             result[column] = text
     return result
 
+
+def game_heading(result, info_by_rom: dict) -> str:
+    """The heading of a game in the list: the name the scraper gave the kept file, our title in
+    brackets ("10-Yard Fight (10yard)"); our title alone if there is no such name or it is the same."""
+    for entry in result.keep:
+        info = info_by_rom.get(entry.path.name)
+        name = (info or {}).get("name")
+        if info and info.get("kind") == "game" and name and not info.get("created"):
+            return name if name.casefold() == result.title.casefold() else f"{name} ({result.title})"
+    return result.title
+
+
+def file_notes(entry, info_by_rom: dict) -> list:
+    """Notes of a file in the list from the database: "no game" for a BIOS file or one marked with n."""
+    info = info_by_rom.get(entry.path.name)
+    return [tr("game.no_game_short")] if info and info.get("kind") == "no_game" else []
+

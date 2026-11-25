@@ -1439,14 +1439,12 @@ class ReviewWindow:
         # "hint" stays the first value of every row; only the display puts the size before it.
         # "title" (the name from the gamelist.xml) is shown only where a platform has information.
         self.tree = ttk.Treeview(
-            self.list_frame, columns=("hint", "size", "title", "genre"), displaycolumns=("size", "hint"),
+            self.list_frame, columns=("hint", "size", "genre"), displaycolumns=("size", "hint"),
             selectmode="extended",
         )
         self.tree.heading("#0", text=tr("window.column.file"), anchor="w")
         self.tree.heading("size", text=tr("window.column.size") + _CELL_GAP, anchor="e")
         self.tree.heading("hint", text=tr("window.column.note"), anchor="w")
-        self.tree.heading("title", text=tr("window.column.title"), anchor="w")
-        self.tree.column("title", width=240, stretch=False)
         # A click on "Genre" sorts the games by genre, a second one (or a click on "File") by name again.
         self.tree.heading("genre", text=tr("window.column.genre"), anchor="w", command=self.toggle_genre_sort)
         self.tree.heading("#0", command=lambda: self.sort_list("name"))
@@ -1889,12 +1887,12 @@ class ReviewWindow:
                 self._striped.add(group_id)
             if index:
                 self.tree.insert(
-                    "", "end", group_id + _SEPARATOR_SUFFIX, text=_LINE_TEXT, values=(_LINE_TEXT,) * 4,
+                    "", "end", group_id + _SEPARATOR_SUFFIX, text=_LINE_TEXT, values=(_LINE_TEXT,) * 3,
                     tags=("separator",),
                 )
             self.tree.insert(
-                "", "end", group_id, text=result.title, open=True,
-                values=("; ".join(result.problems), "", "", self._genre_label(result)),
+                "", "end", group_id, text=self._heading(result), open=True,
+                values=("; ".join(result.problems), "", self._genre_label(result)),
                 tags=self._tags(group_id, "problem" if result.problems else "game"),
             )
             self._fill_group(result)
@@ -1937,7 +1935,7 @@ class ReviewWindow:
 
     def _fill_group(self, result) -> None:
         group_id = self._group_ids[id(result)]
-        self.tree.item(group_id, text=result.title)  # k and x may change the first kept file
+        self.tree.item(group_id, text=self._heading(result))  # k and x may change the first kept file
         self.tree.delete(*self.tree.get_children(group_id))
         if result.keep:
             section = self.tree.insert(
@@ -1954,35 +1952,32 @@ class ReviewWindow:
             for entry in result.marked:
                 self._insert_file(group_id, section, entry, "-", "marked", tr("window.by_hand_delete"))
 
+    def _heading(self, result) -> str:
+        from workbench_view import game_heading
+
+        return game_heading(result, self._game_info)
+
     def _insert_file(self, group_id: str, parent: str, entry, sign: str, tag: str, moved_note: str) -> None:
-        notes = ([moved_note] if entry.moved else []) + entry.notes
+        from workbench_view import file_notes
+
+        notes = ([moved_note] if entry.moved else []) + file_notes(entry, self._game_info) + entry.notes
         tags = (tag, "moved") if entry.moved else (tag,)
         self.tree.insert(
             parent, "end", self._file_ids[id(entry)], text=f"{sign} {entry.path.name}",
-            values=("; ".join(notes), format_kb(entry.size()) + _CELL_GAP, self._title_of(entry), ""),
+            values=("; ".join(notes), format_kb(entry.size()) + _CELL_GAP, ""),
             tags=self._tags(group_id, *tags),
         )
 
-    def _title_of(self, entry) -> str:
-        from workbench_view import list_title
-
-        return list_title(self._game_info.get(entry.path.name))
-
     def _show_name_column(self) -> None:
-        """The name and genre columns appear when the platform has information, as wide as their texts."""
+        """The genre column appears when the platform has genres, as wide as its texts. The name from the
+        gamelist.xml is the game's, not a file's: it stands in the game's heading (see _heading)."""
         from workbench_genres import list_label
-        from workbench_view import genre_of, list_title
+        from workbench_view import genre_of
 
-        titles = [list_title(info) for info in self._game_info.values()]
-        titles = [title for title in titles if title]
         genres = [list_label(genre_of(info)) for info in self._game_info.values()]
         genres = [genre for genre in genres if genre]
         font = tkfont.nametofont("TkDefaultFont")
         shown = ["size"]
-        if titles:
-            width = min(max(font.measure(text) for text in titles + [tr("window.column.title")]) + 24, 420)
-            self.tree.column("title", width=width, minwidth=width // 2)
-            shown.append("title")
         if genres:
             width = min(max(font.measure(text) for text in genres + [tr("window.column.genre") + " ▲"]) + 24, 320)
             self.tree.column("genre", width=width, minwidth=width // 2)
