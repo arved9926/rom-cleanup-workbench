@@ -412,8 +412,10 @@ class Collection:
                 for entry in gamelist.entries:
                     keep = edited.get(entry.rom, set())
                     values = {column: entry.values.get(column) for column in COLUMNS if column not in keep}
-                    values.update(kind=entry.kind, xml_id=entry.xml_id, created=0,
+                    values.update(xml_id=entry.xml_id, created=0,
                                   extra_json=json.dumps(entry.extra, ensure_ascii=False) if entry.extra else None)
+                    if "kind" not in keep:  # "no game" set by hand (n) stays
+                        values["kind"] = entry.kind
                     names = ", ".join(values)
                     marks = ", ".join("?" * len(values))
                     updates = ", ".join(f"{name} = excluded.{name}" for name in values)
@@ -514,6 +516,30 @@ class Collection:
                 self._db.executemany("INSERT INTO game_info (platform_id, rom, kind, name, created) "
                                      "VALUES (?, ?, ?, ?, 1)", new)
         return {rom for rom, kind in rows.items() if kind == "no_game"}
+
+    def set_no_game(self, folder: str, rom: str, no_game: bool) -> None:
+        """n in the list: the file is no game (a BIOS file, say), or is one again. Kept against later imports."""
+        from workbench_gamelist import title_of
+
+        platform_id = self._platform_id(folder)
+        row = self._db.execute("SELECT edited_json, created, name FROM game_info WHERE platform_id = ? AND rom = ?",
+                               (platform_id, rom)).fetchone()
+        with self._db:
+            if row is None:
+                self._db.execute("INSERT INTO game_info (platform_id, rom, kind, name, created) VALUES (?, ?, ?, ?, 1)",
+                                 (platform_id, rom, "game", title_of(rom)))
+                row = (None, 1, title_of(rom))
+            edited = set(json.loads(row[0] or "[]"))
+            if no_game:
+                edited.add("kind")
+                self._db.execute("DELETE FROM media WHERE platform_id = ? AND rom = ? AND origin = 'found'",
+                                 (platform_id, rom))
+            else:
+                edited.discard("kind")
+            name = row[2] if row[2] or not row[1] else title_of(rom)
+            self._db.execute("UPDATE game_info SET kind = ?, edited_json = ?, name = ? WHERE platform_id = ? AND rom = ?",
+                             ("no_game" if no_game else "game", json.dumps(sorted(edited)) if edited else None, name,
+                              platform_id, rom))
 
     def gamelist_media_paths(self, folder: str) -> set[str]:
         platform_id = self._platform_id(folder, create=False)
@@ -1075,3 +1101,61 @@ def toggle_no_games(root: Path, folder: str, config: Config) -> OverviewRow:
     with Collection(root) as collection:
         collection.set_no_games(folder, not collection.is_no_games(folder))
         return _overview_row(collection, Path(root) / folder, config)
+
+
+# Stage 3: the game view, "no game" by hand and the report ------------------------------------------
+
+def load_game_info(directory: Path | None) -> dict[str, dict]:
+    """rom -> what the database knows about it; empty for a folder on its own."""
+    if directory is None:
+        return {}
+    directory = Path(directory)
+    root = collection_root(directory)
+    if root is None:
+        return {}
+    with Collection(root) as collection:
+        return collection.game_info(directory.name)
+
+
+def toggle_no_game(directory: Path, roms: list[str]) -> bool | None:
+    """n: the files become "no game", or games again if all of them already are. Returns the new
+    state; None if the folder is no platform of a collection or no file is given."""
+    directory = Path(directory)
+    root = collection_root(directory)
+    if root is None or not roms:
+        return None
+    with Collection(root) as collection:
+        info = collection.game_info(directory.name)
+        no_game = not all(info.get(rom, {}).get("kind") == "no_game" for rom in roms)
+        for rom in roms:
+            collection.set_no_game(directory.name, rom, no_game)
+    return no_game
+
+
+def gamelist_report(directory: Path | None) -> dict | None:
+    """For g: what the last gamelist.xml did not take over, its notes, ROMs without information,
+    media without a ROM and the files that are no game; None for a folder on its own."""
+    if directory is None:
+        return None
+    directory = Path(directory)
+    root = collection_root(directory)
+    if root is None:
+        return None
+    with Collection(root) as collection:
+        record = collection.gamelist_record(directory.name)
+        info = collection.game_info(directory.name)
+        platform_id = collection._platform_id(directory.name, create=False)
+        unassigned = [] if platform_id is None else collection._db.execute(
+            "SELECT category, path FROM media WHERE platform_id = ? AND rom IS NULL ORDER BY path",
+            (platform_id,)).fetchall()
+    from workbench_view import shows_info
+
+    return {
+        "has_gamelist": record is not None,
+        "problems": record["problems"] if record else [],
+        "notes": record["notes"] if record else [],
+        "without_info": sorted((rom for rom, item in info.items() if item["kind"] == "game" and not shows_info(item)),
+                               key=str.casefold),
+        "unassigned": [tuple(row) for row in unassigned],
+        "no_games": sorted((rom for rom, item in info.items() if item["kind"] == "no_game"), key=str.casefold),
+    }

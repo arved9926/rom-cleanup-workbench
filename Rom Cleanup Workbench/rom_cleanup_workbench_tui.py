@@ -62,7 +62,7 @@ OK = (("dialog.ok", None),)
 # The actions that change or move in the list; a question locks them, as in the window.
 _LIST_ACTIONS = {
     "move_cursor", "move_game", "demote", "promote", "choose_view", "focus_filter", "leave_filter", "proceed",
-    "choose_folder", "open_settings", "reanalyze", "credits",
+    "choose_folder", "open_settings", "reanalyze", "credits", "game_view", "toggle_no_game", "report",
 }
 # As in the window: Redrawing after every deleted file would slow down large deletions.
 DELETE_REDRAW = 0.05
@@ -252,6 +252,7 @@ class GameTable(DataTable):
         self.selected: set[str] = set()
         self.moved: set[str] = set()
         self.natural = (0, 0, 0)  # the widths file, size and note would need without wrapping
+        self.title_width = 0  # the name column from the gamelist.xml at the right edge; 0 if not shown
         self.columns_layout = None  # (file, size, note, wrap) as the rows were added
 
     def available_width(self) -> int:
@@ -259,7 +260,7 @@ class GameTable(DataTable):
 
         When the scroll bar appears or goes, the app lays the list out again (list_resized).
         """
-        return max(0, self.scrollable_content_region.width)
+        return max(0, self.scrollable_content_region.width - self.title_width)
 
     def column_layout(self) -> tuple[int, int, int, bool]:
         """Widths of file, size and note, and whether long names and notes wrap.
@@ -280,7 +281,7 @@ class GameTable(DataTable):
 
     def apply_layout(self, layout: tuple[int, int, int, bool]) -> None:
         """Sets the column widths before rows are added: their heights depend on them."""
-        for key, width in zip(("file", "size", "note"), layout[:3]):
+        for key, width in zip(("file", "size", "note", "title"), (*layout[:3], self.title_width)):
             column = self.columns.get(ColumnKey(key))
             if column is not None:
                 column.auto_width = False
@@ -925,6 +926,59 @@ class KeysScreen(Screen):
         self.dismiss(None)
 
 
+class InfoScreen(Screen):
+    """The game view (i) or the gamelist report (g) in place of the list: blocks of workbench_view."""
+
+    BINDINGS = [Binding("escape,q,Q", "close", show=False), Binding("i,I", "close_kind('game')", show=False),
+                Binding("g,G", "close_kind('report')", show=False)]
+
+    def __init__(self, kind: str, title: str, subtitle: str, blocks: list):
+        super().__init__()
+        self.kind = kind
+        self.title_text = title
+        self.subtitle = subtitle
+        self.blocks = blocks
+
+    def compose(self) -> ComposeResult:
+        green = _green(self.app)
+        head = Text(self._plain(self.title_text), style=f"bold {green}")
+        if self.subtitle:
+            head.append("   " + self._plain(self.subtitle), style="#888888")
+        with Horizontal(id="keys-head"):
+            yield Static(head, id="keys-title")
+            yield Static(tr("game.close_hint"), id="keys-hint", markup=False)
+        with VerticalScroll(id="info-body"):
+            yield Static(self.text(green), id="info-text")
+
+    def _plain(self, text: str) -> str:
+        if getattr(self.app, "ascii", False):
+            return text.replace("◀", "<").replace("★", "*").replace("–", "-")
+        return text
+
+    def text(self, green: str = "") -> Text:
+        text = Text()
+        for index, block in enumerate(self.blocks):
+            if block[0] == "heading":
+                text.append(("" if index == 0 else "\n") + self._plain(block[1]).upper() + "\n",
+                            style=f"bold {green}".strip())
+            elif block[0] == "field":
+                text.append("  " + self._plain(block[1]) + ": ", style="bold")
+                text.append(self._plain(block[2]) + "\n")
+            elif block[0] == "note":
+                text.append("  " + self._plain(block[1]) + "\n", style="#888888")
+            else:
+                text.append("  " + self._plain(block[1]) + "\n")
+        text.rstrip()
+        return text
+
+    def action_close(self) -> None:
+        self.dismiss(None)
+
+    def action_close_kind(self, kind: str) -> None:
+        if kind == self.kind:
+            self.dismiss(None)
+
+
 def _green(app) -> str:
     """The green of the kept files: in 16 colors the standard green."""
     return "#00aa00" if getattr(app, "colors16", False) else "#3fb950"
@@ -1172,11 +1226,13 @@ class WorkbenchApp(App):
     #folder { width: 1fr; text-align: right; padding: 0 1; }
     #info-row { height: auto; margin-bottom: 1; }
     #info { width: auto; padding: 0 1; }
+    #gamelist-line { height: auto; padding: 0 1; margin-bottom: 1; color: #888888; display: none; }
     #short-keys { width: 1fr; height: auto; padding: 0 1; text-align: right; }
     #keys-head { height: 1; margin: 1 1 1 1; }
     #keys-title { width: 1fr; }
     #keys-hint { width: auto; color: #aaaaaa; }
     #keys-body { height: 1fr; }
+    #info-body { height: 1fr; padding: 0 1; }
     #keys-columns { height: auto; }
     .keys-column { width: auto; height: auto; padding: 0 6 1 1; }
     #games { height: 1fr; background: #000000; }
@@ -1351,6 +1407,9 @@ class WorkbenchApp(App):
         Binding("x,X", "demote", show=False),
         Binding("o,O", "overview", show=False),
         Binding("k,K", "promote", show=False),
+        Binding("i,I", "game_view", show=False),
+        Binding("n,N", "toggle_no_game", show=False),
+        Binding("g,G", "report", show=False),
         Binding("1", "choose_view(0)", show=False),
         Binding("2", "choose_view(1)", show=False),
         Binding("3", "choose_view(2)", show=False),
@@ -1387,6 +1446,7 @@ class WorkbenchApp(App):
         # An explicit choice at startup takes precedence over the saved state, as in the window.
         self.scope = scope or load_scope(settings_path)
         self.review = None
+        self.game_info = {}  # rom -> what the database knows about it (gamelist.xml, media)
         self.files = {}  # row key -> (game, file)
         self._analysis = 0  # Counts analyses, so that a replaced one cannot overwrite the newer result.
         self._visible = []  # the games shown, in the order of the list
@@ -1404,6 +1464,7 @@ class WorkbenchApp(App):
         with Horizontal(id="info-row"):
             yield Static("", id="info", markup=False)
             yield ShortKeys("list", id="short-keys")
+        yield Static("", id="gamelist-line", markup=False)
         table = GameTable(id="games", cursor_type="row", zebra_stripes=False)
         table.add_column(_cell(tr("window.column.file")), key="file")
         table.add_column(_cell(tr("window.column.size"), justify="right"), key="size")
@@ -1505,13 +1566,16 @@ class WorkbenchApp(App):
             self._game_numbers[id(result)] = game_index
             for file_index, entry in enumerate(result.keep + result.marked):
                 self._file_keys[id(entry)] = f"g{game_index}f{file_index}"
-        from workbench_db import gamelist_summary, platform_label
+        from workbench_db import gamelist_summary, load_game_info, platform_label
 
+        self.game_info = load_game_info(self.directory)
         green = _green(self)
         summary = gamelist_summary(self.directory)
         self.query_one("#info", Static).update(
-            Text.assemble((tr("window.platform"), f"bold {green}"), " ", (platform_label(self.directory), "bold"),
-                          *((("    " + summary, "#888888"),) if summary else ())))
+            Text.assemble((tr("window.platform"), f"bold {green}"), " ", (platform_label(self.directory), "bold")))
+        line = self.query_one("#gamelist-line", Static)  # a gray line of its own below
+        line.update(summary)
+        line.display = bool(summary)
         self.show_games()
 
     # The list ---------------------------------------------------------------------------------
@@ -1551,9 +1615,22 @@ class WorkbenchApp(App):
             self._select_first_file()
         self._update_status()
 
+    def _show_title_column(self, shown: bool) -> None:
+        table = self.query_one("#games", GameTable)
+        present = ColumnKey("title") in table.columns
+        if shown and not present:
+            table.add_column(_cell(tr("window.column.title")), key="title")
+        elif not shown and present:
+            table.remove_column(ColumnKey("title"))
+            table.title_width = 0
+
     def _fill_table(self) -> None:
+        from workbench_view import list_title
+
         table = self.query_one("#games", GameTable)
         table.clear()
+        titled = any(list_title(info) for info in self.game_info.values())
+        self._show_title_column(titled)
         self.files = {}
         moved = set()
         rows = []  # (cells, key); collected first, so that the column widths are known before adding
@@ -1561,11 +1638,11 @@ class WorkbenchApp(App):
             game_index = self._game_numbers[id(result)]
             if place:
                 # An empty row between the games: a drawn line would widen the file column to its length.
-                rows.append((("", "", ""), f"s{game_index}"))
+                rows.append((("", "", "", "")[:4 if titled else 3], f"s{game_index}"))
             # The title row: bold, and dashes up to the right edge, so that a new game stands out.
             problems = "; ".join(result.problems)
-            rows.append(((DashLine(f" {result.title} "), DashLine(), DashLine(f" {problems} " if problems else "")),
-                         f"g{game_index}"))
+            cells = (DashLine(f" {result.title} "), DashLine(), DashLine(f" {problems} " if problems else ""))
+            rows.append((cells + ((DashLine(),) if titled else ()), f"g{game_index}"))
             # Kept files green, marked files red, as in the window; with 16 colors the ANSI ones.
             keep_color, marked_color = ("#00aa00", "#ff5555") if self.colors16 else ("#3fb950", "#ff6b6b")
             entries = [("k", "window.section.keep", "+", f"bold {keep_color}", "window.by_hand_keep", result.keep),
@@ -1573,7 +1650,7 @@ class WorkbenchApp(App):
             for suffix, label, sign, color_style, moved_note, group in entries:
                 if not group:
                     continue
-                rows.append(((_cell("  " + tr(label)), "", ""), f"g{game_index}{suffix}"))
+                rows.append(((_cell("  " + tr(label)), "", "", "")[:4 if titled else 3], f"g{game_index}{suffix}"))
                 for entry in group:
                     key = self._file_keys[id(entry)]
                     self.files[key] = (result, entry)
@@ -1584,17 +1661,22 @@ class WorkbenchApp(App):
                     style = color_style
                     if entry.moved and self.colors16:
                         style = "bold" if color_style.startswith("bold") else ""
-                    rows.append(((
+                    cells = (
                         _cell(f"    {sign} {entry.path.name}", style=style),
                         _cell(format_kb(entry.size()), justify="right", style=style),
                         _cell("; ".join(notes), style="italic") if notes else "",
-                    ), key))
-        widths = [0, 0, 0]
+                    )
+                    if titled:
+                        title = list_title(self.game_info.get(entry.path.name), ascii=self.ascii)
+                        cells += (_cell(title, style=style) if title else "",)
+                    rows.append((cells, key))
+        widths = [0] * len(table.ordered_columns)
         for cells, _key in rows + [((column.label for column in table.ordered_columns), None)]:
             for index, cell in enumerate(cells):
                 text = cell.text if isinstance(cell, DashLine) else str(cell)
                 widths[index] = max(widths[index], cell_len(text))
-        table.natural = tuple(widths)
+        table.natural = tuple(widths[:3])
+        table.title_width = min(widths[3], 40) if titled else 0
         layout = table.column_layout()
         table.apply_layout(layout)
         # Wrapping rows take as many lines as they need; otherwise every row has one line.
@@ -1602,7 +1684,7 @@ class WorkbenchApp(App):
         for cells, key in rows:
             if layout[3]:  # wrapped lines go on below the text, not at the edge of the column
                 cells = tuple(_hanging(cell, width) if isinstance(cell, Text) and index != 1 else cell
-                              for index, (cell, width) in enumerate(zip(cells, layout[:3])))
+                              for index, (cell, width) in enumerate(zip(cells, layout[:3]))) + tuple(cells[3:])
             table.add_row(*cells, key=key, height=height)
         table.set_moved(moved)
         # A vertical scroll bar may come or go with these rows and change the width.
@@ -2135,7 +2217,68 @@ class WorkbenchApp(App):
         return any(isinstance(screen, SettingsScreen) for screen in self.screen_stack)
 
     def keys_open(self) -> bool:
-        return isinstance(self.screen, KeysScreen)
+        return isinstance(self.screen, (KeysScreen, InfoScreen))
+
+    # Game information: i, n and g in the list --------------------------------------------------
+
+    def _in_collection(self) -> bool:
+        """The open folder is a platform of a roms folder (from its overview or opened on its own)."""
+        from workbench_db import collection_root
+
+        return self.directory is not None and collection_root(self.directory) is not None
+
+    def _highlighted(self):
+        key = self.cursor_key()
+        if key in self.files:
+            return self.files[key]
+        rows = [key for key in self.selected_keys() if key in self.files]
+        return self.files[rows[-1]] if rows else None
+
+    def action_game_view(self) -> None:
+        self._open_info("game")
+
+    def action_report(self) -> None:
+        self._open_info("report")
+
+    def _open_info(self, kind: str) -> None:
+        """i: everything known about the highlighted game; g: the platform's gamelist report."""
+        from workbench_db import gamelist_report
+        from workbench_view import game_blocks, report_blocks
+
+        if self.review is None:
+            return
+        if not self._in_collection():
+            self._set_status(tr("game.only_collection"))
+            return
+        if kind == "game":
+            highlighted = self._highlighted()
+            if highlighted is None:
+                self._set_status(tr("game.no_selection"))
+                return
+            title, subtitle, blocks = game_blocks(*highlighted, self.game_info, lambda entry: format_kb(entry.size()))
+        else:
+            title, subtitle = tr("report.title", platform=self.directory.name), ""
+            blocks = report_blocks(gamelist_report(self.directory))
+        self.push_screen(InfoScreen(kind, title, subtitle, blocks),
+                         lambda _result: self._focus_now(self.query_one("#games", GameTable)))
+
+    def action_toggle_no_game(self) -> None:
+        """n: the selected files are no game (BIOS files, say), or games again."""
+        from workbench_db import load_game_info, toggle_no_game
+
+        if not self._list_shown():
+            return
+        rows = [key for key in self.selected_keys() if key in self.files]
+        if not rows:
+            return
+        if not self._in_collection():
+            self._set_status(tr("game.only_collection"))
+            return
+        names = [self.files[key][1].path.name for key in rows]
+        no_game = toggle_no_game(self.directory, names)
+        self.game_info = load_game_info(self.directory)
+        self._redraw_keeping_place(fallback=rows[-1])
+        self._set_status(tr("game.now_no_game" if no_game else "game.now_game", count=len(names)))
 
     def action_show_keys(self) -> None:
         """F1 and ?: all keys of the list or the overview; F1, ? or Esc close them again."""

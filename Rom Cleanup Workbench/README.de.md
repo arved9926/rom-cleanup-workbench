@@ -214,6 +214,8 @@ Die Tasten gelten im Fenster und in der Terminal-Version gleich. Die Zeile über
 
 **Medien in den Unterordnern.** Bei jedem Scan sucht der Workbench außerdem in allen Unterordnern einer Plattform nach Bildern, Videos und Handbüchern, die die `gamelist.xml` nicht schon nennt. Zugeordnet wird nur, was der Name eindeutig sagt: ein Ordner je Kategorie mit dem Namen des ROMs (`wheel/10yard.png`, `marquees/10yard.png`) oder ROM-Name, Trennzeichen (`-`, `.` oder `_`) und Kategorie in einem beliebigen Ordner (`downloaded_images/10yard-wheel.png`, `game.image.jpg`). Passen mehrere ROMs, gewinnt der längste Name (`sf2ce-image.png` gehört zu `sf2ce.zip`, nicht zu `sf2.zip`); eine Zuordnung nach Ähnlichkeit gibt es nicht. Was nicht eindeutig ist, bleibt ohne ROM. Jedes Spiel-ROM ohne Eintrag in der `gamelist.xml` bekommt einen leeren Eintrag mit dem Namen vor der ersten Klammer; BIOS-Dateien (`BIOS` in einer Klammer oder bekannte Namen wie `neogeo`, `pgm`, `skns`) gelten als kein Spiel und bekommen keine Medien. Hinter dem Plattformnamen steht grau, wie viele Medien zugeordnet sind und wie viele ohne ROM blieben; `Infos` zählt auch leere Einträge, zu denen Medien gefunden wurden.
 
+**Spielansicht, Namensspalte und Bericht.** Hat eine Plattform Informationen, zeigt die Liste eine Spalte `Name` mit dem Namen aus der `gamelist.xml`, mit `★` bei Favoriten und `kein Spiel` bei BIOS-Dateien. `i` (im Fenster auch ein Doppelklick auf eine Datei) zeigt an Stelle der Liste alles, was über das Spiel bekannt ist: seine Dateien mit ihrer Entscheidung, die Felder wie Beschreibung, Bewertung (als x / 5), Datum, Entwickler, Spielzeit und Favorit, die übrigen Felder der `gamelist.xml` und die Medien nach Kategorie; Vorschaubilder gibt es bewusst nicht. `g` zeigt den Gamelist-Bericht: was nicht übernommen wurde und warum, die Hinweise, ROMs ohne Informationen, Medien ohne ROM und die Dateien, die kein Spiel sind. `n` kennzeichnet die markierten Dateien als `kein Spiel` oder hebt das auf; eine spätere `gamelist.xml` ändert daran nichts. Ob eine Datei behalten oder gelöscht wird, entscheiden weiter die Regeln. Die Zusammenfassung von `gamelist.xml` und Medien steht grau in einer eigenen Zeile unter der Plattformzeile.
+
 **Ordner ohne Spiele.** Ein Ordner wie `bios` oder `saves` enthält keine Spiele. `n` kennzeichnet den markierten Ordner als `keine Spiele`: Er wird weder gescannt (auch nicht von `Alle scannen` und `--scan-all`) noch geöffnet, zählt nicht in der Summe, und `Leere ausblenden` blendet ihn aus. Was die Datenbank über ihn wusste, wird gelöscht. Ein zweites `n` hebt das wieder auf; der Ordner ist dann `nicht gescannt`. Einen Knopf dafür gibt es bewusst nicht.
 
 **Änderungen von Hand** (`k`/`x`) bleiben gespeichert, auch nach dem Schließen, bis du ausführst oder die Plattform neu scannst. Ändert sich eine Datei, verfällt ihre Änderung von Hand.
@@ -258,6 +260,9 @@ Das Fenster merkt sich die zuletzt gewählte Ansicht und die bestätigten Status
 | `f` | einen anderen Ordner wählen, im Fenster an der Stelle der Liste: Ordner mit dem Pfeil öffnen, mit Doppelklick sofort auswählen, oder einen Pfad in `Pfad:` tippen, dann `Auswählen` oder `Enter`; `Abbrechen` oder `Esc` behalten den aktuellen Ordner |
 | `r` oder `F5` | neu analysieren, liest auch die Konfiguration neu |
 | `c` | die Credits zeigen |
+| `i` | in einer Plattform der Sammlung: alles, was über das markierte Spiel bekannt ist (auch Doppelklick im Fenster); `Esc` oder `q` schließt |
+| `n` | in einer Plattform der Sammlung: die markierten Dateien als `kein Spiel` kennzeichnen (etwa eine BIOS-Datei) oder das aufheben |
+| `g` | in einer Plattform der Sammlung: der Gamelist-Bericht der Plattform |
 | `F1` oder `?` | alle Tasten zeigen oder wieder ausblenden |
 | `q` oder `Esc` | schließen, ohne etwas zu löschen; in einer Plattform der Sammlung führen beide erst zurück zur Übersicht; nach Änderungen von Hand fragt das Programm vorher |
 
@@ -329,6 +334,9 @@ Rechts neben der Plattform stehen die wichtigsten Tasten, `F1` oder `?` zeigt al
 | `s` | Einstellungen: `Umschalt+Hoch`/`Umschalt+Runter` verschieben eine Region, `Entf` entfernt sie, `Strg+S` speichert, `Esc` bricht ab |
 | `r` oder `F5` | neu analysieren |
 | `c` | die Credits zeigen |
+| `i` | in einer Plattform der Sammlung: alles, was über das markierte Spiel bekannt ist (auch Doppelklick im Fenster); `Esc` oder `q` schließt |
+| `n` | in einer Plattform der Sammlung: die markierten Dateien als `kein Spiel` kennzeichnen (etwa eine BIOS-Datei) oder das aufheben |
+| `g` | in einer Plattform der Sammlung: der Gamelist-Bericht der Plattform |
 | `F1` oder `?` | alle Tasten zeigen oder wieder ausblenden (auch `?`, weil manche Terminals `F1` für ihre eigene Hilfe behalten) |
 | `q` oder `Esc` | schließen, ohne etwas zu löschen; in einer Plattform der Sammlung führen beide erst zurück zur Übersicht; nach Änderungen von Hand fragt das Programm vorher |
 | In einer Frage | `Links`/`Rechts` wählen eine Schaltfläche, `Enter` drückt sie, `Esc` antwortet `Nein` |

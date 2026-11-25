@@ -63,6 +63,8 @@ def key_sections(context: str, window: bool, collection: bool, ascii: bool = Fal
                                        ("/", "keys.filter")]),
             ("keys.section.view", [("1", "window.scope.problems"), ("2", "window.scope.marked"),
                                    ("3", "window.scope.all"), *zoom]),
+            *([("keys.section.game", [("i", "keys.game_view_window" if window else "keys.game_view"),
+                                      ("n", "keys.no_game"), ("g", "keys.report")])] if collection else []),
             ("keys.section.program", [("r  F5", "keys.analyze_again"), ("f", "keys.folder"), ("s", "keys.settings"),
                                       *back, (f"q  {esc}", "keys.back_or_close" if collection else "keys.close"),
                                       ("c", "keys.credits"), ("F1  ?", "keys.this_overview")]),

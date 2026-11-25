@@ -7600,3 +7600,218 @@ class MediaSearchTests(OverviewWindowBase):
         self.assertNotIn("wheel", info["10yard.zip"]["media"])
         self.assertNotIn("sf2.zip", info)
 
+
+GAME_VIEW_GAMELIST = """<gameList>
+  <game id="7"><path>./Title (USA).nes</path><name>Title Fight</name><desc>A game.</desc><rating>0.6</rating>
+    <favorite>true</favorite><playtime>3720</playtime><rotation>Right</rotation>
+    <image>./images/Title (USA)-image.png</image></game>
+  <game><path>./Missing.nes</path></game>
+</gameList>
+"""
+
+
+def _game_view_platform(platform: Path) -> None:
+    """A platform with a gamelist.xml, a picture and a BIOS file, for the game view tests."""
+    (platform / "images").mkdir()
+    (platform / "images" / "Title (USA)-image.png").write_bytes(b"png")
+    (platform / "images" / "stray.png").write_bytes(b"png")
+    (platform / "neogeo.zip").write_bytes(b"bios")
+    (platform / "gamelist.xml").write_text(GAME_VIEW_GAMELIST, encoding="utf-8")
+
+
+class GameViewDataTests(OverviewWindowBase):
+    """Stage 3: what the game view, the name column and the report show; n by hand."""
+
+    def setUp(self):
+        super().setUp()
+        self.fill()
+        _game_view_platform(self.roms / "nes")
+        import workbench_db
+
+        workbench_db.scan_all(self.roms)
+
+    def info(self):
+        import workbench_db
+
+        return workbench_db.load_game_info(self.roms / "nes")
+
+    def test_the_list_title(self):
+        import workbench_view
+
+        info = self.info()
+        self.assertEqual(workbench_view.list_title(info["Title (USA).nes"]), "★ Title Fight")
+        self.assertEqual(workbench_view.list_title(info["Title (USA).nes"], ascii=True), "* Title Fight")
+        self.assertEqual(workbench_view.list_title(info["Title (Japan).nes"]), "")  # empty entry without media
+        self.assertEqual(workbench_view.list_title(info["neogeo.zip"]), "no game")
+
+    def test_the_game_view_shows_everything_known(self):
+        import workbench_view
+
+        review = self.analyze(self.roms / "nes")
+        result = next(item for item in review.results if item.title == "Title")
+        entry = next(item for item in result.keep + result.marked if item.path.name == "Title (USA).nes")
+        title, subtitle, blocks = workbench_view.game_blocks(result, entry, self.info(), lambda item: "1 KB")
+        self.assertEqual((title, subtitle), ("Title Fight", "Title (USA).nes"))
+        fields = {block[1]: block[2] for block in blocks if block[0] == "field"}
+        self.assertEqual(fields["Rating"], "3 / 5  (0.6)")
+        self.assertEqual(fields["Play time"], "1:02 h")
+        self.assertEqual(fields["Favorite"], "yes")
+        self.assertEqual(fields["rotation"], "Right")
+        self.assertEqual(fields["image"], "images/Title (USA)-image.png")
+        lines = [block[1] for block in blocks if block[0] == "line"]
+        self.assertEqual(len(lines), 2)  # both files of the game
+        self.assertTrue(any("Title (USA).nes" in line and "◀" in line for line in lines))
+
+    def test_no_game_by_hand_stays_against_a_new_import(self):
+        import workbench_db
+
+        self.assertTrue(workbench_db.toggle_no_game(self.roms / "nes", ["Title (USA).nes"]))
+        self.assertEqual(self.info()["Title (USA).nes"]["kind"], "no_game")
+        gamelist = self.roms / "nes" / "gamelist.xml"
+        gamelist.write_text(GAME_VIEW_GAMELIST.replace("A game.", "Other."), encoding="utf-8")
+        stat = gamelist.stat()
+        os.utime(gamelist, ns=(stat.st_atime_ns, stat.st_mtime_ns + 9_000_000_000))
+        workbench_db.scan_all(self.roms)
+        self.assertEqual(self.info()["Title (USA).nes"]["kind"], "no_game")
+        self.assertFalse(workbench_db.toggle_no_game(self.roms / "nes", ["Title (USA).nes"]))
+        self.assertEqual(self.info()["Title (USA).nes"]["kind"], "game")
+        self.assertFalse(workbench_db.toggle_no_game(self.roms / "nes", ["neogeo.zip"]))  # a BIOS file, now a game
+        self.assertEqual(self.info()["neogeo.zip"]["name"], "neogeo")
+
+    def test_the_report(self):
+        import workbench_db
+        import workbench_view
+
+        report = workbench_db.gamelist_report(self.roms / "nes")
+        self.assertEqual([item["kind"] for item in report["problems"]], ["rom_missing"])
+        self.assertEqual(report["without_info"], ["Title (Japan).nes"])
+        self.assertEqual(report["unassigned"], [("image", "images/stray.png")])
+        self.assertEqual(report["no_games"], ["neogeo.zip"])
+        text = "\n".join(block[1] for block in workbench_view.report_blocks(report))
+        self.assertIn("ROM not found: ./Missing.nes", text)
+        self.assertIn("Media without a ROM (1)", text)
+        self.assertIsNone(workbench_db.gamelist_report(self.roms.parent))  # no platform of a collection
+
+    def test_the_keys_name_the_game_keys_only_in_a_collection(self):
+        import workbench_keys
+
+        def keys(collection):
+            return [key for _title, rows in workbench_keys.key_sections("list", True, collection) for key, _ in rows]
+
+        self.assertTrue({"i", "n", "g"} <= set(keys(True)))
+        self.assertFalse({"i", "g"} & set(keys(False)))
+
+
+class GameViewWindowTests(GameViewDataTests):
+    """The game view, the name column, n and g in the window."""
+
+    test_the_list_title = test_the_game_view_shows_everything_known = None
+    test_no_game_by_hand_stays_against_a_new_import = test_the_report = None
+    test_the_keys_name_the_game_keys_only_in_a_collection = None
+
+    def opened(self):
+        window = self.make_window(self.roms / "nes")
+        window.open_folder(self.roms / "nes")
+        self.wait(window)
+        return window
+
+    def row_of(self, window, name):
+        return next(row for row, (_result, entry) in window._files.items() if entry.path.name == name)
+
+    def test_the_name_column(self):
+        window = self.opened()
+        self.assertIn("title", window.tree["displaycolumns"])
+        self.assertEqual(window.tree.set(self.row_of(window, "Title (USA).nes"), "title"), "★ Title Fight")
+
+    def test_i_opens_the_game_view_and_esc_and_q_close_it(self):
+        window = self.opened()
+        row = self.row_of(window, "Title (USA).nes")
+        window.tree.selection_set(row)
+        window.tree.focus(row)
+        window.toggle_game_view()
+        self.assertIsNotNone(window.info_panel)
+        self.assertIn("A game.", window.info_panel.plain_text())
+        self.assertTrue(window._list_locked())
+        window._on_escape()
+        self.assertIsNone(window.info_panel)
+        window.toggle_game_view()
+        window._quit_key()
+        self.assertIsNone(window.info_panel)
+        self.assertIsNotNone(window.review)  # q closed only the view
+
+    def test_a_double_click_opens_it(self):
+        window = self.opened()
+        row = self.row_of(window, "Title (USA).nes")
+        window.root.deiconify()
+        window.root.update()
+        window.tree.see(row)
+        window.root.update()
+        x, y, _width, height = window.tree.bbox(row)
+        window._file_double_clicked(type("Event", (), {"y": y + height // 2})())
+        self.assertEqual(window.info_panel.kind, "game")
+
+    def test_n_marks_no_game_and_g_shows_the_report(self):
+        window = self.opened()
+        row = self.row_of(window, "Title (Japan).nes")
+        window.tree.selection_set(row)
+        window._no_games_key()
+        self.assertEqual(window.tree.set(self.row_of(window, "Title (Japan).nes"), "title"), "no game")
+        self.assertIn("1 file(s) marked as no game", window.status.get())
+        window.toggle_report()
+        self.assertEqual(window.info_panel.kind, "report")
+        self.assertIn("Title (Japan).nes", window.info_panel.plain_text())  # now among the no games
+        window.toggle_report()
+        self.assertIsNone(window.info_panel)
+
+
+class GameViewTerminalTests(OverviewTerminalBase):
+    """The game view, the name column, n and g in the terminal version."""
+
+    def setUp(self):
+        super().setUp()
+        _game_view_platform(self.roms / "nes")
+        import workbench_db
+
+        workbench_db.scan_all(self.roms)
+
+    def row_key(self, app, name):
+        return next(key for key, (_result, entry) in app.files.items() if entry.path.name == name)
+
+    async def test_name_column_game_view_n_and_report(self):
+        app = self.app(self.roms / "nes")
+        async with app.run_test(size=(160, 40)) as pilot:
+            await self.settle(app, pilot)
+            table = app.query_one("#games")
+            self.assertIn("title", [column.key.value for column in table.ordered_columns])
+            usa = self.row_key(app, "Title (USA).nes")
+            self.assertIn("★ Title Fight", str(table.get_row(usa)[3]))
+            app._place_cursor(usa, [usa])
+            await pilot.press("i")
+            await pilot.pause()
+            self.assertIsInstance(app.screen, self.tui.InfoScreen)
+            self.assertIn("A game.", app.screen.text().plain)
+            await pilot.press("x")  # nothing behind the view acts
+            await pilot.press("q")
+            await pilot.pause()
+            self.assertNotIsInstance(app.screen, self.tui.InfoScreen)
+            self.assertEqual(app.review.moved_count(), 0)
+            japan = self.row_key(app, "Title (Japan).nes")
+            app._place_cursor(japan, [japan])
+            await pilot.press("n")
+            await pilot.pause()
+            self.assertIn("no game", str(table.get_row(self.row_key(app, "Title (Japan).nes"))[3]))
+            await pilot.press("g")
+            await pilot.pause()
+            self.assertEqual(app.screen.kind, "report")
+            self.assertIn("ROM not found", app.screen.text().plain)
+            await pilot.press("g")
+            await pilot.pause()
+            self.assertNotIsInstance(app.screen, self.tui.InfoScreen)
+
+    async def test_no_name_column_without_information(self):
+        app = self.app(self.roms / "snes")
+        async with app.run_test(size=(160, 40)) as pilot:
+            await self.settle(app, pilot)
+            table = app.query_one("#games")
+            self.assertEqual([column.key.value for column in table.ordered_columns], ["file", "size", "note"])
+

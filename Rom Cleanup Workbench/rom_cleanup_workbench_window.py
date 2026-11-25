@@ -498,6 +498,51 @@ class KeysPanel:
                     wraplength=max(event.width, 1)))
 
 
+class InfoPanel:
+    """The game view (i) or the gamelist report (g) in place of the list: blocks of workbench_view."""
+
+    def __init__(self, window: "ReviewWindow", kind: str, title: str, subtitle: str, blocks: list):
+        self.window = window
+        self.kind = kind  # "game" or "report"
+        self.blocks = blocks
+        frame = self.frame = ttk.Frame(window.middle, padding=(16, 8, 16, 8))
+        heading = ttk.Frame(frame)
+        heading.pack(fill="x", pady=(0, 8))
+        ttk.Label(heading, text=title, font=window.bold_font, foreground=_KEEP_TEXT).pack(side="left")
+        if subtitle:
+            ttk.Label(heading, text=subtitle, foreground=_LINE_COLOR).pack(side="left", padx=(16, 0))
+        ttk.Label(heading, text=tr("game.close_hint"), foreground=_LIGHT_GRAY).pack(side="right")
+        body = ttk.Frame(frame)
+        body.pack(fill="both", expand=True)
+        text = self.text = tk.Text(body, wrap="word", background=_BLACK, foreground=_WHITE, borderwidth=0,
+                                   highlightthickness=0, padx=8, pady=4, cursor="arrow",
+                                   font=tkfont.nametofont("TkDefaultFont"))
+        scrollbar = ttk.Scrollbar(body, orient="vertical", command=text.yview)
+        text.configure(yscrollcommand=scrollbar.set)
+        scrollbar.pack(side="right", fill="y")
+        text.pack(side="left", fill="both", expand=True)
+        text.tag_configure("heading", font=window.bold_font, foreground=_KEEP_TEXT, spacing1=12, spacing3=4)
+        text.tag_configure("label", font=window.bold_font)
+        text.tag_configure("note", foreground=_LINE_COLOR)
+        text.tag_configure("value", lmargin1=0, lmargin2=24)
+        for index, block in enumerate(blocks):
+            if block[0] == "heading":
+                text.insert("end", ("" if index == 0 else "\n") + block[1].upper() + "\n", "heading")
+            elif block[0] == "field":
+                text.insert("end", block[1] + ": ", ("label", "value"))
+                text.insert("end", block[2] + "\n", "value")
+            elif block[0] == "note":
+                text.insert("end", block[1] + "\n", "note")
+            else:
+                text.insert("end", block[1] + "\n")
+        text.configure(state="disabled")  # to read, not to type into; the window's keys stay active
+        text.bindtags((str(text), "Text", str(window.root), "all"))
+        text.bind("<Control-MouseWheel>", window._on_zoom)
+
+    def plain_text(self) -> str:
+        return self.text.get("1.0", "end").strip()
+
+
 class OverviewPanel:
     """The collection: one row per platform folder, in place of the file list. The start page."""
 
@@ -711,6 +756,8 @@ class ReviewWindow:
         self.settings_panel = None
         self.folder_panel = None
         self.keys_panel = None  # all keys, on F1 or ?
+        self.info_panel = None  # the game view (i) or the gamelist report (g)
+        self._game_info = {}  # rom -> what the database knows about it (gamelist.xml, media)
         self.overview_panel = None
         self._batch = None  # the running scan of all platforms: (queue, cancel flag)
         # The roms folder of the collection; None while a folder is open on its own.
@@ -762,6 +809,10 @@ class ReviewWindow:
         from workbench_db import gamelist_summary
 
         self.gamelist_info.set(gamelist_summary(self.directory) if platform else "")
+        if self.gamelist_info.get():
+            self.gamelist_label.grid(row=2, column=0, columnspan=2, sticky="w", pady=(4, 0))
+        else:
+            self.gamelist_label.grid_remove()
         if platform:
             self.platform_label.pack(side="left", padx=(0, 6), before=self.info_label)
         else:
@@ -771,6 +822,7 @@ class ReviewWindow:
     def _clear(self) -> None:
         self.review = None
         self._files = {}
+        self._game_info = {}
         self.tree.delete(*self.tree.get_children())
         self._hide_nothing_to_do()
         self._show_directory()
@@ -864,8 +916,10 @@ class ReviewWindow:
                 row = f"g{group_index}f{file_index}"
                 self._file_ids[id(entry)] = row
                 self._files[row] = (result, entry)
-        from workbench_db import platform_label
+        from workbench_db import load_game_info, platform_label
 
+        self._game_info = load_game_info(self.directory)
+        self._show_name_column()
         self._show_directory(platform_label(self.directory) or None)
         self._show_all_groups()
         self._select_first_file()
@@ -1235,10 +1289,9 @@ class ReviewWindow:
                                         font=self.bold_font)
         self.info_label = ttk.Label(platform_part, textvariable=self.info, font=self.bold_font)
         self.info_label.pack(side="left")
-        # What the platform's gamelist.xml brought, in gray behind the name.
+        # What the platform's gamelist.xml and the media search brought: a gray line of its own below.
         self.gamelist_info = tk.StringVar(self.root)
-        ttk.Label(platform_part, textvariable=self.gamelist_info, foreground=_LINE_COLOR).pack(side="left",
-                                                                                              padx=(16, 0))
+        self.gamelist_label = ttk.Label(info_row, textvariable=self.gamelist_info, foreground=_LINE_COLOR)
         self._show_short_keys()
 
         # The status has a row of its own, so that it does not push out the buttons.
@@ -1284,12 +1337,16 @@ class ReviewWindow:
         self.list_frame = ttk.Frame(middle)
         self.list_frame.pack(fill="both", expand=True)
         # "hint" stays the first value of every row; only the display puts the size before it.
+        # "title" (the name from the gamelist.xml) is shown only where a platform has information.
         self.tree = ttk.Treeview(
-            self.list_frame, columns=("hint", "size"), displaycolumns=("size", "hint"), selectmode="extended",
+            self.list_frame, columns=("hint", "size", "title"), displaycolumns=("size", "hint"),
+            selectmode="extended",
         )
         self.tree.heading("#0", text=tr("window.column.file"), anchor="w")
         self.tree.heading("size", text=tr("window.column.size") + _CELL_GAP, anchor="e")
         self.tree.heading("hint", text=tr("window.column.note"), anchor="w")
+        self.tree.heading("title", text=tr("window.column.title"), anchor="w")
+        self.tree.column("title", width=240, stretch=False)
         self.tree.column("#0", width=560, stretch=True)
         self.tree.column("size", anchor="e", stretch=False)
         self.tree.column("hint", width=500, stretch=True)
@@ -1320,7 +1377,7 @@ class ReviewWindow:
             "x": self.demote_selected, "k": self.promote_selected, "s": self.toggle_settings,
             "f": self.choose_directory, "r": self.reanalyze, "c": self.show_credits, "q": self._quit_key,
             "a": self._scan_all_key, "d": self._toggle_full_key, "h": self._hide_empty_key,
-            "n": self._no_games_key,
+            "n": self._no_games_key, "i": self.toggle_game_view, "g": self.toggle_report,
         }
         for key, action in keys.items():
             for variant in (key, key.upper()):
@@ -1351,6 +1408,7 @@ class ReviewWindow:
         self.tree.bind("<Shift-Up>", lambda _event: self._move_cursor(-1, True))
         self.tree.bind("<Shift-Down>", lambda _event: self._move_cursor(1, True))
         self.tree.bind("<<TreeviewSelect>>", lambda _event: self._drop_separators_from_selection())
+        self.tree.bind("<Double-Button-1>", self._file_double_clicked)
         self.root.protocol("WM_DELETE_WINDOW", self.close)
 
     def _bind_search_entry(self) -> None:
@@ -1376,7 +1434,9 @@ class ReviewWindow:
 
     def _quit_key(self) -> None:
         """q goes one step back like Esc, but not while the settings, the folder choice or a question is open."""
-        if not self._list_locked() or self._overview_keys_work():
+        if self.info_panel is not None and not self._questions:
+            self.close_info()
+        elif not self._list_locked() or self._overview_keys_work():
             self._on_escape()
 
     def _overview_keys_work(self) -> bool:
@@ -1411,7 +1471,8 @@ class ReviewWindow:
         """F1 and ? show all keys of the current view in place of the list, and a second time close them."""
         if self.keys_panel is not None:
             self.close_keys()
-        elif not self._questions and self.settings_panel is None and self.folder_panel is None:
+        elif (not self._questions and self.settings_panel is None and self.folder_panel is None
+              and self.info_panel is None):
             self.open_keys()
         return "break"
 
@@ -1450,6 +1511,94 @@ class ReviewWindow:
     def _no_games_key(self) -> None:
         if self._overview_keys_work():
             self.overview_panel.toggle_no_games()
+        elif self.review is not None and not self._list_locked():
+            self.toggle_no_game()
+
+    # Game information: n, i and g in the list -------------------------------------------------
+
+    def _in_collection(self) -> bool:
+        """The open folder is a platform of a roms folder (from its overview or opened on its own)."""
+        from workbench_db import collection_root
+
+        return self.directory is not None and collection_root(self.directory) is not None
+
+    def _highlighted(self):
+        """(game, file) of the highlighted row; None if no file is highlighted."""
+        row = self.tree.focus()
+        if row not in self._files:
+            rows = [row for row in self.tree.selection() if row in self._files]
+            row = rows[-1] if rows else None
+        return self._files.get(row) if row else None
+
+    def toggle_no_game(self) -> None:
+        """n: the selected files are no game (BIOS files, say), or games again."""
+        from workbench_db import load_game_info, toggle_no_game
+
+        rows = [row for row in self.tree.selection() if row in self._files]
+        if not rows:
+            return
+        if not self._in_collection():
+            self.status.set(tr("game.only_collection"))
+            return
+        names = [self._files[row][1].path.name for row in rows]
+        no_game = toggle_no_game(self.directory, names)
+        self._game_info = load_game_info(self.directory)
+        self._show_name_column()
+        self._show_all_groups()
+        self._restore_selection(rows)
+        self.status.set(tr("game.now_no_game" if no_game else "game.now_game", count=len(names)))
+
+    def _file_double_clicked(self, event) -> str | None:
+        row = self.tree.identify_row(event.y)
+        if row not in self._files or self._list_locked():
+            return None
+        self.tree.selection_set(row)
+        self.tree.focus(row)
+        self.open_info("game")
+        return "break"
+
+    def toggle_game_view(self) -> None:
+        self._toggle_info("game")
+
+    def toggle_report(self) -> None:
+        self._toggle_info("report")
+
+    def _toggle_info(self, kind: str) -> None:
+        if self.info_panel is not None:
+            if self.info_panel.kind == kind:
+                self.close_info()
+            return
+        if self.review is not None and not self._list_locked():
+            self.open_info(kind)
+
+    def open_info(self, kind: str) -> None:
+        """i: everything known about the highlighted game; g: the platform's gamelist report."""
+        from workbench_db import gamelist_report
+        from workbench_view import game_blocks, report_blocks
+
+        if not self._in_collection():
+            self.status.set(tr("game.only_collection"))
+            return
+        if kind == "game":
+            highlighted = self._highlighted()
+            if highlighted is None:
+                self.status.set(tr("game.no_selection"))
+                return
+            title, subtitle, blocks = game_blocks(*highlighted, self._game_info,
+                                                  lambda entry: format_kb(entry.size()))
+        else:
+            report = gamelist_report(self.directory)
+            title, subtitle = tr("report.title", platform=self.directory.name), ""
+            blocks = report_blocks(report)
+        panel = self.info_panel = InfoPanel(self, kind, title, subtitle, blocks)
+        self._show_panel(panel.frame)
+
+    def close_info(self) -> None:
+        if self.info_panel is None:
+            return
+        self.info_panel.frame.destroy()
+        self.info_panel = None
+        self._hide_panel()
 
     def _hide_empty_key(self) -> None:
         if self._overview_keys_work():
@@ -1510,7 +1659,7 @@ class ReviewWindow:
                 self._striped.add(group_id)
             if index:
                 self.tree.insert(
-                    "", "end", group_id + _SEPARATOR_SUFFIX, text=_LINE_TEXT, values=(_LINE_TEXT, _LINE_TEXT),
+                    "", "end", group_id + _SEPARATOR_SUFFIX, text=_LINE_TEXT, values=(_LINE_TEXT,) * 3,
                     tags=("separator",),
                 )
             self.tree.insert(
@@ -1580,8 +1729,29 @@ class ReviewWindow:
         tags = (tag, "moved") if entry.moved else (tag,)
         self.tree.insert(
             parent, "end", self._file_ids[id(entry)], text=f"{sign} {entry.path.name}",
-            values=("; ".join(notes), format_kb(entry.size()) + _CELL_GAP), tags=self._tags(group_id, *tags),
+            values=("; ".join(notes), format_kb(entry.size()) + _CELL_GAP, self._title_of(entry)),
+            tags=self._tags(group_id, *tags),
         )
+
+    def _title_of(self, entry) -> str:
+        from workbench_view import list_title
+
+        return list_title(self._game_info.get(entry.path.name))
+
+    def _show_name_column(self) -> None:
+        """The name column appears when the platform has information, as wide as its longest name."""
+        from workbench_view import list_title
+
+        titles = [list_title(info) for info in self._game_info.values()]
+        titles = [title for title in titles if title]
+        if not titles:
+            self.tree.configure(displaycolumns=("size", "hint"))
+            return
+        font = tkfont.nametofont("TkDefaultFont")
+        width = min(max(font.measure(text) for text in titles + [tr("window.column.title")]) + 24, 420)
+        self.tree.column("title", width=width, minwidth=width // 2)
+        # Before the notes: long notes run past the right edge here (the terminal version wraps them instead).
+        self.tree.configure(displaycolumns=("size", "title", "hint"))
 
     @staticmethod
     def _is_separator(row: str) -> bool:
@@ -1907,6 +2077,8 @@ class ReviewWindow:
             self._answer(self._questions[-1][3])
         elif self.keys_panel is not None:
             self.close_keys()
+        elif self.info_panel is not None:
+            self.close_info()
         elif self.folder_panel is not None:
             self.close_folder_panel()
         elif self.settings_panel is not None:
@@ -1919,7 +2091,7 @@ class ReviewWindow:
     def _list_locked(self) -> bool:
         """The list is hidden behind the settings, the folder choice or a question: nothing may change it."""
         return (self.settings_panel is not None or self.folder_panel is not None or self.overview_panel is not None
-                or self.keys_panel is not None or bool(self._questions))
+                or self.keys_panel is not None or self.info_panel is not None or bool(self._questions))
 
     def _refresh_locks(self) -> None:
         locked = self._list_locked()
