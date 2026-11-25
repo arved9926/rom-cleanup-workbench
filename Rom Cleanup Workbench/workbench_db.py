@@ -605,6 +605,32 @@ class Collection:
             count += 1
         return count, errors
 
+    def save_edits(self, folder: str, rom: str, values: dict) -> list[str]:
+        """Fields changed by hand: stored and kept against later imports of the gamelist.xml.
+        An empty entry becomes a real one. Returns the columns that changed."""
+        from workbench_gamelist import title_of
+
+        platform_id = self._platform_id(folder)
+        row = self._db.execute("SELECT edited_json FROM game_info WHERE platform_id = ? AND rom = ?",
+                               (platform_id, rom)).fetchone()
+        with self._db:
+            if row is None:
+                self._db.execute("INSERT INTO game_info (platform_id, rom, kind, name, created) VALUES (?, ?, 'game', ?, 1)",
+                                 (platform_id, rom, title_of(rom)))
+                row = (None,)
+            current = self._db.execute(f"SELECT {', '.join(values)} FROM game_info WHERE platform_id = ? AND rom = ?",
+                                       (platform_id, rom)).fetchone()
+            changed = [column for column, old in zip(values, current) if values[column] != old
+                       and not (values[column] in (0, None) and old in (0, None))]
+            if not changed:
+                return []
+            edited = set(json.loads(row[0] or "[]")) | set(changed)
+            assignments = ", ".join(f"{column} = ?" for column in changed)
+            self._db.execute(f"UPDATE game_info SET {assignments}, edited_json = ?, created = 0 "
+                             "WHERE platform_id = ? AND rom = ?",
+                             (*(values[column] for column in changed), json.dumps(sorted(edited)), platform_id, rom))
+        return changed
+
     def gamelist_media_paths(self, folder: str) -> set[str]:
         platform_id = self._platform_id(folder, create=False)
         if platform_id is None:
@@ -642,11 +668,11 @@ class Collection:
         if platform_id is None:
             return {}
         info = {}
-        for row in self._db.execute(f"SELECT rom, kind, {', '.join(COLUMNS)}, xml_id, extra_json, created "
-                                    "FROM game_info WHERE platform_id = ?", (platform_id,)):
+        for row in self._db.execute(f"SELECT rom, kind, {', '.join(COLUMNS)}, xml_id, extra_json, created, "
+                                    "edited_json FROM game_info WHERE platform_id = ?", (platform_id,)):
             values = dict(zip(COLUMNS, row[2:2 + len(COLUMNS)]))
-            values.update(rom=row[0], kind=row[1], xml_id=row[-3], extra=json.loads(row[-2] or "[]"),
-                          created=bool(row[-1]), media={})
+            values.update(rom=row[0], kind=row[1], xml_id=row[-4], extra=json.loads(row[-3] or "[]"),
+                          created=bool(row[-2]), edited=set(json.loads(row[-1] or "[]")) - {"kind"}, media={})
             info[row[0]] = values
         for rom, category, path in self._db.execute("SELECT rom, category, path FROM media WHERE platform_id = ? "
                                                     "ORDER BY category, path", (platform_id,)):
@@ -1385,4 +1411,21 @@ def write_all_gamelists(root: Path) -> list[tuple[str, int, str | None]]:
         if count:
             written.append((directory.name, count, backup))
     return written
+
+
+# Stage 6: editing the game information ------------------------------------------------------------
+
+def edit_game(directory: Path, rom: str, form: dict) -> list[str]:
+    """Saves a filled-in edit form for a ROM; ValueError if a value is wrong. Returns the changed columns."""
+    from workbench_view import parse_form
+
+    directory = Path(directory)
+    root = collection_root(directory)
+    if root is None:
+        from translations import tr
+
+        raise ValueError(tr("game.only_collection"))
+    values = parse_form(form)
+    with Collection(root) as collection:
+        return collection.save_edits(directory.name, rom, values)
 

@@ -42,7 +42,7 @@ from textual.renderables.bar import Bar as BarRenderable
 from textual.screen import ModalScreen, Screen
 from textual.scrollbar import ScrollBar, ScrollBarRender
 from textual.widgets import (
-    Button, Checkbox, DataTable, Input, OptionList, ProgressBar, RadioButton, RadioSet, Static, Tree,
+    Button, Checkbox, DataTable, Input, OptionList, ProgressBar, RadioButton, RadioSet, Static, TextArea, Tree,
 )
 from textual.widgets.data_table import ColumnKey
 
@@ -946,7 +946,7 @@ class InfoScreen(Screen):
     """The game view (i) or the gamelist report (g) in place of the list: blocks of workbench_view."""
 
     BINDINGS = [Binding("escape,q,Q", "close", show=False), Binding("i,I", "close_kind('game')", show=False),
-                Binding("g,G", "close_kind('report')", show=False)]
+                Binding("g,G", "close_kind('report')", show=False), Binding("e,E", "edit", show=False)]
 
     def __init__(self, kind: str, title: str, subtitle: str, blocks: list):
         super().__init__()
@@ -993,6 +993,74 @@ class InfoScreen(Screen):
     def action_close_kind(self, kind: str) -> None:
         if kind == self.kind:
             self.dismiss(None)
+
+    def action_edit(self) -> None:
+        """e: the form for the game's information (the app opens it once this view is closed)."""
+        if self.kind == "game":
+            self.dismiss("edit")
+
+
+class EditScreen(Screen):
+    """The form for a game's information (e in the game view): Ctrl+S saves, Esc goes back unsaved."""
+
+    BINDINGS = [Binding("ctrl+s", "save", show=False, priority=True), Binding("escape", "cancel", show=False)]
+
+    def __init__(self, name: str, info: dict | None):
+        super().__init__()
+        self.file_name = name
+        self.info = info
+
+    def compose(self) -> ComposeResult:
+        from workbench_view import EDIT_FIELDS, edit_label, form_values
+
+        values = form_values(self.info)
+        green = _green(self.app)
+        with Horizontal(id="keys-head"):
+            yield Static(Text(tr("game.edit.title", name=self.file_name), style=f"bold {green}"), id="keys-title")
+            yield Static(tr("game.edit.tui_hint"), id="keys-hint", markup=False)
+        with VerticalScroll(id="edit-body"):
+            for column, kind in EDIT_FIELDS:
+                if kind == "flag":
+                    switch = DotSwitch(edit_label(column), values[column], id=f"edit-{column}", compact=True)
+                    yield _plain_radio(switch) if getattr(self.app, "ascii", False) else switch
+                    continue
+                # Label and field on one line, compact, so that the whole form fits in 80 x 24.
+                with Horizontal(classes="edit-row"):
+                    yield Static(edit_label(column), classes="edit-label", markup=False)
+                    if kind == "multiline":
+                        yield TextArea(values[column], id=f"edit-{column}", soft_wrap=True, show_line_numbers=False,
+                                       compact=True)
+                    else:
+                        # Not selected on focus: a typed letter must not replace the whole name.
+                        yield Input(values[column], id=f"edit-{column}", select_on_focus=False, compact=True)
+            with Horizontal(id="edit-buttons"):
+                yield Button(tr("settings.save"), id="edit-save", compact=True)
+                yield Button(tr("settings.cancel"), id="edit-cancel", compact=True)
+
+    def on_mount(self) -> None:
+        self.query_one("#edit-name", Input).focus()
+
+    def values(self) -> dict:
+        from workbench_view import EDIT_FIELDS
+
+        result = {}
+        for column, kind in EDIT_FIELDS:
+            widget = self.query_one(f"#edit-{column}")
+            result[column] = widget.text if isinstance(widget, TextArea) else widget.value
+        return result
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        event.stop()
+        if event.button.id == "edit-save":
+            self.action_save()
+        elif event.button.id == "edit-cancel":
+            self.action_cancel()
+
+    def action_save(self) -> None:
+        self.app.save_edit(self)
+
+    def action_cancel(self) -> None:
+        self.dismiss(None)
 
 
 def _green(app) -> str:
@@ -1264,6 +1332,15 @@ class WorkbenchApp(App):
     #keys-hint { width: auto; color: #aaaaaa; }
     #keys-body { height: 1fr; }
     #info-body { height: 1fr; padding: 0 1; }
+    #edit-body { height: 1fr; padding: 0 1; }
+    .edit-row { height: auto; }
+    .edit-row > Input { width: 1fr; background: #222222; }
+    .edit-row > TextArea { width: 1fr; height: 4; background: #222222; }
+    .edit-label { width: 29; color: #aaaaaa; }
+    #edit-body > DotSwitch { margin-left: 29; }
+    #edit-body > Checkbox { margin-left: 29; }
+    #edit-buttons { height: auto; margin-top: 1; }
+    #edit-buttons > Button { margin-right: 2; }
     #keys-columns { height: auto; }
     .keys-column { width: auto; height: auto; padding: 0 6 1 1; }
     #games { height: 1fr; background: #000000; }
@@ -2268,7 +2345,7 @@ class WorkbenchApp(App):
         return any(isinstance(screen, SettingsScreen) for screen in self.screen_stack)
 
     def keys_open(self) -> bool:
-        return isinstance(self.screen, (KeysScreen, InfoScreen))
+        return isinstance(self.screen, (KeysScreen, InfoScreen, EditScreen))
 
     # Game information: i, n and g in the list --------------------------------------------------
 
@@ -2310,8 +2387,42 @@ class WorkbenchApp(App):
         else:
             title, subtitle = tr("report.title", platform=self.directory.name), ""
             blocks = report_blocks(gamelist_report(self.directory))
-        self.push_screen(InfoScreen(kind, title, subtitle, blocks),
-                         lambda _result: self._focus_now(self.query_one("#games", GameTable)))
+        self.push_screen(InfoScreen(kind, title, subtitle, blocks), self._info_closed)
+
+    def _info_closed(self, result) -> None:
+        if result == "edit":
+            self._open_edit()
+        else:
+            self._focus_now(self.query_one("#games", GameTable))
+
+    def _open_edit(self) -> None:
+        highlighted = self._highlighted()
+        if highlighted is None:
+            return
+        info = self.game_info.get(highlighted[1].path.name)
+        if info is not None and info.get("kind") == "no_game":
+            self._set_status(tr("game.no_game"))
+            return
+        self.push_screen(EditScreen(highlighted[1].path.name, info), self._edit_closed)
+
+    def _edit_closed(self, changed) -> None:
+        """Back in the game view, saved or not."""
+        if changed is not None:
+            self._set_status(tr("game.edit.saved", count=len(changed)) if changed else tr("game.edit.unchanged"))
+        self._open_info("game")
+
+    def save_edit(self, screen: "EditScreen") -> None:
+        """Saves the form; a wrong value is named and the form stays open."""
+        from workbench_db import edit_game, load_game_info
+
+        try:
+            changed = edit_game(self.directory, screen.file_name, screen.values())
+        except (OSError, ValueError) as error:
+            self.show_message("error", tr("game.edit.error_title"), str(error))
+            return
+        self.game_info = load_game_info(self.directory)
+        self._redraw_keeping_place()
+        screen.dismiss(changed)
 
     def action_write_gamelist(self) -> None:
         if self.review is not None and self.directory is not None:

@@ -89,10 +89,14 @@ def game_blocks(result, entry, info_by_rom: dict, size_text) -> tuple[str, str, 
     else:
         if info.get("created"):
             blocks.append(("note", tr("game.empty_entry")))
+        edited = info.get("edited") or set()
         for column, label in FIELD_LABELS:
             value = _value(column, info.get(column))
             if value is not None and not (info.get("created") and column == "name"):
-                blocks.append(("field", tr(label), value))
+                blocks.append(("field", tr(label), value + ("  ✎" if column in edited else "")))
+        if edited:
+            blocks.append(("note", tr("game.edited_note")))
+        blocks.append(("note", tr("game.edit_hint")))
     extra = (info or {}).get("extra") or []
     if extra:
         blocks.append(("heading", tr("game.section.extra")))
@@ -128,3 +132,89 @@ def report_blocks(report: dict) -> list:
             blocks.append(("note", tr("report.none")))
         blocks.extend(("line", line) for line in lines)
     return blocks
+
+
+# Stage 6: editing the game information ------------------------------------------------------------
+
+# The fields the form edits, in its order: (column, kind). The statistics (play count, play time,
+# last played) and the id stay as the frontend and the scraper keep them.
+EDIT_FIELDS = [
+    ("name", "text"), ("sortname", "text"), ("description", "multiline"), ("rating", "stars"),
+    ("release_date", "date"), ("developer", "text"), ("publisher", "text"), ("genre", "text"),
+    ("players", "text"), ("region", "text"), ("lang", "text"), ("favorite", "flag"), ("hidden", "flag"),
+    ("kidgame", "flag"),
+]
+_DATE_FORMS = (r"^(\d{4})$", r"^(\d{4})-(\d{1,2})$", r"^(\d{4})-(\d{1,2})-(\d{1,2})$")
+
+
+def edit_label(column: str) -> str:
+    """The label of a field in the form."""
+    if column == "rating":
+        return tr("game.edit.rating")
+    if column == "release_date":
+        return tr("game.edit.release_date")
+    return tr(dict(FIELD_LABELS)[column])
+
+
+def form_values(info: dict | None) -> dict:
+    """What the form shows at first: text for the text fields, True/False for the switches."""
+    info = info or {}
+    values = {}
+    for column, kind in EDIT_FIELDS:
+        value = info.get(column)
+        if kind == "flag":
+            values[column] = bool(value)
+        elif kind == "stars":
+            values[column] = "" if value is None else f"{value * 5:g}"
+        elif column == "name" and info.get("created") and not info.get("edited"):
+            values[column] = value or ""  # the name of an empty entry, to be confirmed or changed
+        else:
+            values[column] = "" if value is None else str(value)
+    return values
+
+
+def parse_form(values: dict) -> dict:
+    """The column values of a filled-in form; ValueError with a message for the user if one is wrong.
+
+    Rating: 0 to 5 stars, halves and other fractions allowed (stored as 0 to 1, as the gamelist has it).
+    Date: year, year-month or year-month-day; missing parts become 01.
+    """
+    import re
+
+    result = {}
+    for column, kind in EDIT_FIELDS:
+        value = values.get(column)
+        if kind == "flag":
+            result[column] = 1 if value else 0
+            continue
+        text = " ".join(str(value or "").split()) if kind != "multiline" else str(value or "").strip()
+        if not text:
+            result[column] = None
+        elif kind == "stars":
+            try:
+                stars = float(text.replace(",", "."))
+            except ValueError:
+                raise ValueError(tr("game.edit.bad_rating", value=text)) from None
+            if not 0 <= stars <= 5:
+                raise ValueError(tr("game.edit.bad_rating", value=text))
+            result[column] = round(stars / 5, 4)
+        elif kind == "date":
+            for form in _DATE_FORMS:
+                match = re.match(form, text)
+                if match:
+                    parts = [int(part) for part in match.groups()] + [1, 1]
+                    year, month, day = parts[0], parts[1], parts[2]
+                    try:
+                        import datetime
+
+                        datetime.date(year, month, day)
+                    except ValueError:
+                        raise ValueError(tr("game.edit.bad_date", value=text)) from None
+                    result[column] = f"{year:04d}-{month:02d}-{day:02d}"
+                    break
+            else:
+                raise ValueError(tr("game.edit.bad_date", value=text))
+        else:
+            result[column] = text
+    return result
+

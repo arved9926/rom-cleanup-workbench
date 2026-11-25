@@ -563,6 +563,66 @@ class InfoPanel:
         return self.text.get("1.0", "end").strip()
 
 
+class EditPanel:
+    """The form for a game's information (e in the game view), in place of the list."""
+
+    def __init__(self, window: "ReviewWindow", result, entry, info: dict | None):
+        from workbench_view import EDIT_FIELDS, edit_label, form_values
+
+        self.window = window
+        self.result, self.entry = result, entry
+        values = form_values(info)
+        frame = self.frame = ttk.Frame(window.middle, padding=(16, 8, 16, 8))
+        frame.columnconfigure(1, weight=1)
+        heading = ttk.Frame(frame)
+        heading.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 12))
+        ttk.Label(heading, text=tr("game.edit.title", name=entry.path.name), font=window.bold_font,
+                  foreground=_KEEP_TEXT).pack(side="left")
+        ttk.Button(heading, text=tr("settings.cancel"), command=window.close_edit).pack(side="right", padx=(8, 0))
+        ttk.Button(heading, text=tr("settings.save"), command=window.save_edit).pack(side="right")
+        ttk.Label(heading, text=tr("game.edit.hint"), foreground=_LIGHT_GRAY).pack(side="right", padx=(0, 16))
+        self.fields = {}
+        widgets = []
+        for row, (column, kind) in enumerate(EDIT_FIELDS, start=1):
+            if kind == "flag":
+                variable = tk.BooleanVar(frame, values[column])
+                widget = ttk.Checkbutton(frame, text=edit_label(column), variable=variable, style=_DOT_STYLE)
+                widget.grid(row=row, column=1, sticky="w", pady=2)
+                self.fields[column] = variable
+            else:
+                ttk.Label(frame, text=edit_label(column)).grid(row=row, column=0, sticky="nw", padx=(0, 16), pady=3)
+                if kind == "multiline":
+                    widget = tk.Text(frame, height=5, wrap="word", background=_DARK_GRAY, foreground=_WHITE,
+                                     insertbackground=_WHITE, borderwidth=0, highlightthickness=1,
+                                     highlightbackground=_GRAY, highlightcolor=_LINE_COLOR,
+                                     font=tkfont.nametofont("TkDefaultFont"))
+                    widget.insert("1.0", values[column])
+                    self.fields[column] = widget
+                else:
+                    variable = tk.StringVar(frame, values[column])
+                    widget = ttk.Entry(frame, textvariable=variable)
+                    self.fields[column] = variable
+                widget.grid(row=row, column=1, sticky="ew", pady=3)
+            widgets.append(widget)
+        # Typed letters stay text: the window's keys must not fire in the form.
+        for widget in widgets:
+            widget.bindtags((str(widget), widget.winfo_class(), "all"))
+            widget.bind("<Escape>", lambda _event: window.close_edit() or "break")
+            widget.bind("<Control-s>", lambda _event: window.save_edit() or "break")
+            widget.bind("<Control-S>", lambda _event: window.save_edit() or "break")
+            widget.bind("<Control-MouseWheel>", window._on_zoom)
+        self.first = widgets[0]
+
+    def values(self) -> dict:
+        result = {}
+        for column, field in self.fields.items():
+            if isinstance(field, tk.Text):
+                result[column] = field.get("1.0", "end")
+            else:
+                result[column] = field.get()
+        return result
+
+
 class OverviewPanel:
     """The collection: one row per platform folder, in place of the file list. The start page."""
 
@@ -777,6 +837,7 @@ class ReviewWindow:
         self.folder_panel = None
         self.keys_panel = None  # all keys, on F1 or ?
         self.info_panel = None  # the game view (i) or the gamelist report (g)
+        self.edit_panel = None  # the form for a game's information (e in the game view)
         self._game_info = {}  # rom -> what the database knows about it (gamelist.xml, media)
         self.overview_panel = None
         self._batch = None  # the running scan of all platforms: (queue, cancel flag)
@@ -1398,6 +1459,7 @@ class ReviewWindow:
             "f": self.choose_directory, "r": self.reanalyze, "c": self.show_credits, "q": self._quit_key,
             "a": self._scan_all_key, "d": self._toggle_full_key, "h": self._hide_empty_key,
             "n": self._no_games_key, "i": self.toggle_game_view, "g": self.toggle_report, "w": self._write_key,
+            "e": self._edit_key,
         }
         for key, action in keys.items():
             for variant in (key, key.upper()):
@@ -1454,6 +1516,8 @@ class ReviewWindow:
 
     def _quit_key(self) -> None:
         """q goes one step back like Esc, but not while the settings, the folder choice or a question is open."""
+        if self.edit_panel is not None:
+            return  # q in the form is a letter; outside the fields it does not throw the form away
         if self.info_panel is not None and not self._questions:
             self.close_info()
         elif not self._list_locked() or self._overview_keys_work():
@@ -1492,7 +1556,7 @@ class ReviewWindow:
         if self.keys_panel is not None:
             self.close_keys()
         elif (not self._questions and self.settings_panel is None and self.folder_panel is None
-              and self.info_panel is None):
+              and self.info_panel is None and self.edit_panel is None):
             self.open_keys()
         return "break"
 
@@ -1623,6 +1687,54 @@ class ReviewWindow:
 
     def toggle_game_view(self) -> None:
         self._toggle_info("game")
+
+    def _edit_key(self) -> None:
+        """e in the game view: the form for the game's information."""
+        if self.info_panel is not None and self.info_panel.kind == "game" and not self._questions:
+            self.open_edit()
+
+    def open_edit(self) -> None:
+        highlighted = self._highlighted()
+        if highlighted is None or self.edit_panel is not None:
+            return
+        result, entry = highlighted
+        info = self._game_info.get(entry.path.name)
+        if info is not None and info.get("kind") == "no_game":
+            self.status.set(tr("game.no_game"))
+            return
+        self.close_info()
+        panel = self.edit_panel = EditPanel(self, result, entry, info)
+        self._show_panel(panel.frame)
+        panel.first.focus_set()
+
+    def close_edit(self, reopen: bool = True) -> None:
+        """Back to the game view, without saving."""
+        if self.edit_panel is None:
+            return
+        self.edit_panel.frame.destroy()
+        self.edit_panel = None
+        self._hide_panel()
+        if reopen:
+            self.open_info("game")
+
+    def save_edit(self) -> None:
+        """Saves the form; a wrong value is named and the form stays open."""
+        from workbench_db import edit_game, load_game_info
+
+        panel = self.edit_panel
+        if panel is None:
+            return
+        try:
+            changed = edit_game(self.directory, panel.entry.path.name, panel.values())
+        except (OSError, ValueError) as error:
+            messagebox.showerror(tr("game.edit.error_title"), str(error), parent=self.root)
+            return
+        self._game_info = load_game_info(self.directory)
+        self.close_edit(reopen=False)
+        self._show_name_column()
+        self._show_all_groups()
+        self.open_info("game")
+        self.status.set(tr("game.edit.saved", count=len(changed)) if changed else tr("game.edit.unchanged"))
 
     def toggle_report(self) -> None:
         self._toggle_info("report")
@@ -2152,6 +2264,8 @@ class ReviewWindow:
             self._answer(self._questions[-1][3])
         elif self.keys_panel is not None:
             self.close_keys()
+        elif self.edit_panel is not None:
+            self.close_edit()
         elif self.info_panel is not None:
             self.close_info()
         elif self.folder_panel is not None:
@@ -2166,7 +2280,8 @@ class ReviewWindow:
     def _list_locked(self) -> bool:
         """The list is hidden behind the settings, the folder choice or a question: nothing may change it."""
         return (self.settings_panel is not None or self.folder_panel is not None or self.overview_panel is not None
-                or self.keys_panel is not None or self.info_panel is not None or bool(self._questions))
+                or self.keys_panel is not None or self.info_panel is not None or self.edit_panel is not None
+                or bool(self._questions))
 
     def _refresh_locks(self) -> None:
         locked = self._list_locked()

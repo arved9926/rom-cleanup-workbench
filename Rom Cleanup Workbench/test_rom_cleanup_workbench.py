@@ -8088,3 +8088,163 @@ class WriteGamelistTerminalTests(OverviewTerminalBase):
             await pilot.pause()
             self.assertEqual(len([path for path in (self.roms / "nes").iterdir() if path.name.endswith(".bak")]), 1)
 
+
+class EditGameDataTests(OverviewWindowBase):
+    """Stage 6: the form's values, saving them, and their protection against a new import."""
+
+    def setUp(self):
+        super().setUp()
+        self.fill()
+        _game_view_platform(self.roms / "nes")
+        import workbench_db
+
+        workbench_db.scan_all(self.roms)
+
+    def info(self):
+        import workbench_db
+
+        return workbench_db.load_game_info(self.roms / "nes")
+
+    def test_the_form_reads_stars_and_dates(self):
+        import workbench_view
+
+        form = workbench_view.form_values(self.info()["Title (USA).nes"])
+        self.assertEqual((form["name"], form["rating"], form["favorite"]), ("Title Fight", "3", True))
+        values = workbench_view.parse_form(dict(form, rating="3,5", release_date="1988-3"))
+        self.assertEqual((values["rating"], values["release_date"]), (0.7, "1988-03-01"))
+        for bad in ({"rating": "6"}, {"rating": "viel"}, {"release_date": "1988-13-01"}, {"release_date": "88"}):
+            with self.assertRaises(ValueError):
+                workbench_view.parse_form(dict(form, **bad))
+
+    def test_edits_stay_against_a_new_import_and_are_written(self):
+        import workbench_db
+        import workbench_view
+
+        form = workbench_view.form_values(self.info()["Title (USA).nes"])
+        changed = workbench_db.edit_game(self.roms / "nes", "Title (USA).nes", dict(form, name="My Title", rating="4.5"))
+        self.assertEqual(sorted(changed), ["name", "rating"])
+        gamelist = self.roms / "nes" / "gamelist.xml"
+        gamelist.write_text(GAME_VIEW_GAMELIST.replace("A game.", "Other."), encoding="utf-8")
+        stat = gamelist.stat()
+        os.utime(gamelist, ns=(stat.st_atime_ns, stat.st_mtime_ns + 9_000_000_000))
+        workbench_db.scan_all(self.roms)
+        usa = self.info()["Title (USA).nes"]
+        self.assertEqual((usa["name"], usa["rating"], usa["description"]), ("My Title", 0.9, "Other."))
+        self.assertEqual(usa["edited"], {"name", "rating"})
+        self.assertEqual(workbench_db.edit_game(self.roms / "nes", "Title (USA).nes",
+                                                workbench_view.form_values(usa)), [])  # nothing changed
+        workbench_db.write_gamelist(self.roms / "nes")
+        self.assertIn("<name>My Title</name>", gamelist.read_text(encoding="utf-8"))
+
+    def test_an_empty_entry_becomes_a_real_one(self):
+        import workbench_db
+        import workbench_view
+
+        japan = self.info()["Title (Japan).nes"]
+        self.assertTrue(japan["created"])
+        workbench_db.edit_game(self.roms / "nes", "Title (Japan).nes",
+                               dict(workbench_view.form_values(japan), developer="Studio"))
+        japan = self.info()["Title (Japan).nes"]
+        self.assertFalse(japan["created"])
+        self.assertEqual(workbench_view.list_title(japan), "Title")
+        with workbench_db.Collection(self.roms) as collection:
+            self.assertEqual(collection.info_count("nes"), 2)
+
+    def test_the_game_view_marks_edited_fields(self):
+        import workbench_db
+        import workbench_view
+
+        form = workbench_view.form_values(self.info()["Title (USA).nes"])
+        workbench_db.edit_game(self.roms / "nes", "Title (USA).nes", dict(form, genre="Sport"))
+        review = self.analyze(self.roms / "nes")
+        result = next(item for item in review.results if item.title == "Title")
+        entry = next(item for item in result.keep + result.marked if item.path.name == "Title (USA).nes")
+        _title, _name, blocks = workbench_view.game_blocks(result, entry, self.info(), lambda item: "")
+        fields = {block[1]: block[2] for block in blocks if block[0] == "field"}
+        self.assertEqual(fields["Genre"], "Sport  ✎")
+        self.assertTrue(any(block[0] == "note" and "changed by hand" in block[1] for block in blocks))
+
+
+class EditGameWindowTests(GameViewWindowTests):
+    """e in the window's game view."""
+
+    test_the_name_column = test_i_opens_the_game_view_and_esc_and_q_close_it = None
+    test_a_double_click_opens_it = test_n_marks_no_game_and_g_shows_the_report = None
+
+    def edit_open(self):
+        window = self.opened()
+        row = self.row_of(window, "Title (USA).nes")
+        window.tree.selection_set(row)
+        window.tree.focus(row)
+        window.toggle_game_view()
+        window._edit_key()
+        self.assertIsNotNone(window.edit_panel)
+        self.assertIsNone(window.info_panel)
+        return window
+
+    def test_e_edits_and_saves(self):
+        window = self.edit_open()
+        window.edit_panel.fields["name"].set("New Name")
+        window.edit_panel.fields["description"].delete("1.0", "end")
+        window.edit_panel.fields["description"].insert("1.0", "Line one.\nLine two.")
+        window.save_edit()
+        self.assertIsNone(window.edit_panel)
+        self.assertEqual(window.info_panel.kind, "game")
+        self.assertIn("New Name  ✎", window.info_panel.plain_text())
+        self.assertIn("2 field(s) saved", window.status.get())
+        self.assertEqual(window.tree.set(self.row_of(window, "Title (USA).nes"), "title"), "★ New Name")
+
+    def test_a_wrong_value_keeps_the_form_and_esc_goes_back_unsaved(self):
+        import rom_cleanup_workbench_window as wm
+
+        window = self.edit_open()
+        window.edit_panel.fields["rating"].set("7")
+        with mock.patch.object(wm.messagebox, "showerror") as error:
+            window.save_edit()
+        self.assertIn("0 to 5 stars", error.call_args[0][1])
+        self.assertIsNotNone(window.edit_panel)
+        window.edit_panel.fields["name"].set("Not saved")
+        window._quit_key()  # q outside a field does not throw the form away
+        self.assertIsNotNone(window.edit_panel)
+        window._on_escape()
+        self.assertIsNone(window.edit_panel)
+        self.assertEqual(window.info_panel.kind, "game")
+        self.assertNotIn("Not saved", window.info_panel.plain_text())
+
+
+class EditGameTerminalTests(GameViewTerminalTests):
+    """e in the terminal version's game view."""
+
+    test_name_column_game_view_n_and_report = test_no_name_column_without_information = None
+
+    async def test_e_edits_saves_and_esc_goes_back(self):
+        app = self.app(self.roms / "nes")
+        async with app.run_test(size=(160, 50)) as pilot:
+            await self.settle(app, pilot)
+            usa = self.row_key(app, "Title (USA).nes")
+            app._place_cursor(usa, [usa])
+            await pilot.press("i", "e")
+            await pilot.pause()
+            self.assertIsInstance(app.screen, self.tui.EditScreen)
+            name = app.screen.query_one("#edit-name")
+            self.assertEqual(name.value, "Title Fight")
+            await pilot.press("x")  # typed into the field, not a deletion mark
+            await pilot.press("ctrl+s")
+            await pilot.pause()
+            await pilot.pause()
+            self.assertIsInstance(app.screen, self.tui.InfoScreen)
+            self.assertIn("Title Fightx  ✎", app.screen.text().plain)
+            self.assertEqual(app.review.moved_count(), 0)
+            await pilot.press("e")
+            await pilot.pause()
+            app.screen.query_one("#edit-rating").value = "9"
+            await pilot.press("ctrl+s")
+            await pilot.pause()
+            self.assertIsInstance(app.screen, self.tui.QuestionScreen)  # the message about the rating
+            app.screen.dismiss(None)
+            await pilot.pause()
+            self.assertIsInstance(app.screen, self.tui.EditScreen)
+            await pilot.press("escape")
+            await pilot.pause()
+            self.assertIsInstance(app.screen, self.tui.InfoScreen)
+
