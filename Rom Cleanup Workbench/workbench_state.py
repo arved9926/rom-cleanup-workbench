@@ -36,19 +36,21 @@ _LIST_SORT_KEY = "list_sort"
 _SORT_KEY = "overview_sort"
 SCOPE_PROBLEMS = "problems"
 SCOPE_MARKED = "marked"
+SCOPE_REMOVED = "removed"
 SCOPE_ALL_FILES = "all"
 DEFAULT_SCOPE = SCOPE_PROBLEMS
-# The value is saved and stays the same in every language; the label is a text key.
+# The value is saved and stays the same in every language; the label is a text key. Keys 1 to 4.
 SCOPES = (
     (SCOPE_PROBLEMS, "window.scope.problems"),
     (SCOPE_MARKED, "window.scope.marked"),
+    (SCOPE_REMOVED, "window.scope.removed"),
     (SCOPE_ALL_FILES, "window.scope.all"),
 )
 
 
-def scope_flags(scope: str, pattern: str = "") -> tuple[bool, bool, str]:
-    """Translates a view into the values only_problems, show_all and pattern of the Review object."""
-    return scope == SCOPE_PROBLEMS, scope == SCOPE_ALL_FILES, pattern
+def scope_flags(scope: str, pattern: str = "") -> tuple[bool, bool, str, bool]:
+    """Translates a view into the values only_problems, show_all, pattern and only_removed of the Review object."""
+    return scope == SCOPE_PROBLEMS, scope == SCOPE_ALL_FILES, pattern, scope == SCOPE_REMOVED
 
 
 def format_kb(size: int | None) -> str:
@@ -98,7 +100,7 @@ def save_last_collection(path: Path, folder: Path) -> None:
     _save_settings(path, **{_COLLECTION_KEY: str(folder)})
 
 
-SORT_COLUMNS = ("platform", "files", "games", "marked", "problematic", "info", "gamelist_problems")
+SORT_COLUMNS = ("platform", "files", "games", "marked", "problematic", "removed", "info", "gamelist_problems")
 
 
 def load_overview_sort(path: Path) -> tuple[str, bool]:

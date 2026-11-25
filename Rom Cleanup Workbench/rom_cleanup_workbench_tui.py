@@ -64,7 +64,7 @@ OK = (("dialog.ok", None),)
 _LIST_ACTIONS = {
     "move_cursor", "move_game", "demote", "promote", "choose_view", "focus_filter", "leave_filter", "proceed",
     "choose_folder", "open_settings", "reanalyze", "credits", "game_view", "toggle_no_game", "report",
-    "write_gamelist",
+    "write_gamelist", "unused_media",
 }
 # As in the window: Redrawing after every deleted file would slow down large deletions.
 DELETE_REDRAW = 0.05
@@ -646,6 +646,7 @@ class OverviewScreen(Screen):
         Binding("h,H", "toggle_hide_empty", show=False),
         Binding("n,N", "toggle_no_games", show=False),
         Binding("w,W", "write_gamelist", show=False),
+        Binding("m,M", "unused_media", show=False),
         Binding("f,F", "folder", show=False),
     ]
     TOTAL = "*total*"
@@ -695,7 +696,7 @@ class OverviewScreen(Screen):
         rows = [row for row in self.rows.values() if row.has_games or not hide]
         return sort_rows(rows, self.sort_column, self.sort_descending)
 
-    _SORTABLE = ("platform", "files", "games", "marked", "problematic", "info", "gamelist_problems")
+    _SORTABLE = ("platform", "files", "games", "marked", "problematic", "removed", "info", "gamelist_problems")
 
     def on_data_table_header_selected(self, event: DataTable.HeaderSelected) -> None:
         """A click on a column heading sorts by it; a second click turns the order round."""
@@ -759,7 +760,7 @@ class OverviewScreen(Screen):
         box = self.query_one("#overview-hide", Checkbox)
         box.value = not box.value
 
-    _NUMBERS = ("files", "games", "marked", "problematic", "info", "gamelist_problems")
+    _NUMBERS = ("files", "games", "marked", "problematic", "removed", "info", "gamelist_problems")
 
     def _cells(self, row) -> list[Text]:
         # "changed" in yellow: the platform should be scanned again.
@@ -830,6 +831,13 @@ class OverviewScreen(Screen):
             self._fill()
 
         self.app.write_gamelist(self.root_folder / platform, then=written)
+
+    def action_unused_media(self) -> None:
+        """m: the unused media files of the highlighted platform."""
+        platform = self.selected()
+        if platform is None or self.scanning:
+            return
+        self.app.delete_unused_media(self.root_folder / platform)
 
     def action_toggle_no_games(self) -> None:
         """n: the highlighted folder holds no games (or does again)."""
@@ -1551,9 +1559,11 @@ class WorkbenchApp(App):
         Binding("n,N", "toggle_no_game", show=False),
         Binding("g,G", "report", show=False),
         Binding("w,W", "write_gamelist", show=False),
+        Binding("m,M", "unused_media", show=False),
         Binding("1", "choose_view(0)", show=False),
         Binding("2", "choose_view(1)", show=False),
         Binding("3", "choose_view(2)", show=False),
+        Binding("4", "choose_view(3)", show=False),
         # Priority: Textual hands each key to the focused widget as soon as it arrives and only later
         # looks at the normal bindings. "/" must move the focus at once, or the letters typed right
         # after it (fast, pasted or sent by tmux) would still reach the list. In the field itself
@@ -2498,6 +2508,41 @@ class WorkbenchApp(App):
     def action_write_gamelist(self) -> None:
         if self.review is not None and self.directory is not None:
             self.write_gamelist(self.directory)
+
+    def action_unused_media(self) -> None:
+        if self.review is not None and self.directory is not None:
+            self.delete_unused_media(self.directory)
+
+    def delete_unused_media(self, directory) -> None:
+        """Finds the media files nothing uses, asks, then deletes them."""
+        from workbench_db import delete_unused_media, unused_media, unused_media_question
+
+        directory = Path(directory)
+        title = tr("media.unused_title")
+        try:
+            unused = unused_media(directory)
+        except (OSError, ValueError) as error:
+            self.show_message("error", title, str(error))
+            return
+        if not unused:
+            self.show_message("info", title, tr("media.unused_none", platform=directory.name))
+            return
+
+        def answered(yes) -> None:
+            if not yes:
+                return
+            deleted, errors = delete_unused_media(directory, [path for path, _size in unused])
+            text = tr("media.unused_deleted", platform=directory.name, count=deleted)
+            if errors:
+                self.show_message("error", title, text + "\n\n" + "\n".join(errors[:10]))
+            if self.overview_open():
+                self.screen.show_status(text)
+            else:
+                if self.review is not None:
+                    self.show_review(self.review)  # the gray line counts the media
+                self._set_status(text)
+
+        self.ask("warning", title, unused_media_question(directory.name, unused), then=answered)
 
     def write_gamelist(self, directory, after_cleanup: bool = False, then=None) -> None:
         """Asks, then writes the platform's gamelist.xml from the database; then() after writing."""

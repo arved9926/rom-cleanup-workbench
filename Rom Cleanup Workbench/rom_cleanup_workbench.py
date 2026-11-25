@@ -739,12 +739,33 @@ def _sort_key(entry: Entry, config: Config):
     )
 
 
+def _goes_as_requested(entry: Entry) -> bool:
+    """Marked by a delete keyword or a save file without its ROM: meant to go, whatever it holds."""
+    return _has_note(entry.notes, "extra_info", "save_orphan")
+
+
+def _may_be_lost(entry: Entry) -> bool:
+    """A marked file whose content no kept file holds and that no delete keyword asked for."""
+    return not _goes_as_requested(entry) and not _has_note(entry.notes, "identical")
+
+
+def removes_whole_game(result) -> bool:
+    """Nothing of the game remains: all its files are marked."""
+    return bool(result.marked) and not result.keep
+
+
 def find_problems(keep: list[Entry], marked: list[Entry]) -> list[str]:
-    """Names the reasons why a person should look at this decision."""
+    """Names the reasons why a person should look at this decision.
+
+    A problem is only what may get lost unintentionally. What the delete keywords ask for and a
+    file whose content a kept file holds are no reason to look closer, so a game that goes as a
+    whole through its delete keywords is no problem (it shows in the view "removed completely").
+    """
     entries = keep + marked
     notes = [note for entry in entries for note in entry.notes]
+    at_risk = [entry for entry in marked if _may_be_lost(entry)]
     problems = []
-    if not keep:
+    if not keep and at_risk:
         problems.append(tr("problem.nothing_kept"))
     # Same version as a kept file, but other content: which dump is the right one?
     if _has_note(notes, "warning", "warning_plain"):
@@ -755,12 +776,15 @@ def find_problems(keep: list[Entry], marked: list[Entry]) -> list[str]:
         problems.append(tr("problem.zip_unreadable"))
     if _has_note(notes, "save_suspected"):
         problems.append(tr("problem.save_file"))
-    if _has_note(notes, "tie"):
+    if any(_has_note(entry.notes, "tie") for entry in at_risk):
         problems.append(tr("problem.tie"))
     if _has_note(notes, "differs"):
         problems.append(tr("problem.zip_differs"))
-    # If names only match through the comparison, they may be two games ("Title 1-2", "Title 12").
-    if len({normalize(entry.game) for entry in entries}) > 1:
+    # If names only match through the comparison, they may be two games ("Title 1-2", "Title 12"):
+    # a problem when a file of another spelling than every kept one may get lost.
+    kept_names = {normalize(entry.game) for entry in keep}
+    if len({normalize(entry.game) for entry in entries}) > 1 and any(
+            normalize(entry.game) not in kept_names for entry in at_risk):
         problems.append(tr("problem.spellings"))
     # Same name, different file type: This may be the same game for another system.
     kept_types = set()
@@ -771,7 +795,7 @@ def find_problems(keep: list[Entry], marked: list[Entry]) -> list[str]:
             kept_types.add(entry.path.suffix.casefold())
     # Save files always have another type than their ROM: they are no reason to look closer.
     if keep and any(not entry.is_zip and save_file_stem(entry.path) is None
-                    and entry.path.suffix.casefold() not in kept_types for entry in marked):
+                    and entry.path.suffix.casefold() not in kept_types for entry in at_risk):
         problems.append(tr("problem.file_type"))
     return problems
 
@@ -1385,8 +1409,10 @@ class Review:
 
             record_move(self.collection_root, self.directory, entry, kept)
 
-    def is_visible(self, result: GroupResult, only_problems: bool, show_all: bool = False, pattern: str = "") -> bool:
-        """Shows games with marked files, with show_all also the others.
+    def is_visible(self, result: GroupResult, only_problems: bool, show_all: bool = False, pattern: str = "",
+                   only_removed: bool = False) -> bool:
+        """Shows games with marked files, with show_all also the others; only_removed shows only the games
+        of which nothing remains.
 
         Games changed by hand stay visible unless the search excludes them.
         """
@@ -1394,6 +1420,8 @@ class Review:
             return False
         if self._moved_count([result]) > 0:
             return True
+        if only_removed:
+            return removes_whole_game(result)
         relevant = bool(result.marked) or show_all or has_suspected_save_file(result)
         return relevant and (not only_problems or bool(result.problems))
 
@@ -1411,8 +1439,9 @@ class Review:
     def moved_count(self) -> int:
         return self._moved_count(self.results)
 
-    def status(self, only_problems: bool, show_all: bool = False, pattern: str = "") -> str:
-        visible = sum(self.is_visible(result, only_problems, show_all, pattern) for result in self.results)
+    def status(self, only_problems: bool, show_all: bool = False, pattern: str = "", only_removed: bool = False) -> str:
+        visible = sum(self.is_visible(result, only_problems, show_all, pattern, only_removed)
+                      for result in self.results)
         marked = len(marked_paths(self.results))
         problems = sum(
             bool(result.problems and (result.marked or show_all or has_suspected_save_file(result)))
@@ -1423,7 +1452,8 @@ class Review:
             problems=problems, moved=self.moved_count(),
         )
 
-    def confirm_message(self, only_problems: bool, show_all: bool = False, pattern: str = "") -> str:
+    def confirm_message(self, only_problems: bool, show_all: bool = False, pattern: str = "",
+                        only_removed: bool = False) -> str:
         """Before deleting, names everything the window may not be showing right now."""
         paths = marked_paths(self.results)
         renames, skipped = rename_plan(self.results)
@@ -1446,22 +1476,28 @@ class Review:
             lines = [tr("confirm.rename_only", count=len(renames), example=example)]
         if skipped:
             lines.append(tr("confirm.rename_skipped", count=len(skipped)))
-        hidden = [result for result in self.results if not self.is_visible(result, only_problems, show_all, pattern)]
+        hidden = [result for result in self.results
+                  if not self.is_visible(result, only_problems, show_all, pattern, only_removed)]
         hidden_count = len(marked_paths(hidden))
         if hidden_count:
-            key = "confirm.hidden_filtered" if pattern.strip() else "confirm.hidden_unproblematic"
+            plain = only_problems and not pattern.strip()  # only the problem view hides just unproblematic games
+            key = "confirm.hidden_unproblematic" if plain else "confirm.hidden_filtered"
             lines.append(tr(key, count=hidden_count))
         if self.moved_count():
             lines.append(tr("confirm.moved", count=self.moved_count()))
         suspected = len(self.save_file_keys())
         if suspected:
             lines.append(tr("confirm.save_files", count=suspected))
-        emptied = [result.title for result in self.results if result.marked and not result.keep]
-        if emptied:
-            shown = ", ".join(emptied[:5])
-            if len(emptied) > 5:
-                shown = tr("confirm.emptied_more", games=shown, count=len(emptied) - 5)
-            lines.append(tr("confirm.emptied", count=len(emptied), games=shown))
+        # Games of which nothing remains: those the delete keywords ask for apart from the others.
+        removed = [result for result in self.results if removes_whole_game(result)]
+        requested = [result.title for result in removed if all(_goes_as_requested(e) for e in result.marked)]
+        emptied = [result.title for result in removed if not all(_goes_as_requested(e) for e in result.marked)]
+        for key, games in (("confirm.emptied", emptied), ("confirm.emptied_requested", requested)):
+            if games:
+                shown = ", ".join(games[:5])
+                if len(games) > 5:
+                    shown = tr("confirm.emptied_more", games=shown, count=len(games) - 5)
+                lines.append(tr(key, count=len(games), games=shown))
         return "\n\n".join(lines)
 
 

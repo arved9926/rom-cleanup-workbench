@@ -26,7 +26,7 @@ import os
 import sqlite3
 from dataclasses import dataclass
 from datetime import datetime
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from rom_cleanup_workbench import (
     Config, FileFacts, GroupResult, ZipMember, _is_hidden, decide, known_checksums, read_facts, rom_files, rom_files_with_stat,
@@ -41,7 +41,8 @@ CHANGED = "changed"
 
 DATABASE_FOLDER = ".rom_cleanup_workbench"
 DATABASE_NAME = "rom_cleanup_workbench.sqlite"
-SCHEMA_VERSION = 4  # 2: platforms.no_games; 3: game_info, media, gamelist_files; 4: gamelist_files.source
+SCHEMA_VERSION = 5  # 2: platforms.no_games; 3: game_info, media, gamelist_files; 4: gamelist_files.source;
+# 5: platforms.removed
 _HIDDEN_ATTRIBUTE = 0x2  # FILE_ATTRIBUTE_HIDDEN
 
 _SCHEMA = """
@@ -56,7 +57,8 @@ CREATE TABLE IF NOT EXISTS platforms (
     problematic INTEGER,
     summary_key TEXT,
     config_json TEXT,
-    no_games INTEGER NOT NULL DEFAULT 0
+    no_games INTEGER NOT NULL DEFAULT 0,
+    removed INTEGER
 );
 CREATE TABLE IF NOT EXISTS files (
     id INTEGER PRIMARY KEY,
@@ -144,6 +146,7 @@ class PlatformRow:
     problematic: int | None = None
     summary_key: str | None = None
     has_own_config: bool = False
+    removed: int | None = None
 
 
 def _hide(path: Path) -> None:
@@ -198,6 +201,13 @@ class Collection:
                 if "source" not in columns:
                     self._db.execute("ALTER TABLE gamelist_files ADD COLUMN source TEXT")
                 self._db.execute("UPDATE schema_info SET version = 4")
+        if version < 5:  # games of which nothing remains, for the overview; counted again at once
+            columns = {row[1] for row in self._db.execute("PRAGMA table_info(platforms)")}
+            with self._db:
+                if "removed" not in columns:
+                    self._db.execute("ALTER TABLE platforms ADD COLUMN removed INTEGER")
+                self._db.execute("UPDATE platforms SET summary_key = NULL")
+                self._db.execute("UPDATE schema_info SET version = 5")
 
     def close(self) -> None:
         self._db.close()
@@ -249,11 +259,11 @@ class Collection:
 
     def platform(self, folder: str) -> PlatformRow:
         row = self._db.execute(
-            "SELECT folder, last_scan, files, games, marked, problematic, summary_key, config_json "
+            "SELECT folder, last_scan, files, games, marked, problematic, summary_key, config_json, removed "
             "FROM platforms WHERE folder = ?", (folder,)).fetchone()
         if row is None:
             return PlatformRow(folder)
-        return PlatformRow(*row[:7], has_own_config=row[7] is not None)
+        return PlatformRow(*row[:7], has_own_config=row[7] is not None, removed=row[8])
 
     # Facts of a scan --------------------------------------------------------------------------
 
@@ -666,6 +676,15 @@ class Collection:
                               platform_id, rom))
         return changed
 
+    def forget_media(self, folder: str, paths) -> None:
+        """Media files that were deleted: their rows go."""
+        platform_id = self._platform_id(folder, create=False)
+        if platform_id is None:
+            return
+        with self._db:
+            self._db.executemany("DELETE FROM media WHERE platform_id = ? AND path = ?",
+                                 [(platform_id, path) for path in paths])
+
     def gamelist_media_paths(self, folder: str) -> set[str]:
         platform_id = self._platform_id(folder, create=False)
         if platform_id is None:
@@ -717,12 +736,13 @@ class Collection:
 
     # Summary for the overview ------------------------------------------------------------------
 
-    def save_summary(self, folder: str, games: int, marked: int, problematic: int, key: str) -> None:
+    def save_summary(self, folder: str, games: int, marked: int, problematic: int, removed: int | None = None,
+                     *, key: str) -> None:
         """The numbers of the overview, with the settings (key) they were computed with."""
         platform_id = self._platform_id(folder)
         with self._db:
-            self._db.execute("UPDATE platforms SET games = ?, marked = ?, problematic = ?, summary_key = ? "
-                             "WHERE id = ?", (games, marked, problematic, key, platform_id))
+            self._db.execute("UPDATE platforms SET games = ?, marked = ?, problematic = ?, removed = ?, "
+                             "summary_key = ? WHERE id = ?", (games, marked, problematic, removed, key, platform_id))
 
     # A platform's own configuration -----------------------------------------------------------
 
@@ -743,7 +763,8 @@ class Collection:
                               "gamelist_files"):
                     self._db.execute(f"DELETE FROM {table} WHERE platform_id = ?", (platform_id,))
                 self._db.execute("UPDATE platforms SET last_scan = NULL, files = NULL, games = NULL, marked = NULL, "
-                                 "problematic = NULL, summary_key = NULL WHERE id = ?", (platform_id,))
+                                 "problematic = NULL, removed = NULL, summary_key = NULL WHERE id = ?",
+                                 (platform_id,))
             self._db.execute("UPDATE platforms SET no_games = ? WHERE id = ?", (int(no_games), platform_id))
 
     def set_own_config(self, folder: str, values: dict | None) -> None:
@@ -766,7 +787,8 @@ def collection_root(directory: Path) -> Path | None:
 # 2: save files stay only next to a kept file of their name (2026-11-24).
 # 3: a delete keyword leaves "(Japan, USA)" alone when USA is in the priority list (2026-11-24).
 # 4: {} counts as a bracket like () and [] (2026-11-24).
-RULES_VERSION = 4
+# 5: only what may get lost unintentionally is a problem (2026-11-25).
+RULES_VERSION = 5
 
 
 def config_key(config: Config) -> str:
@@ -780,10 +802,13 @@ def config_key(config: Config) -> str:
     return hashlib.sha256(json.dumps(values, sort_keys=True).encode("utf-8")).hexdigest()[:16]
 
 
-def summary_of(results: list[GroupResult]) -> tuple[int, int, int]:
-    """Games, marked files and problematic games, as the overview shows them."""
+def summary_of(results: list[GroupResult]) -> tuple[int, int, int, int]:
+    """Games, marked files, problematic games and games of which nothing remains, as the overview shows them."""
+    from rom_cleanup_workbench import removes_whole_game
+
     return (len(results), sum(len(result.marked) for result in results),
-            sum(1 for result in results if result.problems))
+            sum(1 for result in results if result.problems),
+            sum(1 for result in results if removes_whole_game(result)))
 
 
 def _stamps(directory: Path) -> dict[str, tuple[int | None, int | None]]:
@@ -1034,6 +1059,88 @@ def record_changes(root: Path, directory: Path, deleted: list[str], renamed: lis
     return removed, renamed_media, errors
 
 
+# Folders that hold only media: the category folders (images, videos, marquees, wheel ...) and these.
+# A medium elsewhere, such as in a game's own folder, is never deleted as unused.
+MEDIA_FOLDERS = frozenset({"media", "downloaded_images", "downloaded_media", "artwork", "boxart", "covers"})
+
+
+def _in_media_folder(path: str) -> bool:
+    """A medium inside the platform folder whose folders are all media folders (not the platform folder itself)."""
+    from workbench_gamelist import category_of
+
+    medium = PurePosixPath(path)
+    if medium.is_absolute() or Path(path).is_absolute() or ".." in medium.parts:
+        return False
+    folders = medium.parts[:-1]
+    return bool(folders) and all(part.casefold() in MEDIA_FOLDERS or category_of(part) for part in folders)
+
+
+def unused_media(directory: Path) -> list[tuple[str, int | None]]:
+    """The media files of a platform that nothing uses: no ROM of the folder is named like them and no
+    gamelist.xml links them. Only files in media folders inside the platform folder count; media of the
+    frontends outside the collection are never touched. Returns (path, size), sorted.
+
+    The folder is read now and a changed gamelist.xml first, so that the answer is current. ValueError
+    if the gamelist.xml cannot be read: without its links every medium would look unused.
+    """
+    from translations import tr
+    from workbench_gamelist import find_media
+
+    directory = Path(directory)
+    root = collection_root(directory)
+    if root is None:
+        raise ValueError(tr("game.only_collection"))
+    name = directory.name
+    rom_names = [path.name for path in rom_files(directory)]
+    with Collection(root) as collection:
+        import_gamelist(collection, directory, rom_names)
+        record = collection.gamelist_record(name)
+        if record is not None and record["entries"] is None:
+            raise ValueError(tr("media.unused_gamelist_unreadable", platform=name))
+        known = collection.gamelist_media_paths(name)
+    found = find_media(directory, rom_names, known)  # BIOS files too: their media are no orphans
+    return sorted((path, stamp[0]) for _category, path, stamp in found.unassigned if _in_media_folder(path))
+
+
+def unused_media_question(platform: str, unused: list[tuple[str, int | None]]) -> str:
+    """The question before deleting unused media: how many, how large, why, and a few of them."""
+    from translations import tr
+
+    size = sum(size or 0 for _path, size in unused) / 1024 / 1024
+    names = ", ".join(path for path, _size in unused[:5])
+    if len(unused) > 5:
+        names = tr("confirm.emptied_more", games=names, count=len(unused) - 5)
+    return "\n\n".join([
+        tr("media.unused_question", platform=platform, count=len(unused), size=f"{size:.1f}"),
+        tr("media.unused_why"),
+        tr("confirm.no_recycle_bin" if os.name == "nt" else "confirm.no_trash"),
+        tr("media.unused_examples", names=names),
+    ])
+
+
+def delete_unused_media(directory: Path, paths: list[str]) -> tuple[int, list[str]]:
+    """Deletes these unused media files (as unused_media named them) and forgets them in the database.
+    Returns (deleted, errors)."""
+    directory = Path(directory)
+    root = collection_root(directory)
+    deleted, errors, gone = 0, [], []
+    for path in paths:
+        if not _in_media_folder(path):  # never anything outside the media folders
+            continue
+        try:
+            (directory / path).unlink()
+            deleted += 1
+            gone.append(path)
+        except FileNotFoundError:
+            gone.append(path)
+        except OSError as error:
+            errors.append(f"{path}: {error}")
+    if root is not None and gone:
+        with Collection(root) as collection:
+            collection.forget_media(directory.name, gone)
+    return deleted, errors
+
+
 def media_to_delete(root: Path, directory: Path, names: list[str]) -> list[str]:
     """For the question before deleting: the media that go with these ROMs."""
     with Collection(root) as collection:
@@ -1127,6 +1234,7 @@ class OverviewRow:
     has_games: bool = True  # False: not a single game file in the folder (side files do not count)
     info: int | None = None  # ROMs of the list with information from the gamelist.xml
     gamelist_problems: int | None = None  # what the last gamelist.xml import did not take over; None: none read
+    removed: int | None = None  # games of which nothing remains
 
 
 def overview(root: Path, config: Config) -> list[OverviewRow]:
@@ -1157,7 +1265,7 @@ def _overview_row(collection: "Collection", directory: Path, config: Config) -> 
     return OverviewRow(name, state, row.files, row.games, row.marked, row.problematic,
                        row.last_scan, row.has_own_config, has_game_files(stamps),
                        None if state == NOT_SCANNED else collection.info_count(name),
-                       None if record is None else len(record["problems"]))
+                       None if record is None else len(record["problems"]), row.removed)
 
 
 def has_game_files(names) -> bool:

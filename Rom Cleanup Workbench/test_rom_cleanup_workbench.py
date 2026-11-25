@@ -1016,7 +1016,7 @@ class DeleteKeywordNoteTests(RedundanzTestCase):
         self.assertEqual(result.keep, [])
         self.assertEqual(list(result.marked[0].notes),
                          ["Deleted according to delete keyword (Hack) - as requested"])
-        self.assertEqual(result.problems, ["No file is kept"])
+        self.assertEqual(result.problems, [])  # goes as a whole, as the delete keyword asks
 
     def test_a_keyword_zip_next_to_kept_files_gets_no_warning_either(self):
         self.write("Title (USA).bin", b"usa")
@@ -1291,7 +1291,7 @@ class CollectionDatabaseTests(CollectionDatabaseBase):
         self.assertEqual(collection.path, folder / "rom_cleanup_workbench.sqlite")
         if os.name == "nt":
             self.assertTrue(folder.stat().st_file_attributes & 0x2)
-        self.assertEqual(workbench_db.SCHEMA_VERSION, 4)
+        self.assertEqual(workbench_db.SCHEMA_VERSION, 5)
 
     def test_platforms_are_the_visible_subfolders(self):
         (self.roms / ".git").mkdir()
@@ -1827,7 +1827,7 @@ class OverviewWindowTests(OverviewWindowBase):
             self.assertTrue(collection.is_no_games("nes"))
             version = collection._db.execute("SELECT version FROM schema_info").fetchone()[0]
             tables = {name for (name,) in collection._db.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
-        self.assertEqual(version, 4)  # and the tables of versions 3 and 4 are there as well
+        self.assertEqual(version, 5)  # and the tables of versions 3 and 4 are there as well
         self.assertTrue({"game_info", "media", "gamelist_files"} <= tables)
 
     def test_a_deleted_folder_is_dropped_from_the_database(self):
@@ -2256,7 +2256,7 @@ class OverviewTerminalTests(OverviewTerminalBase):
             app.screen.set_row(workbench_db.OverviewRow("nes", "current", 2, 1, 1, 0, "2026-11-24T20:15:00"))
             await pilot.pause()
             rows = self.overview_rows(app)
-            self.assertEqual(rows["nes"][1:], ["2", "1", "1", "0", "–", "–", "2026-11-24 20:15", "current"])
+            self.assertEqual(rows["nes"][1:], ["2", "1", "1", "0", "–", "–", "–", "2026-11-24 20:15", "current"])
             self.assertEqual(rows["*total*"][1:5], ["2", "1", "1", "0"])
 
     async def test_the_last_collection_opens_at_the_start(self):
@@ -2706,8 +2706,28 @@ class ProblemTests(RedundanzTestCase):
         self.assertTrue(any(text in problem for problem in self.single().problems), self.single().problems)
 
     def test_nothing_left(self):
-        self.write("Title (USA) (Hack).bin")
+        self.write("Title (USA).zip", b"not a zip")
         self.assert_problem("No file")
+
+    def test_nothing_left_by_delete_keywords_is_no_problem(self):
+        self.write("Title (USA) (Hack).bin")
+        self.write("Title (Japan) (Hack).bin", b"other")
+        self.write("Title (Japan).srm", b"save")  # its ROM goes: the save file is of no use
+        result = self.single()
+        self.assertEqual(result.keep, [])
+        self.assertEqual(result.problems, [])
+        self.assertTrue(rf.removes_whole_game(result))
+
+    def test_a_file_whose_content_is_kept_is_no_problem(self):
+        # Tie, spelling and file type only count when content may get lost.
+        for names in (("Title (USA) (Foo).bin", "Title (USA) (Bar).bin"),
+                      ("Title 1-2 (USA).bin", "Title 12 (Japan).bin"),
+                      ("Title (USA).nes", "Title (Japan).sfc")):
+            for name in names:
+                self.write(name, b"same")
+            self.assertEqual(self.single().problems, [], names)
+            for name in names:
+                (self.dir / name).unlink()
 
     def test_zip_of_the_same_version_with_other_content(self):
         self.write("Title (USA).bin", b"rom")
@@ -2745,8 +2765,8 @@ class ProblemTests(RedundanzTestCase):
         self.assertIn("ZIP unreadable", result.problems)
 
     def test_tie(self):
-        self.write("Title (USA) (Foo).bin")
-        self.write("Title (USA) (Bar).bin")
+        self.write("Title (USA) (Foo).bin", b"foo")
+        self.write("Title (USA) (Bar).bin", b"bar")
         self.assert_problem("Tie")
 
     def test_zips_with_different_content(self):
@@ -2755,8 +2775,8 @@ class ProblemTests(RedundanzTestCase):
         self.assert_problem("ZIPs with different content")
 
     def test_different_spelling(self):
-        self.write("Title 1-2 (USA).bin")
-        self.write("Title 12 (Japan).bin")
+        self.write("Title 1-2 (USA).bin", b"usa")
+        self.write("Title 12 (Japan).bin", b"jap")
         self.assert_problem("spellings")
 
     def test_case_alone_is_no_different_spelling(self):
@@ -2765,8 +2785,8 @@ class ProblemTests(RedundanzTestCase):
         self.assertEqual(self.single().problems, [])
 
     def test_other_file_type(self):
-        self.write("Title (USA).nes")
-        self.write("Title (Japan).sfc")
+        self.write("Title (USA).nes", b"usa")
+        self.write("Title (Japan).sfc", b"jap")
         self.assert_problem("Different file type")
 
     def test_file_type_inside_kept_zip_counts(self):
@@ -2840,7 +2860,7 @@ class ReviewTests(RedundanzTestCase):
     def test_filter_shows_problems_and_manual_changes(self):
         self.write("Clear (USA).bin")
         self.write("Clear (Japan).bin")
-        self.write("Problem (USA) (Hack).bin")
+        self.write("Problem (USA).zip", b"not a zip")
         review, results = self.review()
         clear, problem = results
         self.assertFalse(review.is_visible(clear, True))
@@ -2910,7 +2930,7 @@ class ReviewTests(RedundanzTestCase):
     def test_confirm_message_names_hidden_files_and_lost_games(self):
         self.write("Clear (USA).bin")
         self.write("Clear (Japan).bin")
-        self.write("Problem (USA) (Hack).bin")
+        self.write("Problem (USA).zip", b"not a zip")
         review, _ = self.review()
         message = review.confirm_message(True)
         self.assertIn("2 file(s)", message)
@@ -3517,7 +3537,7 @@ class ReviewWindowTests(RedundanzTestCase):
 
     def test_window_has_the_keys_of_the_terminal_version(self):
         window = self.open_window()
-        for key in ("x", "X", "k", "K", "s", "S", "f", "F", "r", "R", "c", "C", "q", "Q", "1", "2", "3"):
+        for key in ("x", "X", "k", "K", "s", "S", "f", "F", "r", "R", "c", "C", "q", "Q", "1", "2", "3", "4"):
             self.assertTrue(window.root.bind(f"<KeyPress-{key}>"), key)
         for sequence in ("<Return>", "<slash>", "<F5>", "<F1>", "<Escape>", "<Tab>", "<Shift-Tab>"):
             self.assertTrue(window.root.bind(sequence), sequence)
@@ -3548,7 +3568,7 @@ class ReviewWindowTests(RedundanzTestCase):
         self.write_two_games()
         window = self.open_window()
         with mock.patch.object(window, "_scope_changed") as changed:
-            window._choose_scope(2)
+            window._choose_scope(3)
         self.assertEqual(window.scope.get(), "all")
         changed.assert_called_once()
         with mock.patch.object(window, "_list_locked", return_value=True):
@@ -4144,7 +4164,7 @@ class ReviewWindowTests(RedundanzTestCase):
         self.assertEqual(window.tree.get_children(), ("g0", "g1s", "g1"))
         self.assertIn("Problematic: 1", window.status.get())
 
-    def test_scope_is_offered_as_three_radio_buttons(self):
+    def test_scope_is_offered_as_four_radio_buttons(self):
         window = self.open_window()
         radios = []
 
@@ -4157,11 +4177,13 @@ class ReviewWindowTests(RedundanzTestCase):
         collect(window.root)
         self.assertEqual(
             [radio.cget("text") for radio in radios],
-            ["Problematic deletion marks", "All deletion marks", "All ROM files"],
+            ["To check", "To delete", "Removed completely", "All games"],
         )
         self.assertEqual(window.scope.get(), "marked")
-        radios[2].invoke()
+        radios[3].invoke()
         self.assertEqual(window.scope.get(), "all")
+        radios[2].invoke()
+        self.assertEqual(window.scope.get(), "removed")
         radios[0].invoke()
         self.assertEqual(window.scope.get(), "problems")
 
@@ -4169,8 +4191,8 @@ class ReviewWindowTests(RedundanzTestCase):
         self.write("Other (USA).bin")
         self.write("Clear (USA).bin")
         self.write("Clear (Japan).bin")
-        self.write("Zelda (USA).nes")
-        self.write("Zelda (Japan).sfc")
+        self.write("Zelda (USA).nes", b"usa")
+        self.write("Zelda (Japan).sfc", b"jap")
         window = self.open_window()
         titles = lambda: [window.tree.item(row, "text") for row in window.tree.get_children() if not row.endswith("s")]
         self.assertEqual(titles(), ["Clear", "Zelda"])
@@ -4181,11 +4203,25 @@ class ReviewWindowTests(RedundanzTestCase):
         window._show_all_groups()
         self.assertEqual(titles(), ["Clear", "Other", "Zelda"])
 
+    def test_the_view_removed_completely(self):
+        self.config = replace(self.config, delete_tags=["Japan"])
+        self.write("Clear (USA).bin")
+        self.write("Clear (Japan).bin")
+        self.write("Gone (Japan).bin")
+        window = self.open_window(scope="removed")
+        titles = [window.tree.item(row, "text") for row in window.tree.get_children() if not row.endswith("s")]
+        self.assertEqual(titles, ["Gone"])
+        self.assertIn("Removed completely by delete keywords, as requested: 1 game(s): Gone",
+                      window.review.confirm_message(*window._scope_flags()))
+        window._choose_scope(0)
+        self.assertEqual(window.scope.get(), "problems")
+        self.assertEqual(window.tree.get_children(), ())  # going as requested is no problem
+
     def test_first_start_shows_problematic_marks(self):
         self.write("Clear (USA).bin")
         self.write("Clear (Japan).bin")
-        self.write("Zelda (USA).nes")
-        self.write("Zelda (Japan).sfc")
+        self.write("Zelda (USA).nes", b"usa")
+        self.write("Zelda (Japan).sfc", b"jap")
         window = self.open_window(scope=None)
         self.assertEqual(window.scope.get(), "problems")
         self.assertEqual(window.tree.get_children(), ("g1",))
@@ -4214,14 +4250,14 @@ class ReviewWindowTests(RedundanzTestCase):
         self.write("Other (USA).bin")
         path = self.settings_file()
         window = self.open_window(settings_path=path, scope=None)
-        self.invoke_radio(window, "All ROM files")
+        self.invoke_radio(window, "All games")
         self.assertEqual(window.tree.get_children(), ("g0",))
         window.root.destroy()
 
         second = self.open_window(settings_path=path, scope=None)
         self.assertEqual(second.scope.get(), "all")
         self.assertEqual(second.tree.get_children(), ("g0",))
-        self.invoke_radio(second, "All deletion marks")
+        self.invoke_radio(second, "To delete")
         second.root.destroy()
 
         third = self.open_window(settings_path=path, scope=None)
@@ -4240,7 +4276,7 @@ class ReviewWindowTests(RedundanzTestCase):
         with mock.patch("rom_cleanup_workbench_window.save_scope", side_effect=PermissionError("locked")), mock.patch(
             "rom_cleanup_workbench_window.messagebox.showerror"
         ) as error:
-            self.invoke_radio(window, "All ROM files")
+            self.invoke_radio(window, "All games")
         self.assertIn("locked", error.call_args.args[1])
         self.assertEqual(window.scope.get(), "all")
         self.assertEqual(window.tree.get_children(), ("g0",))
@@ -4257,7 +4293,7 @@ class ReviewWindowTests(RedundanzTestCase):
     def test_confirm_message_does_not_count_shown_files_as_hidden(self):
         self.write("Clear (USA).bin")
         self.write("Clear (Japan).bin")
-        self.write("Problem (USA) (Hack).bin")
+        self.write("Problem (USA).zip", b"not a zip")
         review = rf.Review(self.scan(), self.config)
         self.assertIn("Not shown", review.confirm_message(True, False))
         self.assertIn("Not shown", review.confirm_message(True, True))
@@ -4266,7 +4302,7 @@ class ReviewWindowTests(RedundanzTestCase):
     def test_filter_hides_clear_games(self):
         self.write("Clear (USA).bin")
         self.write("Clear (Japan).bin")
-        self.write("Problem (USA) (Hack).bin")
+        self.write("Problem (USA).zip", b"not a zip")
         window = self.open_window(only_problems=True)
         self.assertEqual(window.tree.get_children(), ("g1",))
         window.scope.set("marked")
@@ -4307,8 +4343,8 @@ class ReviewWindowTests(RedundanzTestCase):
 
     def test_stripes_follow_the_visible_games(self):
         self.write("Clear (USA).bin")
-        self.write("Problem A (USA) (Hack).bin")
-        self.write("Problem B (USA) (Hack).bin")
+        self.write("Problem A (USA).zip", b"not a zip")
+        self.write("Problem B (USA).zip", b"not a zip")
         window = self.open_window(only_problems=True)
         self.assertEqual(window.tree.get_children(), ("g1", "g2s", "g2"))
         self.assertIn("striped", window.tree.item("g2", "tags"))
@@ -4507,8 +4543,8 @@ class ReviewWindowTests(RedundanzTestCase):
         self.assertIn("Showing: 1 of 1 games", window.status.get())
 
     def test_problems_are_updated_after_deleting(self):
-        self.write("Title (USA).nes")
-        self.write("Title (Japan).sfc")
+        self.write("Title (USA).nes", b"usa")
+        self.write("Title (Japan).sfc", b"jap")
         window = self.open_window(scope="all")
         [result] = window.review.results
         self.assertIn("Different file type than the kept file", result.problems)
@@ -5607,7 +5643,7 @@ class TerminalVersionTests(unittest.IsolatedAsyncioTestCase):
         return [str(app.query_one("#games").get_row(key)[0]) for key in app._keys()
                 if key[0] == "g" and key[1:].isdigit()]
 
-    async def test_keys_1_2_3_show_each_view(self):
+    async def test_keys_1_to_4_show_each_view(self):
         app = self.app_for(self.VIEW_GAMES)
         async with app.run_test() as pilot:
             await self.analyzed(app, pilot)
@@ -5615,7 +5651,7 @@ class TerminalVersionTests(unittest.IsolatedAsyncioTestCase):
             await pilot.press("1")
             self.assertEqual(app.scope, "problems")
             self.assertEqual(self.titles(app), ["Zelda"])
-            await pilot.press("3")
+            await pilot.press("4")
             self.assertEqual(self.titles(app), ["Clear", "Other", "Zelda"])
             self.assertIn("Showing: 3 of 3", self.text(app, "#status"))
             await pilot.press("2")
@@ -5623,14 +5659,14 @@ class TerminalVersionTests(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(app.query_one("#view-marked").value)
             self.assertFalse(app.query_one("#view-all").value)
 
-    async def test_views_are_three_clickable_radio_items(self):
+    async def test_views_are_four_clickable_radio_items(self):
         from textual.widgets import RadioButton
 
         app = self.app_for(self.VIEW_GAMES)
         async with app.run_test() as pilot:
             await self.analyzed(app, pilot)
             labels = [str(button.label) for button in app.query(RadioButton)]
-            self.assertEqual(labels, ["Problematic deletion marks", "All deletion marks", "All ROM files"])
+            self.assertEqual(labels, ["To check", "To delete", "Removed completely", "All games"])
             await pilot.click("#view-all")
             await pilot.pause()
             self.assertEqual(app.scope, "all")
@@ -5646,7 +5682,7 @@ class TerminalVersionTests(unittest.IsolatedAsyncioTestCase):
         app = self.app_for(self.VIEW_GAMES)
         async with app.run_test() as pilot:
             await self.analyzed(app, pilot)
-            await pilot.press("3")
+            await pilot.press("4")
         self.assertEqual(workbench_state.load_scope(app.settings_path), "all")
         again = self.tui.WorkbenchApp(app.analyze, app.directory, settings_path=app.settings_path)
         async with again.run_test() as pilot:
@@ -5677,7 +5713,7 @@ class TerminalVersionTests(unittest.IsolatedAsyncioTestCase):
             await self.analyzed(app, pilot)
             await pilot.press("tab")  # Zelda
             zelda = app.selected_keys()
-            await pilot.press("3")
+            await pilot.press("4")
             self.assertEqual(app.selected_keys(), zelda)
             self.assertEqual(app.cursor_key(), zelda[0])
             await pilot.press("shift+tab")
@@ -5690,7 +5726,7 @@ class TerminalVersionTests(unittest.IsolatedAsyncioTestCase):
         async with app.run_test() as pilot:
             await self.analyzed(app, pilot)
             self.assertTrue(app.query_one("#nothing").display)
-            await pilot.press("3")
+            await pilot.press("4")
             self.assertFalse(app.query_one("#nothing").display)
             await pilot.press("x")
             await pilot.press("2")
@@ -5781,7 +5817,7 @@ class TerminalVersionTests(unittest.IsolatedAsyncioTestCase):
         async with app.run_test() as pilot:
             await self.analyzed(app, pilot)
             await self.filter_for(app, pilot, *"two")
-            await pilot.press("3")
+            await pilot.press("4")
             self.assertEqual(self.titles(app), ["Two"])
             app.start_analysis()
             await self.analyzed(app, pilot)
@@ -8373,7 +8409,27 @@ class FrontendPlacesTests(OverviewWindowBase):
             columns = {row[1] for row in collection._db.execute("PRAGMA table_info(gamelist_files)")}
             version = collection._db.execute("SELECT version FROM schema_info").fetchone()[0]
         self.assertIn("source", columns)
-        self.assertEqual(version, 4)
+        self.assertEqual(version, 5)
+
+    def test_an_older_database_gets_the_removed_column_and_counts_again(self):
+        import sqlite3
+
+        import workbench_db
+
+        (self.roms / "nes").mkdir(parents=True, exist_ok=True)
+        (self.roms / "nes" / "Gone (Japan).nes").write_bytes(b"j")
+        (self.roms / "nes" / "Stays (USA).nes").write_bytes(b"u")
+        workbench_db.scan_all(self.roms)
+        with workbench_db.Collection(self.roms) as collection:
+            collection._db.execute("UPDATE schema_info SET version = 4")
+            collection._db.commit()
+        db = sqlite3.connect(self.roms / ".rom_cleanup_workbench" / "rom_cleanup_workbench.sqlite")
+        db.execute("ALTER TABLE platforms DROP COLUMN removed")
+        db.commit()
+        db.close()
+        config = replace(self.config, delete_tags=["Japan"])
+        [row] = [row for row in workbench_db.overview(self.roms, config) if row.folder == "nes"]
+        self.assertEqual(row.removed, 1)
 
 
 class GameViewKeysTests(GameViewWindowTests):
@@ -8587,3 +8643,103 @@ class GameHeadingTests(unittest.TestCase):
         self.assertEqual(workbench_view.game_heading(mock.Mock(keep=[], marked=[japan], title="10yard"), info),
                          "10yard")  # only the kept file counts
 
+
+
+def _unused_media_platform(nes):
+    """A platform with used and unused media: named after a ROM, linked, unused, outside media folders."""
+    for path in ("images/Title (USA)-image.png", "images/Gone-image.png", "images/linked.png", "videos/old.mp4",
+                 "Game Folder/cover.jpg", "cover.png"):
+        (nes / path).parent.mkdir(parents=True, exist_ok=True)
+        (nes / path).write_bytes(b"m" * 1024)
+    (nes / "gamelist.xml").write_text(
+        "<gameList><game><path>./Title (Japan).nes</path><name>T</name><image>./images/linked.png</image></game>"
+        "</gameList>", encoding="utf-8")
+
+
+class UnusedMediaTests(OverviewWindowBase):
+    """m: media files that no ROM is named like and no gamelist.xml links are deleted on request."""
+
+    def setUp(self):
+        super().setUp()
+        self.fill()
+        _unused_media_platform(self.roms / "nes")
+        import workbench_db
+
+        workbench_db.scan_all(self.roms)
+
+    def test_only_unused_media_in_media_folders_are_found_and_deleted(self):
+        import workbench_db
+
+        nes = self.roms / "nes"
+        unused = workbench_db.unused_media(nes)
+        self.assertEqual(unused, [("images/Gone-image.png", 1024), ("videos/old.mp4", 1024)])
+        question = workbench_db.unused_media_question("nes", unused)
+        self.assertIn("2 unused media file(s) (0.0 MB)", question)
+        self.assertIn("images/Gone-image.png, videos/old.mp4", question)
+        self.assertEqual(workbench_db.delete_unused_media(nes, [path for path, _size in unused]), (2, []))
+        for path in ("images/Title (USA)-image.png", "images/linked.png", "Game Folder/cover.jpg", "cover.png"):
+            self.assertTrue((nes / path).is_file(), path)
+        self.assertFalse((nes / "images" / "Gone-image.png").exists())
+        self.assertEqual(workbench_db.unused_media(nes), [])
+        with workbench_db.Collection(self.roms) as collection:
+            self.assertEqual(collection.media_counts("nes")[1], 1)  # Game Folder/cover.jpg stays
+
+    def test_a_medium_of_a_deleted_rom_becomes_unused(self):
+        import workbench_db
+
+        (self.roms / "nes" / "Title (USA).nes").unlink()
+        self.assertIn(("images/Title (USA)-image.png", 1024), workbench_db.unused_media(self.roms / "nes"))
+
+    def test_nothing_outside_the_media_folders_is_ever_deleted(self):
+        import workbench_db
+
+        nes = self.roms / "nes"
+        self.assertEqual(workbench_db.delete_unused_media(nes, ["cover.png", "Game Folder/cover.jpg", "../x.png"]),
+                         (0, []))
+        self.assertTrue((nes / "cover.png").is_file())
+
+    def test_an_unreadable_gamelist_deletes_nothing(self):
+        import workbench_db
+
+        (self.roms / "nes" / "gamelist.xml").write_text("<gameList><game>", encoding="utf-8")
+        with self.assertRaises(ValueError) as caught:
+            workbench_db.unused_media(self.roms / "nes")
+        self.assertIn("cannot be read", str(caught.exception))
+
+    def test_m_in_the_window(self):
+        window = self.make_window(self.roms / "nes")
+        window.open_folder(self.roms / "nes")
+        self.wait(window)
+        with mock.patch("rom_cleanup_workbench_window.messagebox.askyesno", return_value=True) as ask:
+            window._unused_media_key()
+        self.assertIn("2 unused media file(s)", ask.call_args.args[1])
+        self.assertFalse((self.roms / "nes" / "videos" / "old.mp4").exists())
+        self.assertIn("2 unused media file(s) deleted", window.status.get())
+        with mock.patch("rom_cleanup_workbench_window.messagebox.showinfo") as info:
+            window._unused_media_key()
+        self.assertIn("no unused media files", info.call_args.args[1])
+
+
+class UnusedMediaTerminalTests(OverviewTerminalBase):
+    """m in the terminal version, in the overview."""
+
+    def setUp(self):
+        super().setUp()
+        _unused_media_platform(self.roms / "nes")
+        import workbench_db
+
+        workbench_db.scan_all(self.roms)
+
+    async def test_m_in_the_overview(self):
+        app = self.app(self.roms)
+        async with app.run_test(size=(160, 40)) as pilot:
+            await self.settle(app, pilot)
+            await pilot.press("m")  # the overview's highlighted platform: nes
+            await pilot.pause()
+            self.assertIsInstance(app.screen, self.tui.QuestionScreen)
+            app.screen.dismiss(True)
+            await pilot.pause()
+            await pilot.pause()
+            self.assertFalse((self.roms / "nes" / "images" / "Gone-image.png").exists())
+            self.assertTrue((self.roms / "nes" / "images" / "linked.png").exists())
+            self.assertIn("deleted", str(app.screen.query_one("#overview-status").render()))

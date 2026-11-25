@@ -644,7 +644,7 @@ class EditPanel:
 class OverviewPanel:
     """The collection: one row per platform folder, in place of the file list. The start page."""
 
-    _NUMERIC = ("files", "games", "marked", "problematic", "info", "gamelist_problems")
+    _NUMERIC = ("files", "games", "marked", "problematic", "removed", "info", "gamelist_problems")
     _COLUMNS = (*_NUMERIC, "last_scan", "state")
 
     def __init__(self, window: "ReviewWindow", rows):
@@ -783,7 +783,7 @@ class OverviewPanel:
         texts = {column: [tr(f"overview.{column}")] for column in self._COLUMNS}
         texts["#0"] = [tr("overview.platform"), tr("overview.total")] + [row.folder for row in rows]
         texts["files"].append(_count(999999))
-        for column in ("games", "marked", "problematic", "info", "gamelist_problems"):
+        for column in ("games", "marked", "problematic", "removed", "info", "gamelist_problems"):
             texts[column].append(_count(99999))
         texts["last_scan"].append("2026-11-24 13:15")
         texts["state"] += [tr(f"overview.state.{state}") for state in ("not_scanned", "current", "changed",
@@ -1480,7 +1480,7 @@ class ReviewWindow:
             "f": self.choose_directory, "r": self.reanalyze, "c": self.show_credits, "q": self._quit_key,
             "a": self._scan_all_key, "d": self._toggle_full_key, "h": self._hide_empty_key,
             "n": self._no_games_key, "g": self.toggle_report, "w": self._write_key,
-            "e": self._edit_key,
+            "e": self._edit_key, "m": self._unused_media_key,
         }
         for key, action in keys.items():
             for variant in (key, key.upper()):
@@ -1679,6 +1679,43 @@ class ReviewWindow:
                 self.write_gamelist(self.collection_root / folder)
         elif self.review is not None and not self._list_locked():
             self.write_gamelist(self.directory)
+
+    def _unused_media_key(self) -> None:
+        """m: the unused media files of the highlighted platform (overview) or of the open one (list)."""
+        if self._overview_keys_work():
+            folder = self.overview_panel.selected()
+            if folder is not None and self._batch is None:
+                self.delete_unused_media(self.collection_root / folder)
+        elif self.review is not None and not self._list_locked():
+            self.delete_unused_media(self.directory)
+
+    def delete_unused_media(self, directory) -> bool:
+        """Finds the media files nothing uses, asks, then deletes them. Returns whether any were deleted."""
+        from workbench_db import delete_unused_media, unused_media, unused_media_question
+
+        directory = Path(directory)
+        title = tr("media.unused_title")
+        try:
+            unused = unused_media(directory)
+        except (OSError, ValueError) as error:
+            messagebox.showerror(title, str(error), parent=self.root)
+            return False
+        if not unused:
+            messagebox.showinfo(title, tr("media.unused_none", platform=directory.name), parent=self.root)
+            return False
+        if not messagebox.askyesno(title, unused_media_question(directory.name, unused), icon="warning",
+                                   default="no", parent=self.root):
+            return False
+        deleted, errors = delete_unused_media(directory, [path for path, _size in unused])
+        text = tr("media.unused_deleted", platform=directory.name, count=deleted)
+        if errors:
+            messagebox.showerror(title, text + "\n\n" + "\n".join(errors[:10]), parent=self.root)
+        self.status.set(text)
+        if self.review is not None and self.directory is not None and Path(self.directory) == directory:
+            from workbench_db import platform_label
+
+            self._show_directory(platform_label(self.directory) or None)  # the gray line counts the media
+        return bool(deleted)
 
     def write_gamelist(self, directory, after_cleanup: bool = False) -> bool:
         """Asks, then writes the platform's gamelist.xml from the database. Returns whether it was written."""
@@ -1902,9 +1939,11 @@ class ReviewWindow:
         if self.root.focus_get() is not self.search_entry and not self._list_locked():
             self.tree.focus_set()
 
-    def _scope_flags(self) -> tuple[bool, bool, str]:
-        """Translates the choice into the values only_problems, show_all and pattern of the Review object."""
-        return self.scope.get() == SCOPE_PROBLEMS, self.scope.get() == SCOPE_ALL_FILES, self.search.get()
+    def _scope_flags(self) -> tuple[bool, bool, str, bool]:
+        """Translates the choice into the values only_problems, show_all, pattern and only_removed of the Review."""
+        from workbench_state import scope_flags
+
+        return scope_flags(self.scope.get(), self.search.get())
 
     def _scope_changed(self) -> None:
         """Shows the choice and remembers it for the next start."""
