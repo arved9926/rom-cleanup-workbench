@@ -486,12 +486,63 @@ class Collection:
                                  "AND path = ?", [(platform_id, *item) for item in lost])
 
     def info_count(self, folder: str) -> int:
-        """ROMs of the list with information."""
+        """ROMs of the list with information: from the gamelist.xml, or an empty entry with media found."""
         platform_id = self._platform_id(folder, create=False)
         if platform_id is None:
             return 0
-        return self._db.execute("SELECT COUNT(*) FROM game_info WHERE platform_id = ? AND kind = 'game'",
-                                (platform_id,)).fetchone()[0]
+        return self._db.execute(
+            "SELECT COUNT(*) FROM game_info g WHERE g.platform_id = ? AND g.kind = 'game' AND (g.created = 0 OR "
+            "EXISTS (SELECT 1 FROM media m WHERE m.platform_id = g.platform_id AND m.rom = g.rom))",
+            (platform_id,)).fetchone()[0]
+
+    def ensure_entries(self, folder: str, rom_names) -> set[str]:
+        """Every ROM of the list gets a row: an empty entry for a game, "no game" for a BIOS file.
+        Returns the ROMs that are no game."""
+        from workbench_gamelist import is_bios, title_of
+
+        platform_id = self._platform_id(folder)
+        rows = dict(self._db.execute("SELECT rom, kind FROM game_info WHERE platform_id = ?", (platform_id,)))
+        new = []
+        for rom in rom_names:
+            if rom in rows:
+                continue
+            kind = "no_game" if is_bios(rom) else "game"
+            rows[rom] = kind
+            new.append((platform_id, rom, kind, None if kind == "no_game" else title_of(rom)))
+        if new:
+            with self._db:
+                self._db.executemany("INSERT INTO game_info (platform_id, rom, kind, name, created) "
+                                     "VALUES (?, ?, ?, ?, 1)", new)
+        return {rom for rom, kind in rows.items() if kind == "no_game"}
+
+    def gamelist_media_paths(self, folder: str) -> set[str]:
+        platform_id = self._platform_id(folder, create=False)
+        if platform_id is None:
+            return set()
+        return {path for (path,) in self._db.execute(
+            "SELECT path FROM media WHERE platform_id = ? AND origin = 'gamelist'", (platform_id,))}
+
+    def save_found_media(self, folder: str, found) -> None:
+        """The media found in the subfolders replace those found before; the gamelist's links stay."""
+        platform_id = self._platform_id(folder)
+        with self._db:
+            self._db.execute("DELETE FROM media WHERE platform_id = ? AND origin = 'found'", (platform_id,))
+            self._db.executemany(
+                "INSERT OR IGNORE INTO media (platform_id, rom, category, path, origin, size, mtime_ns) "
+                "VALUES (?, ?, ?, ?, 'found', ?, ?)",
+                [(platform_id, rom, category, path, *stamp) for rom, category, path, stamp in found.assigned]
+                + [(platform_id, None, category, path, *stamp) for category, path, stamp in found.unassigned])
+
+    def media_counts(self, folder: str) -> tuple[int, int]:
+        """(media files assigned to a ROM, media files without one)."""
+        platform_id = self._platform_id(folder, create=False)
+        if platform_id is None:
+            return 0, 0
+        assigned = self._db.execute("SELECT COUNT(DISTINCT path) FROM media WHERE platform_id = ? AND rom IS NOT NULL",
+                                    (platform_id,)).fetchone()[0]
+        unassigned = self._db.execute("SELECT COUNT(*) FROM media WHERE platform_id = ? AND rom IS NULL",
+                                      (platform_id,)).fetchone()[0]
+        return assigned, unassigned
 
     def game_info(self, folder: str) -> dict[str, dict]:
         """rom -> its information: the columns, extra, xml_id, created and media by category."""
@@ -628,8 +679,22 @@ def scan_platform(collection: "Collection", directory: Path, progress=None, full
         facts, read = quick_scan_facts(directory, old, progress)
     collection.save_facts(name, facts)
     collection.clear_moves(name)  # a new scan starts from the rules again
-    import_gamelist(collection, directory, [item.name for item in facts], force=full)
+    names = [item.name for item in facts]
+    import_gamelist(collection, directory, names, force=full)
+    update_media(collection, directory, names)
     return read
+
+
+def update_media(collection: "Collection", directory: Path, rom_names) -> None:
+    """Every ROM gets its row (an empty entry, or "no game" for a BIOS file), then the subfolders are
+    searched for media the gamelist.xml does not link."""
+    from workbench_gamelist import find_media
+
+    name = Path(directory).name
+    no_games = collection.ensure_entries(name, rom_names)
+    games = [rom for rom in rom_names if rom not in no_games]
+    found = find_media(directory, games, collection.gamelist_media_paths(name))
+    collection.save_found_media(name, found)
 
 
 def _gamelist_stamp(directory: Path) -> tuple | None:
@@ -689,13 +754,17 @@ def gamelist_summary(directory: Path | None) -> str:
         return ""
     with Collection(root) as collection:
         record = collection.gamelist_record(directory.name)
-    if record is None:
-        return ""
-    if record["entries"] is None:
+        assigned, unassigned = collection.media_counts(directory.name)
+    parts = []
+    if record is not None and record["entries"] is None:
         line = next((item.get("line") for item in record["problems"] if item.get("kind") == "xml_error"), None)
-        return tr("gamelist.unreadable", line=line or "?")
-    return tr("gamelist.summary", entries=record["entries"], problems=len(record["problems"]),
-              notes=len(record["notes"]))
+        parts.append(tr("gamelist.unreadable", line=line or "?"))
+    elif record is not None:
+        parts.append(tr("gamelist.summary", entries=record["entries"], problems=len(record["problems"]),
+                        notes=len(record["notes"])))
+    if assigned or unassigned:
+        parts.append(tr("media.summary", assigned=assigned, unassigned=unassigned))
+    return "    ".join(parts)
 
 
 def open_platform(root: Path, directory: Path, config: Config, progress=None,

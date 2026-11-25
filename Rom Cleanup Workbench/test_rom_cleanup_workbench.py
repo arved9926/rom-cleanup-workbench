@@ -7508,3 +7508,95 @@ class GamelistTests(OverviewWindowBase):
         self.wait(window)
         self.assertIn("2 taken over", window.gamelist_info.get())
 
+
+class MediaSearchTests(OverviewWindowBase):
+    """Stage 2: media in the subfolders are assigned to a ROM only where the name says so clearly."""
+
+    def setUp(self):
+        super().setUp()
+        for name in ("sf2.zip", "sf2ce.zip", "10yard.zip", "neogeo.zip", "Game (USA).nes", "Game (USA).zip",
+                     "[BIOS] Console (World).zip"):
+            self.write("nes", name, b"rom")
+        for path in ("wheel/10yard.png", "Marquees/10yard.png", "downloaded_images/10yard-image.png",
+                     "media/sf2ce-image.png", "media/sf2.marquee.jpg", "media/sf2_video.mp4",
+                     "media/Game (USA)-box.png", "media/unknown-image.png", "media/10yard-other.png",
+                     "wheel/neogeo.png", "notes/readme.txt"):
+            (self.roms / "nes" / path).parent.mkdir(parents=True, exist_ok=True)
+            self.write("nes", path, b"m")
+        self.write("nes", "cover.png", b"top level")  # directly in the platform folder: not a medium
+
+    def found(self):
+        import workbench_gamelist
+
+        names = [path.name for path in rf.rom_files(self.roms / "nes")]
+        games = [name for name in names if not workbench_gamelist.is_bios(name)]
+        return workbench_gamelist.find_media(self.roms / "nes", games)
+
+    def test_both_ways_of_keeping_media(self):
+        assigned = {(rom, category, path) for rom, category, path, _stamp in self.found().assigned}
+        self.assertIn(("10yard.zip", "wheel", "wheel/10yard.png"), assigned)
+        self.assertIn(("10yard.zip", "marquee", "Marquees/10yard.png"), assigned)  # plural, other case
+        self.assertIn(("10yard.zip", "image", "downloaded_images/10yard-image.png"), assigned)
+        self.assertIn(("sf2.zip", "marquee", "media/sf2.marquee.jpg"), assigned)
+        self.assertIn(("sf2.zip", "video", "media/sf2_video.mp4"), assigned)
+
+    def test_the_longest_name_wins_and_one_name_may_serve_two_roms(self):
+        assigned = {(rom, path) for rom, _category, path, _stamp in self.found().assigned}
+        self.assertIn(("sf2ce.zip", "media/sf2ce-image.png"), assigned)
+        self.assertNotIn(("sf2.zip", "media/sf2ce-image.png"), assigned)
+        self.assertIn(("Game (USA).nes", "media/Game (USA)-box.png"), assigned)
+        self.assertIn(("Game (USA).zip", "media/Game (USA)-box.png"), assigned)
+
+    def test_what_is_not_clear_stays_without_a_rom(self):
+        found = self.found()
+        unassigned = {path: category for category, path, _stamp in found.unassigned}
+        self.assertEqual(unassigned.get("media/unknown-image.png"), "image")
+        self.assertEqual(unassigned.get("media/10yard-other.png"), "other")  # no known category
+        self.assertIn("wheel/neogeo.png", unassigned)  # a BIOS file gets no media
+        every = {path for *_rest, path, _stamp in found.assigned} | set(unassigned)
+        self.assertNotIn("cover.png", every)
+        self.assertNotIn("notes/readme.txt", every)
+
+    def test_bios_files_are_no_games_and_games_get_an_empty_entry(self):
+        import workbench_db
+
+        workbench_db.scan_all(self.roms)
+        with workbench_db.Collection(self.roms) as collection:
+            info = collection.game_info("nes")
+            counts = collection.media_counts("nes")
+            count = collection.info_count("nes")
+        self.assertEqual(info["neogeo.zip"]["kind"], "no_game")
+        self.assertEqual(info["[BIOS] Console (World).zip"]["kind"], "no_game")
+        self.assertEqual((info["Game (USA).nes"]["name"], info["Game (USA).nes"]["created"]), ("Game", True))
+        self.assertEqual(info["10yard.zip"]["media"]["wheel"], ["wheel/10yard.png"])
+        self.assertEqual(counts, (7, 3))
+        self.assertEqual(count, 5)  # 10yard, sf2, sf2ce and both Game files have media
+        self.assertIn("Media: 7 assigned", workbench_db.gamelist_summary(self.roms / "nes"))
+
+    def test_a_link_of_the_gamelist_is_not_found_twice_and_a_real_entry_replaces_an_empty_one(self):
+        import workbench_db
+
+        workbench_db.scan_all(self.roms)
+        (self.roms / "nes" / "gamelist.xml").write_text(
+            "<gameList><game><path>./10yard.zip</path><name>10-Yard Fight</name>"
+            "<logo>./wheel/10yard.png</logo></game></gameList>", encoding="utf-8")
+        workbench_db.scan_all(self.roms)
+        with workbench_db.Collection(self.roms) as collection:
+            info = collection.game_info("nes")["10yard.zip"]
+            rows = collection._db.execute("SELECT category, origin FROM media WHERE path = 'wheel/10yard.png'"
+                                          ).fetchall()
+        self.assertEqual((info["name"], info["created"]), ("10-Yard Fight", False))
+        self.assertEqual(rows, [("logo", "gamelist")])  # the gamelist's category, once
+
+    def test_media_that_are_gone_go(self):
+        import workbench_db
+
+        workbench_db.scan_all(self.roms)
+        (self.roms / "nes" / "wheel" / "10yard.png").unlink()
+        (self.roms / "nes" / "sf2.zip").unlink()
+        workbench_db.scan_all(self.roms)
+        with workbench_db.Collection(self.roms) as collection:
+            info = collection.game_info("nes")
+        self.assertNotIn("wheel", info["10yard.zip"]["media"])
+        self.assertNotIn("sf2.zip", info)
+

@@ -315,3 +315,143 @@ def _read_entry(element, directory: Path, rom_names: set, resolver: Resolver, re
             entry.extra.append([tag, text if not len(child) else ET.tostring(child, encoding="unicode"),
                                 dict(child.attrib)])
     return entry
+
+
+# Stage 2: media in the subfolders ----------------------------------------------------------------
+
+# Categories a folder name or a name ending may name; the category is kept as it is written.
+CATEGORIES = MEDIA_TAGS | {"snap", "title", "thumb"}
+MEDIA_EXTENSIONS = frozenset({
+    ".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp",
+    ".mp4", ".mkv", ".avi", ".webm", ".mov", ".m4v", ".wmv", ".flv",
+    ".pdf", ".cbz", ".cbr",
+})
+_SEPARATORS = "-._"
+_SKIPPED_FOLDERS = {".rom_cleanup_workbench"}
+
+
+def category_of(word: str) -> str | None:
+    """The category a folder name or name ending stands for (plural as singular); None if none."""
+    word = word.casefold()
+    if word in CATEGORIES:
+        return word
+    for ending in ("es", "s"):
+        if word.endswith(ending) and word[:-len(ending)] in CATEGORIES:
+            return word[:-len(ending)]
+    return None
+
+
+@dataclass
+class FoundMedia:
+    assigned: list = field(default_factory=list)  # (rom, category, path, (size, change time))
+    unassigned: list = field(default_factory=list)  # (category or "other", path, (size, change time))
+
+
+def find_media(directory: Path, rom_names, known_paths=()) -> FoundMedia:
+    """Media in the subfolders of a platform, assigned to a ROM only where the name says so clearly.
+
+    Two ways of keeping them are recognised:
+    1. a folder per category, the file named like the ROM: wheel/10yard.png, marquees/10yard.png;
+    2. any folder, the ROM's name, a separator (- . _) and a category: 10yard-wheel.png, game.image.jpg.
+    If several ROM names fit, the longest wins (sf2ce-image.png is sf2ce, not sf2). Files the
+    gamelist.xml already links (known_paths) are left out; files directly in the platform folder too.
+    """
+    directory = Path(directory)
+    known = set(known_paths)
+    stems: dict[str, list[str]] = {}
+    exact: dict[str, list[str]] = {}
+    for name in rom_names:
+        stem = Path(name).stem
+        exact.setdefault(stem, []).append(name)
+        stems.setdefault(stem.casefold(), []).append(name)
+    result = FoundMedia()
+    pending = [directory]
+    while pending:
+        folder = pending.pop()
+        try:
+            with os.scandir(folder) as found:
+                entries = sorted(found, key=lambda entry: entry.name)
+        except OSError:
+            continue
+        for entry in entries:
+            if entry.name.startswith(".") or entry.name in _SKIPPED_FOLDERS:
+                continue
+            try:
+                if entry.is_dir():
+                    pending.append(Path(entry.path))
+                    continue
+                if folder == directory or not entry.is_file():
+                    continue
+                if Path(entry.name).suffix.casefold() not in MEDIA_EXTENSIONS:
+                    continue
+                stat = entry.stat()
+            except OSError:
+                continue
+            path = Path(entry.path).relative_to(directory).as_posix()
+            if path in known:
+                continue
+            stamp = (stat.st_size, stat.st_mtime_ns)
+            stem = Path(entry.name).stem
+            folder_category = category_of(folder.name)
+            roms, category = None, None
+            if folder_category is not None:  # 1. a folder per category
+                roms = exact.get(stem) or stems.get(stem.casefold())
+                category = folder_category
+            if not roms:  # 2. name, separator, category
+                roms, category = _by_ending(stem, stems)
+            if roms:
+                for rom in roms:
+                    result.assigned.append((rom, category, path, stamp))
+            else:
+                result.unassigned.append((folder_category or _ending_category(stem) or "other", path, stamp))
+    return result
+
+
+def _by_ending(stem: str, stems: dict) -> tuple[list | None, str | None]:
+    folded = stem.casefold()
+    best = None
+    for index, character in enumerate(folded):
+        if character not in _SEPARATORS:
+            continue
+        roms = stems.get(folded[:index])
+        category = category_of(folded[index + 1:])
+        if roms and category and (best is None or index > best[0]):
+            best = (index, roms, category)
+    return (best[1], best[2]) if best else (None, None)
+
+
+def _ending_category(stem: str) -> str | None:
+    for index in range(len(stem) - 1, -1, -1):
+        if stem[index] in _SEPARATORS:
+            return category_of(stem[index + 1:])
+    return None
+
+
+# BIOS files and other files that are not games ----------------------------------------------------
+
+# Well-known BIOS sets of arcade emulators (file name without extension).
+BIOS_NAMES = frozenset({
+    "neogeo", "pgm", "skns", "cpzn1", "cpzn2", "decocass", "isgsm", "nss", "stvbios", "hng64", "naomi",
+    "naomi2", "awbios", "chihiro", "triforce", "playch10", "megaplay", "konamigx", "qsound",
+})
+_BRACKETS = re.compile(r"\(([^()]*)\)|\[([^\[\]]*)\]|\{([^{}]*)\}")
+
+
+def is_bios(name: str, extra_names=()) -> bool:
+    """A BIOS file: BIOS in a bracket ([BIOS] Neo Geo (World).zip) or a known BIOS name."""
+    stem = Path(name).stem
+    if stem.casefold() in BIOS_NAMES or stem.casefold() in {item.casefold() for item in extra_names}:
+        return True
+    for match in _BRACKETS.finditer(stem):
+        content = next(group for group in match.groups() if group is not None)
+        if re.search(r"\bbios\b", content, re.IGNORECASE):
+            return True
+    return False
+
+
+def title_of(name: str) -> str:
+    """The name of an empty entry: the text before the first bracket; the file name if there is none."""
+    stem = Path(name).stem
+    title = _BRACKETS.split(stem, maxsplit=1)[0].strip() if _BRACKETS.search(stem) else stem
+    return title or stem
+
