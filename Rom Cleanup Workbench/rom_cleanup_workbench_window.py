@@ -899,12 +899,16 @@ class ReviewWindow:
         self.open_folder(folder)
 
     def open_folder(self, folder: Path) -> None:
-        """A roms folder opens its overview; any other folder is analyzed on its own, as before."""
+        """A roms folder opens its overview; any other folder is analyzed on its own, as before.
+
+        Either way the folder opens again at the next start without a folder.
+        """
         from workbench_db import is_collection
 
+        if self.config_loader is not None:
+            save_last_collection(self.settings_path, folder)
         if self.config_loader is not None and is_collection(folder):
             self.collection_root = folder
-            save_last_collection(self.settings_path, folder)
             self.show_overview()
         else:
             self.collection_root = None

@@ -87,7 +87,7 @@ def save_scope(path: Path, scope: str) -> None:
 
 
 def load_last_collection(path: Path) -> Path | None:
-    """The roms folder opened last; None if there is none or it is gone."""
+    """The folder opened last (a roms folder or any other); None if there is none or it is gone."""
     value = _load_settings(path).get(_COLLECTION_KEY)
     folder = Path(value) if isinstance(value, str) and value else None
     return folder if folder is not None and folder.is_dir() else None

@@ -1825,6 +1825,24 @@ class OverviewWindowTests(OverviewWindowBase):
             version = collection._db.execute("SELECT version FROM schema_info").fetchone()[0]
         self.assertEqual(version, 2)
 
+    def test_a_folder_on_its_own_opens_again_at_the_next_start(self):
+        self.fill()
+        window = self.make_window(None)
+        window.open_folder(self.roms / "nes")
+        self.wait(window)
+        self.assertEqual(self.tui_state(), self.roms / "nes")
+        again = self.make_window(None)
+        with mock.patch.object(again.root, "mainloop"):
+            again.run()
+        self.wait(again)
+        self.assertEqual(again.directory, self.roms / "nes")
+        self.assertIsNone(again.overview_panel)
+
+    def tui_state(self):
+        from workbench_state import load_last_collection
+
+        return load_last_collection(self.roms.parent / "settings.json")
+
     def test_escape_closes_a_folder_on_its_own(self):
         self.fill()
         window = self.make_window(self.roms / "nes")
@@ -2166,6 +2184,17 @@ class OverviewTerminalTests(OverviewTerminalBase):
             await pilot.pause()
             self.assertTrue(app.overview_open())  # not opened
             self.assertIn("no games", str(app.screen.query_one("#overview-status").render()))
+
+    async def test_a_folder_on_its_own_opens_again_at_the_next_start(self):
+        app = self.app(self.roms / "nes")
+        async with app.run_test(size=(140, 30)) as pilot:
+            await self.settle(app, pilot)
+        self.assertEqual(self.tui.load_last_collection(self.settings), self.roms / "nes")
+        app = self.app(None)
+        async with app.run_test(size=(140, 30)) as pilot:
+            await self.settle(app, pilot)
+            self.assertEqual(app.directory, self.roms / "nes")
+            self.assertFalse(app.overview_open())
 
     async def test_a_scans_all_platforms(self):
         app = self.app(self.roms)
