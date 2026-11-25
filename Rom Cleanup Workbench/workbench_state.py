@@ -33,6 +33,7 @@ _CONFIRMED_KEY = "confirmed_save_files"
 _COLLECTION_KEY = "last_collection"
 _HIDE_EMPTY_KEY = "hide_empty_folders"
 _LIST_SORT_KEY = "list_sort"
+_COMPACT_KEY = "only_game_names"
 _SORT_KEY = "overview_sort"
 SCOPE_PROBLEMS = "problems"
 SCOPE_MARKED = "marked"
@@ -122,6 +123,15 @@ def load_list_sort(path: Path) -> str:
 
 def save_list_sort(path: Path, order: str) -> None:
     _save_settings(path, **{_LIST_SORT_KEY: "genre" if order == "genre" else "name"})
+
+
+def load_compact(path: Path) -> bool:
+    """Whether the list shows only the games' heading rows (z), without their files."""
+    return _load_settings(path).get(_COMPACT_KEY) is True
+
+
+def save_compact(path: Path, compact: bool) -> None:
+    _save_settings(path, **{_COMPACT_KEY: bool(compact)})
 
 
 def load_hide_empty(path: Path) -> bool:

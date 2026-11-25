@@ -8743,3 +8743,118 @@ class UnusedMediaTerminalTests(OverviewTerminalBase):
             self.assertFalse((self.roms / "nes" / "images" / "Gone-image.png").exists())
             self.assertTrue((self.roms / "nes" / "images" / "linked.png").exists())
             self.assertIn("deleted", str(app.screen.query_one("#overview-status").render()))
+
+
+SUMMARY_GAMELIST = """<?xml version="1.0"?>
+<gameList>
+  <game><path>./Alpha (USA).nes</path><name>Alpha</name><rating>0.9</rating><players>1-2</players>
+    <releasedate>19910315T000000</releasedate></game>
+  <game><path>./Mid (USA).nes</path><name>Mid</name><players>4</players></game>
+</gameList>
+"""
+
+
+class GameSummaryTests(unittest.TestCase):
+    """Rating, players and release year in the note of a game's heading row."""
+
+    def test_summary_and_note(self):
+        import workbench_view
+
+        def entry(name):
+            item = mock.Mock()
+            item.path = Path(name)
+            return item
+
+        usa, japan = entry("A (USA).nes"), entry("A (Japan).nes")
+        result = mock.Mock(keep=[usa], marked=[japan], title="A", problems=[])
+        info = {"A (USA).nes": {"kind": "game", "rating": 0.9, "players": "1-2", "release_date": "1991-03-15"}}
+        self.assertEqual(workbench_view.game_summary(result, info), "★ 4.5 · 1-2 players · 1991")
+        self.assertEqual(workbench_view.game_summary(result, info, ascii=True), "* 4.5 - 1-2 players - 1991")
+        info["A (USA).nes"].update(rating=0, players=None)  # 0 is no rating
+        self.assertEqual(workbench_view.game_summary(result, info), "1991")
+        result.problems = ["Tie"]
+        self.assertEqual(workbench_view.heading_note(result, info), "Tie; 1991")
+        self.assertEqual(workbench_view.heading_note(result, {}), "Tie")
+        # without information for the kept file: that of a marked one
+        self.assertEqual(workbench_view.game_summary(result, {"A (Japan).nes": {"kind": "game", "players": "2"}}),
+                         "2 players")
+        self.assertEqual(workbench_view.game_summary(result, {"A (USA).nes": {"kind": "no_game", "players": "2"}}),
+                         "")
+
+
+class CompactListTests(OverviewWindowBase):
+    """z and the switch Only game names: the list shows only the games' heading rows."""
+
+    def setUp(self):
+        super().setUp()
+        for name in ("Alpha (USA).nes", "Alpha (Japan).nes", "Mid (USA).nes"):
+            self.write("nes", name, name.encode())
+        (self.roms / "nes" / "gamelist.xml").write_text(SUMMARY_GAMELIST, encoding="utf-8")
+        import workbench_db
+
+        workbench_db.scan_all(self.roms)
+
+    def opened(self):
+        window = self.make_window(self.roms / "nes", settings=self.roms.parent / "list.json")
+        window.open_folder(self.roms / "nes")
+        self.wait(window)
+        window._choose_scope(3)  # all games
+        return window
+
+    def test_only_game_names_and_the_note(self):
+        window = self.opened()
+        alpha = next(row for row, result in window._games.items() if result.title == "Alpha")
+        self.assertEqual(window.tree.set(alpha, "hint"), "★ 4.5 · 1-2 players · 1991")
+        self.assertTrue(window.tree.item(alpha, "open"))
+        self.assertTrue(any(row.endswith("s") for row in window.tree.get_children()))  # the dividing lines
+        window.toggle_compact()
+        rows = window.tree.get_children()
+        self.assertFalse(any(window._is_separator(row) for row in rows))
+        self.assertTrue(all(not window.tree.item(row, "open") for row in rows))
+        self.assertEqual(window.tree.selection(), (rows[0],))  # the game, not a hidden file
+        window.tree.focus(alpha)
+        result, entry = window._highlighted()
+        self.assertEqual((result.title, entry.path.name), ("Alpha", "Alpha (USA).nes"))
+        window._move_game(1)
+        self.assertIn(window.tree.focus(), window._games)
+        self.assertTrue(self.opened().compact.get())  # remembered
+        window.toggle_compact()
+        self.assertTrue(all(window.tree.item(row, "open") for row in window.tree.get_children()
+                            if not window._is_separator(row)))
+        self.assertTrue(all(row in window._files for row in window.tree.selection()))
+
+
+class CompactTerminalTests(OverviewTerminalBase):
+    """z in the terminal version: only the games' heading rows, the note with the information."""
+
+    def setUp(self):
+        super().setUp()
+        for name in ("Alpha (USA).nes", "Alpha (Japan).nes", "Mid (USA).nes"):
+            (self.roms / "nes" / name).write_bytes(name.encode())
+        (self.roms / "nes" / "gamelist.xml").write_text(SUMMARY_GAMELIST, encoding="utf-8")
+        import workbench_db
+
+        workbench_db.scan_all(self.roms)
+
+    async def test_only_game_names(self):
+        app = self.app(self.roms / "nes")
+        async with app.run_test(size=(180, 50)) as pilot:
+            await self.settle(app, pilot)
+            app.set_scope("all")
+            await pilot.pause()
+            table = app.query_one("#games")
+            alpha = next(key for key, result in app._games.items() if result.title == "Alpha")
+            self.assertIn("★ 4.5 · 1-2 players · 1991", table.get_row(alpha)[2].text)
+            await pilot.press("z")
+            await pilot.pause()
+            keys = app._keys()
+            self.assertEqual(sorted(keys), sorted(app._games))  # only the heading rows
+            self.assertTrue(app.query_one("#compact").value)
+            self.assertIn(app.cursor_key(), app._games)
+            app._place_cursor(alpha, {alpha})
+            self.assertEqual(app._highlighted()[1].path.name, "Alpha (USA).nes")
+            await pilot.press("z")
+            await pilot.pause()
+            self.assertFalse(app.compact)
+            self.assertIn(app.cursor_key(), app.files)
+            self.assertEqual(app.files[app.cursor_key()][0].title, "Alpha")  # the same game

@@ -51,7 +51,7 @@ from translations import LANGUAGE_NAMES, current_language, tr
 from workbench_state import (
     SCOPES, SETTINGS_PATH, add_confirmed_saves, drives, format_kb, load_confirmed_saves, load_hide_empty,
     load_last_collection, load_list_sort, load_overview_sort, load_scope, save_hide_empty, save_last_collection,
-    save_list_sort, save_overview_sort, save_scope,
+    save_list_sort, save_overview_sort, save_scope, load_compact, save_compact,
     scope_flags, subfolders,
 )
 
@@ -64,7 +64,7 @@ OK = (("dialog.ok", None),)
 _LIST_ACTIONS = {
     "move_cursor", "move_game", "demote", "promote", "choose_view", "focus_filter", "leave_filter", "proceed",
     "choose_folder", "open_settings", "reanalyze", "credits", "game_view", "toggle_no_game", "report",
-    "write_gamelist", "unused_media",
+    "write_gamelist", "unused_media", "toggle_compact",
 }
 # As in the window: Redrawing after every deleted file would slow down large deletions.
 DELETE_REDRAW = 0.05
@@ -1388,6 +1388,12 @@ class WorkbenchApp(App):
     #filter { width: 1fr; height: 1; border: none; padding: 0 1; background: #222222; color: #ffffff; }
     #filter:focus { border: none; background: #333333; }
     #views { layout: horizontal; height: auto; width: 100%; border: none; background: #000000; padding: 0 1; }
+    #compact { width: auto; height: 1; background: #000000; color: #ffffff; margin-left: 2; }
+    #compact > .toggle--button { color: #222222; background: #222222; }
+    #compact.-on > .toggle--button { color: #e5383b; background: #222222; }
+    .-colors16 #compact { color: #aaaaaa; }
+    .-colors16 #compact > .toggle--button { background: #000000; color: #000000; }
+    .-colors16 #compact.-on > .toggle--button { background: #000000; color: #ff5555; }
     #views:focus-within { border: none; }
     #views > RadioButton { background: #000000; color: #ffffff; border: none; margin-right: 2; }
     #views > RadioButton > .toggle--button { color: #222222; background: #222222; }
@@ -1560,6 +1566,7 @@ class WorkbenchApp(App):
         Binding("g,G", "report", show=False),
         Binding("w,W", "write_gamelist", show=False),
         Binding("m,M", "unused_media", show=False),
+        Binding("z,Z", "toggle_compact", show=False),
         Binding("1", "choose_view(0)", show=False),
         Binding("2", "choose_view(1)", show=False),
         Binding("3", "choose_view(2)", show=False),
@@ -1601,7 +1608,9 @@ class WorkbenchApp(App):
         self.review = None
         self.game_info = {}  # rom -> what the database knows about it (gamelist.xml, media)
         self.list_sort = load_list_sort(settings_path)  # "name" or "genre" (a click on the heading)
+        self.compact = load_compact(settings_path)  # z: only the games' heading rows, without their files
         self.files = {}  # row key -> (game, file)
+        self._games = {}  # heading row key -> game
         self._analysis = 0  # Counts analyses, so that a replaced one cannot overwrite the newer result.
         self._visible = []  # the games shown, in the order of the list
         self._file_keys = {}  # id(entry) -> row key; stays the same for the whole analysis
@@ -1631,6 +1640,9 @@ class WorkbenchApp(App):
         with Horizontal(id="filter-row"):
             yield Static(tr("window.filter"), id="filter-label", markup=False)
             yield FilterInput(id="filter", select_on_focus=True)
+            # z: only the game names; here and not beside the views, which fill 80 columns
+            switch = DotSwitch(tr("window.compact"), self.compact, id="compact", compact=True)
+            yield _plain_radio(switch) if self.ascii else switch
         # Above the green row, as in the window; 1, 2 and 3 choose the same views.
         with RadioSet(id="views"):
             for value, label in SCOPES:
@@ -1649,6 +1661,7 @@ class WorkbenchApp(App):
             ScrollBar.renderer = AsciiScrollBarRender
         # Not focusable: the keys must keep acting on the list after a view was clicked.
         self.query_one("#views", RadioSet).can_focus = False
+        self.query_one("#compact", Checkbox).can_focus = False
         self.query_one("#games", GameTable).focus()
         directory = self.directory
         if directory is None and self.config_loader is not None:
@@ -1821,7 +1834,7 @@ class WorkbenchApp(App):
 
     def _fill_table(self) -> None:
         from workbench_genres import list_label
-        from workbench_view import file_notes, game_genre, game_heading, genre_of
+        from workbench_view import file_notes, game_genre, game_heading, genre_of, heading_note
 
         table = self.query_one("#games", GameTable)
         table.clear()
@@ -1831,17 +1844,19 @@ class WorkbenchApp(App):
         self._show_extra_columns(extras)
         blank = ("",) * len(extras)
         self.files = {}
+        self._games = {}
         moved = set()
         rows = []  # (cells, key); collected first, so that the column widths are known before adding
         for place, result in enumerate(self._visible):
             game_index = self._game_numbers[id(result)]
-            if place:
+            self._games[f"g{game_index}"] = result
+            if place and not self.compact:  # only the names: one game below the other
                 # An empty row between the games: a drawn line would widen the file column to its length.
                 rows.append((("", "", "") + blank, f"s{game_index}"))
             # The title row: bold, and dashes up to the right edge, so that a new game stands out.
-            problems = "; ".join(result.problems)
+            note = heading_note(result, self.game_info, self.ascii)  # problems, rating, players, year
             heading = game_heading(result, self.game_info)
-            cells = (DashLine(f" {heading} "), DashLine(), DashLine(f" {problems} " if problems else ""))
+            cells = (DashLine(f" {heading} "), DashLine(), DashLine(f" {note} " if note else ""))
             genre = list_label(game_genre(result, self.game_info))
             more = tuple(DashLine(f" {genre} " if key == "genre" and genre else "") for key in extras)
             rows.append((cells + more, f"g{game_index}"))
@@ -1850,7 +1865,7 @@ class WorkbenchApp(App):
             entries = [("k", "window.section.keep", "+", f"bold {keep_color}", "window.by_hand_keep", result.keep),
                        ("h", "window.section.marked", "-", marked_color, "window.by_hand_delete", result.marked)]
             for suffix, label, sign, color_style, moved_note, group in entries:
-                if not group:
+                if not group or self.compact:
                     continue
                 rows.append(((_cell("  " + tr(label)), "", "") + blank, f"g{game_index}{suffix}"))
                 for entry in group:
@@ -1912,6 +1927,36 @@ class WorkbenchApp(App):
             table.move_cursor(row=table.get_row_index(cursor), scroll=False)
 
     # Views ------------------------------------------------------------------------------------
+
+    def action_toggle_compact(self) -> None:
+        """z: only the game names on and off (the switch below the list does the same)."""
+        if self.review is None or self.deleting:
+            return
+        box = self.query_one("#compact", Checkbox)
+        box.value = not box.value  # reaches on_checkbox_changed
+
+    def on_checkbox_changed(self, event: Checkbox.Changed) -> None:
+        if event.checkbox.id != "compact":
+            return
+        event.stop()
+        if event.value == self.compact:
+            return
+        self.compact = event.value
+        try:
+            save_compact(self.settings_path, self.compact)
+        except OSError as error:
+            self.show_message("error", tr("window.choice_not_saved"), str(error))
+        if self.review is None:
+            return
+        current = self.cursor_key()
+        game = _game_of(current) if current else None
+        self.show_games()
+        keys = self._keys()
+        rows = [key for key in keys if _game_of(key) == game] if game is not None else []
+        target = next((key for key in rows if key in (self._games if self.compact else self.files)), None)
+        if target is not None:  # the game under the cursor stays under it
+            self._place_cursor(target, {target})
+        self._set_status(tr("window.compact_on" if self.compact else "window.compact_off"))
 
     def action_choose_view(self, number: int) -> None:
         self.query_one(f"#view-{SCOPES[number][0]}", RadioButton).value = True  # reaches on_radio_set_changed
@@ -2046,6 +2091,7 @@ class WorkbenchApp(App):
         self.deleting = locked
         self.query_one("#filter", FilterInput).disabled = locked
         self.query_one("#views", RadioSet).disabled = locked
+        self.query_one("#compact", Checkbox).disabled = locked
         progress = self.query_one("#progress", ProgressBar)
         progress.update(total=None, progress=0)
         progress.display = locked
@@ -2339,7 +2385,8 @@ class WorkbenchApp(App):
         table.move_cursor(row=table.get_row_index(key))
 
     def _select_first_file(self) -> None:
-        first = next((key for key in self._keys() if key in self.files), None)
+        rows = self._games if self.compact else self.files
+        first = next((key for key in self._keys() if key in rows), None)
         if first:
             self._place_cursor(first, {first})
 
@@ -2437,7 +2484,13 @@ class WorkbenchApp(App):
         return self.directory is not None and collection_root(self.directory) is not None
 
     def _highlighted(self):
+        """(game, file) of the cursor's row; a game's heading row (only the names shown) stands for its
+        first file, a kept one first."""
         key = self.cursor_key()
+        if self.compact and key in self._games:
+            result = self._games[key]
+            entries = result.keep + result.marked
+            return (result, entries[0]) if entries else None
         if key in self.files:
             return self.files[key]
         rows = [key for key in self.selected_keys() if key in self.files]

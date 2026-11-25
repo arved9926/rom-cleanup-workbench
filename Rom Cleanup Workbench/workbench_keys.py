@@ -72,7 +72,8 @@ def key_sections(context: str, window: bool, collection: bool, ascii: bool = Fal
                                        ("Tab", "keys.next_game"), ("Shift+Tab", "keys.previous_game"),
                                        ("/", "keys.filter")]),
             ("keys.section.view", [("1", "window.scope.problems"), ("2", "window.scope.marked"),
-                                   ("3", "window.scope.removed"), ("4", "window.scope.all"), *zoom]),
+                                   ("3", "window.scope.removed"), ("4", "window.scope.all"),
+                                   ("z", "keys.compact"), *zoom]),
             *([("keys.section.game", [("Enter", "keys.game_view_window" if window else "keys.game_view"),
                                       ("e", "keys.edit_game"), ("n", "keys.no_game"), ("g", "keys.report"),
                                       ("w", "keys.write_gamelist"), ("m", "keys.unused_media")])]

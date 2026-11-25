@@ -38,6 +38,7 @@ from workbench_state import (  # noqa: F401  (SETTINGS_PATH and the scope names 
     DEFAULT_SCOPE, SCOPE_ALL_FILES, SCOPE_MARKED, SCOPE_PROBLEMS, SETTINGS_PATH, add_confirmed_saves,
     format_kb, load_confirmed_saves, load_hide_empty, load_last_collection, load_list_sort, load_overview_sort,
     load_scope, save_hide_empty, save_last_collection, save_list_sort, save_overview_sort, save_scope,
+    load_compact, save_compact,
 )
 from workbench_state import SCOPES as _SCOPES
 from workbench_state import drives as _drives
@@ -881,6 +882,8 @@ class ReviewWindow:
         self.root.minsize(_MIN_WIDTH, _MIN_HEIGHT)
         # An explicit choice at startup takes precedence over the saved state.
         self.scope = tk.StringVar(self.root, scope or load_scope(settings_path))
+        # z: only the games' heading rows, without their files (remembered for the next start).
+        self.compact = tk.BooleanVar(self.root, load_compact(settings_path))
         self.status = tk.StringVar(self.root)
         self.info = tk.StringVar(self.root)
         self.folder = tk.StringVar(self.root)
@@ -888,6 +891,7 @@ class ReviewWindow:
         self._search_job = None
         self._striped = set()
         self._group_ids = {}
+        self._games = {}
         self._file_ids = {}
         self._files = {}
         # Open questions, the newest last: each (frame, answer variable, values, index for Esc).
@@ -1008,10 +1012,12 @@ class ReviewWindow:
         review.confirm_save_files(review.confirmed_saves(self.settings_path))
         # Each file keeps its row ID, so that the selection survives moving.
         self._group_ids = {}
+        self._games = {}  # heading row -> game
         self._file_ids = {}
         self._files = {}
         for group_index, result in enumerate(review.results):
             self._group_ids[id(result)] = f"g{group_index}"
+            self._games[f"g{group_index}"] = result
             for file_index, entry in enumerate(result.keep + result.marked):
                 row = f"g{group_index}f{file_index}"
                 self._file_ids[id(entry)] = row
@@ -1430,6 +1436,10 @@ class ReviewWindow:
             )
             button.pack(side="left", padx=(0, 16))
             self._list_controls.append(button)
+        compact = ttk.Checkbutton(options, text=tr("window.compact"), variable=self.compact,
+                                  command=self._compact_changed)
+        compact.pack(side="left", padx=(16, 16))
+        self._list_controls.append(compact)
 
         middle = self.middle = ttk.Frame(self.root)
         middle.pack(fill="both", expand=True)
@@ -1480,7 +1490,7 @@ class ReviewWindow:
             "f": self.choose_directory, "r": self.reanalyze, "c": self.show_credits, "q": self._quit_key,
             "a": self._scan_all_key, "d": self._toggle_full_key, "h": self._hide_empty_key,
             "n": self._no_games_key, "g": self.toggle_report, "w": self._write_key,
-            "e": self._edit_key, "m": self._unused_media_key,
+            "e": self._edit_key, "m": self._unused_media_key, "z": self.toggle_compact,
         }
         for key, action in keys.items():
             for variant in (key, key.upper()):
@@ -1637,8 +1647,13 @@ class ReviewWindow:
         return self.directory is not None and collection_root(self.directory) is not None
 
     def _highlighted(self):
-        """(game, file) of the highlighted row; None if no file is highlighted."""
+        """(game, file) of the highlighted row; None if no file is highlighted.
+        A game's heading row (with only the names shown) stands for its first file, a kept one first."""
         row = self.tree.focus()
+        if row in self._games:
+            result = self._games[row]
+            entries = result.keep + result.marked
+            return (result, entries[0]) if entries else None
         if row not in self._files:
             rows = [row for row in self.tree.selection() if row in self._files]
             row = rows[-1] if rows else None
@@ -1918,18 +1933,19 @@ class ReviewWindow:
             from workbench_view import game_genre
 
             visible.sort(key=lambda result: sort_key(game_genre(result, self._game_info)))  # stable: names stay in order
+        compact = self.compact.get()
         for index, result in enumerate(visible):
             group_id = self._group_ids[id(result)]
             if index % 2:
                 self._striped.add(group_id)
-            if index:
+            if index and not compact:  # only the names: one game below the other, without lines
                 self.tree.insert(
                     "", "end", group_id + _SEPARATOR_SUFFIX, text=_LINE_TEXT, values=(_LINE_TEXT,) * 3,
                     tags=("separator",),
                 )
             self.tree.insert(
-                "", "end", group_id, text=self._heading(result), open=True,
-                values=("; ".join(result.problems), "", self._genre_label(result)),
+                "", "end", group_id, text=self._heading(result), open=not compact,
+                values=(self._heading_note(result), "", self._genre_label(result)),
                 tags=self._tags(group_id, "problem" if result.problems else "game"),
             )
             self._fill_group(result)
@@ -1974,7 +1990,9 @@ class ReviewWindow:
 
     def _fill_group(self, result) -> None:
         group_id = self._group_ids[id(result)]
-        self.tree.item(group_id, text=self._heading(result))  # k and x may change the first kept file
+        # k and x may change the first kept file, and with it the name and the information
+        self.tree.item(group_id, text=self._heading(result))
+        self.tree.set(group_id, "hint", self._heading_note(result))
         self.tree.delete(*self.tree.get_children(group_id))
         if result.keep:
             section = self.tree.insert(
@@ -1995,6 +2013,43 @@ class ReviewWindow:
         from workbench_view import game_heading
 
         return game_heading(result, self._game_info)
+
+    def _heading_note(self, result) -> str:
+        from workbench_view import heading_note
+
+        return heading_note(result, self._game_info)
+
+    def _compact_changed(self) -> None:
+        """Only the game names, or the files too; the highlighted game stays highlighted."""
+        if self.review is None:
+            return
+        try:
+            save_compact(self.settings_path, self.compact.get())
+        except OSError as error:
+            messagebox.showerror(tr("window.choice_not_saved"), str(error), parent=self.root)
+        selection = self.tree.selection()
+        if self.compact.get():  # the files disappear: their games take their place in the selection
+            games = []
+            for row in selection:
+                while self.tree.parent(row):
+                    row = self.tree.parent(row)
+                if row not in games:
+                    games.append(row)
+            self.tree.selection_set(games)
+        self._show_all_groups()
+        if not self.compact.get() and not any(row in self._files for row in self.tree.selection()):
+            game = self.tree.focus()
+            row = next((row for row in self._walk(game) if row in self._files), None) if game else None
+            if row:
+                self._restore_selection([row])
+        self.status.set(tr("window.compact_on" if self.compact.get() else "window.compact_off"))
+
+    def toggle_compact(self) -> None:
+        """z: only the game names on and off."""
+        if self.review is None or self._list_locked() or self.overview_panel is not None:
+            return
+        self.compact.set(not self.compact.get())
+        self._compact_changed()
 
     def _insert_file(self, group_id: str, parent: str, entry, sign: str, tag: str, moved_note: str) -> None:
         from workbench_view import file_notes
@@ -2114,7 +2169,8 @@ class ReviewWindow:
             while target and self._is_separator(target):
                 target = neighbor(target)
         if target:
-            row = next((row for row in self._walk(target) if row in self._files), target)
+            row = target if self.compact.get() else next((row for row in self._walk(target) if row in self._files),
+                                                         target)
             self.tree.selection_set(row)
             self.tree.focus(row)
             # First the end, then the title: This shows the whole game if it fits.
@@ -2138,6 +2194,11 @@ class ReviewWindow:
             self.tree.see(rows[-1])
 
     def _select_first_file(self) -> None:
+        if self.compact.get():
+            games = [row for row in self.tree.get_children() if not self._is_separator(row)]
+            if games:
+                self._restore_selection(games[:1])
+            return
         for group_id in self.tree.get_children():
             for row in self._walk(group_id):
                 if row in self._files:

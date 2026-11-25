@@ -260,6 +260,33 @@ def game_heading(result, info_by_rom: dict) -> str:
     return result.title
 
 
+def game_summary(result, info_by_rom: dict, ascii: bool = False) -> str:
+    """The short information in the note of a game's heading row: rating, players, release year
+    ("★ 4.5 · 1-2 Spieler · 1991"), from the first of its files (kept ones first) that has any."""
+    for entry in result.keep + result.marked:
+        info = info_by_rom.get(entry.path.name)
+        if not info or info.get("kind") != "game":
+            continue
+        parts = []
+        rating = info.get("rating")
+        if isinstance(rating, (int, float)) and rating > 0:
+            parts.append(f"{'*' if ascii else '★'} {round(rating * 5, 1):g}")
+        players = " ".join(str(info.get("players") or "").split())
+        if players:
+            parts.append(tr("game.list_players", players=players))
+        year = str(info.get("release_date") or "")[:4]
+        if len(year) == 4 and year.isdigit():
+            parts.append(year)
+        if parts:
+            return (" - " if ascii else " · ").join(parts)
+    return ""
+
+
+def heading_note(result, info_by_rom: dict, ascii: bool = False) -> str:
+    """The note of a game's heading row: its problems first, then rating, players and year."""
+    return "; ".join([*result.problems, *filter(None, [game_summary(result, info_by_rom, ascii)])])
+
+
 def file_notes(entry, info_by_rom: dict) -> list:
     """Notes of a file in the list from the database: "no game" for a BIOS file or one marked with n."""
     info = info_by_rom.get(entry.path.name)
