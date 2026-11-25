@@ -245,7 +245,7 @@ class GameTable(DataTable):
         Binding("down", "app.move_cursor(1, False)", show=False),
         Binding("shift+up", "app.move_cursor(-1, True)", show=False),
         Binding("shift+down", "app.move_cursor(1, True)", show=False),
-        Binding("enter", "app.proceed", show=False),  # execute: delete after a question
+        Binding("enter", "app.game_view", show=False),  # the game view (formerly i); the cleanup is on F12
     ]
 
     def __init__(self, *args, **kwargs):
@@ -945,7 +945,7 @@ class KeysScreen(Screen):
 class InfoScreen(Screen):
     """The game view (i) or the gamelist report (g) in place of the list: blocks of workbench_view."""
 
-    BINDINGS = [Binding("escape,q,Q", "close", show=False), Binding("i,I", "close_kind('game')", show=False),
+    BINDINGS = [Binding("escape,q,Q", "close", show=False), Binding("enter", "close_kind('game')", show=False),
                 Binding("g,G", "close_kind('report')", show=False), Binding("e,E", "edit", show=False)]
 
     def __init__(self, kind: str, title: str, subtitle: str, blocks: list):
@@ -1526,7 +1526,6 @@ class WorkbenchApp(App):
         Binding("x,X", "demote", show=False),
         Binding("o,O", "overview", show=False),
         Binding("k,K", "promote", show=False),
-        Binding("i,I", "game_view", show=False),
         Binding("n,N", "toggle_no_game", show=False),
         Binding("g,G", "report", show=False),
         Binding("w,W", "write_gamelist", show=False),
@@ -1538,8 +1537,10 @@ class WorkbenchApp(App):
         # after it (fast, pasted or sent by tmux) would still reach the list. In the field itself
         # check_action switches it off, so that "/" is typed there; FilterInput handles the way out.
         Binding("slash", "focus_filter", show=False, priority=True),
-        # Enter in the list is bound in GameTable too, which would otherwise select the row.
-        Binding("enter", "proceed", show=False),
+        # Enter opens the game view (bound in GameTable too, which would otherwise select the row);
+        # the cleanup is on F12 since 2026-11-25.
+        Binding("enter", "game_view", show=False),
+        Binding("f12", "proceed", show=False),
         Binding("f,F", "choose_folder", show=False),
         Binding("s,S", "open_settings", show=False),
         Binding("r,R,f5", "reanalyze", show=False),

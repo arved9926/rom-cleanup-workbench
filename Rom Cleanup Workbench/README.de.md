@@ -216,7 +216,7 @@ Die Tasten gelten im Fenster und in der Terminal-Version gleich. Die Zeile über
 
 **Medien in den Unterordnern.** Bei jedem Scan sucht der Workbench außerdem in allen Unterordnern einer Plattform nach Bildern, Videos und Handbüchern, die die `gamelist.xml` nicht schon nennt. Zugeordnet wird nur, was der Name eindeutig sagt: ein Ordner je Kategorie mit dem Namen des ROMs (`wheel/10yard.png`, `marquees/10yard.png`) oder ROM-Name, Trennzeichen (`-`, `.` oder `_`) und Kategorie in einem beliebigen Ordner (`downloaded_images/10yard-wheel.png`, `game.image.jpg`). Passen mehrere ROMs, gewinnt der längste Name (`sf2ce-image.png` gehört zu `sf2ce.zip`, nicht zu `sf2.zip`); eine Zuordnung nach Ähnlichkeit gibt es nicht. Was nicht eindeutig ist, bleibt ohne ROM. Jedes Spiel-ROM ohne Eintrag in der `gamelist.xml` bekommt einen leeren Eintrag mit dem Namen vor der ersten Klammer; BIOS-Dateien (`BIOS` in einer Klammer oder bekannte Namen wie `neogeo`, `pgm`, `skns`) gelten als kein Spiel und bekommen keine Medien. Hinter dem Plattformnamen steht grau, wie viele Medien zugeordnet sind und wie viele ohne ROM blieben; `Infos` zählt auch leere Einträge, zu denen Medien gefunden wurden.
 
-**Spielansicht, Namensspalte und Bericht.** Hat eine Plattform Informationen, zeigt die Liste eine Spalte `Name` mit dem Namen aus der `gamelist.xml`, mit `★` bei Favoriten und `kein Spiel` bei BIOS-Dateien. `i` (im Fenster auch ein Doppelklick auf eine Datei) zeigt an Stelle der Liste alles, was über das Spiel bekannt ist: seine Dateien mit ihrer Entscheidung, die Felder wie Beschreibung, Bewertung (als x / 5), Datum, Entwickler, Spielzeit und Favorit, die übrigen Felder der `gamelist.xml` und die Medien nach Kategorie; Vorschaubilder gibt es bewusst nicht. `g` zeigt den Gamelist-Bericht: was nicht übernommen wurde und warum, die Hinweise, ROMs ohne Informationen, Medien ohne ROM und die Dateien, die kein Spiel sind. `n` kennzeichnet die markierten Dateien als `kein Spiel` oder hebt das auf; eine spätere `gamelist.xml` ändert daran nichts. Ob eine Datei behalten oder gelöscht wird, entscheiden weiter die Regeln. Die Zusammenfassung von `gamelist.xml` und Medien steht grau in einer eigenen Zeile unter der Plattformzeile.
+**Spielansicht, Namensspalte und Bericht.** Hat eine Plattform Informationen, zeigt die Liste eine Spalte `Name` mit dem Namen aus der `gamelist.xml`, mit `★` bei Favoriten und `kein Spiel` bei BIOS-Dateien. `Enter` (im Fenster auch ein Doppelklick auf eine Datei) zeigt an Stelle der Liste alles, was über das Spiel bekannt ist: seine Dateien mit ihrer Entscheidung, die Felder wie Beschreibung, Bewertung (als x / 5), Datum, Entwickler, Spielzeit und Favorit, die übrigen Felder der `gamelist.xml` und die Medien nach Kategorie; Vorschaubilder gibt es bewusst nicht. `g` zeigt den Gamelist-Bericht: was nicht übernommen wurde und warum, die Hinweise, ROMs ohne Informationen, Medien ohne ROM und die Dateien, die kein Spiel sind. `n` kennzeichnet die markierten Dateien als `kein Spiel` oder hebt das auf; eine spätere `gamelist.xml` ändert daran nichts. Ob eine Datei behalten oder gelöscht wird, entscheiden weiter die Regeln. Die Zusammenfassung von `gamelist.xml` und Medien steht grau in einer eigenen Zeile unter der Plattformzeile.
 
 **Löschen und Umbenennen nehmen die Medien mit.** Löscht `Ausführen...` ein ROM, werden seine Medien mit gelöscht, Bilder, Videos und Handbücher aus der `gamelist.xml` wie aus den Unterordnern; die Frage vor dem Löschen nennt ihre Zahl. Ein Medium, das auch ein verbleibendes ROM nutzt, bleibt. Mit einem gelöschten ROM gehen auch seine Informationen, Favorit und Spielzeit eingeschlossen. Entfernt `Ausführen...` die Nummer vor einem Namen, werden Medien, deren Name mit dem alten ROM-Namen beginnt, mit umbenannt (`01 - Alpha (USA)-image.png` wird `Alpha (USA)-image.png`). Die `gamelist.xml` selbst wird dabei nicht geändert.
 
@@ -264,11 +264,11 @@ Das Fenster merkt sich die zuletzt gewählte Ansicht und die bestätigten Status
 | `Strg` + Mausrad | Schrift vergrößern oder verkleinern (8 bis 32 pt, gilt bis das Fenster geschlossen wird) |
 | `s` | wie die Schaltfläche `Einstellungen...`: die Einstellungen für Sprache, Priorität, Löschwörter und ZIP oder normale Datei zeigen oder ausblenden (siehe [Einstellungen](#einstellungen)) |
 | `/` | ins Filterfeld wechseln |
-| `Enter` | wie die Schaltfläche `Ausführen...`: nach einer Bestätigung löschen, die Nummer vor den behaltenen Dateinamen entfernen (Regel 10) und die vermuteten Status- oder Spielstanddateien bestätigen (Regel 9) |
+| `F12` | wie die Schaltfläche `Ausführen...`: nach einer Bestätigung löschen, die Nummer vor den behaltenen Dateinamen entfernen (Regel 10) und die vermuteten Status- oder Spielstanddateien bestätigen (Regel 9) |
 | `f` | einen anderen Ordner wählen, im Fenster an der Stelle der Liste: Ordner mit dem Pfeil öffnen, mit Doppelklick sofort auswählen, oder einen Pfad in `Pfad:` tippen, dann `Auswählen` oder `Enter`; `Abbrechen` oder `Esc` behalten den aktuellen Ordner |
 | `r` oder `F5` | neu analysieren, liest auch die Konfiguration neu |
 | `c` | die Credits zeigen |
-| `i` | in einer Plattform der Sammlung: alles, was über das markierte Spiel bekannt ist (auch Doppelklick im Fenster); `Esc` oder `q` schließt |
+| `Enter` | in einer Plattform der Sammlung: alles, was über das markierte Spiel bekannt ist (auch Doppelklick im Fenster); `Enter`, `Esc` oder `q` schließt |
 | `n` | in einer Plattform der Sammlung: die markierten Dateien als `kein Spiel` kennzeichnen (etwa eine BIOS-Datei) oder das aufheben |
 | `g` | in einer Plattform der Sammlung: der Gamelist-Bericht der Plattform |
 | `e` | in der Spielansicht: die Informationen des Spiels bearbeiten; `Strg+S` speichert, `Esc` geht zurück |
@@ -340,12 +340,12 @@ Rechts neben der Plattform stehen die wichtigsten Tasten, `F1` oder `?` zeigt al
 | `x` / `k` | die gewählten Dateien zum Löschen markieren / behalten |
 | `1` `2` `3` | die Ansichten `Problematische Löschmarkierungen`, `Alle Löschmarkierungen`, `Alle Romdateien` |
 | `/` | ins Filterfeld wechseln (`Enter`, `Tab` oder der Pfeil nach unten führen zurück, `Esc` leert) |
-| `Enter` | ausführen: nach einer Bestätigung löschen (wie `Ausführen...`) |
+| `F12` | ausführen: nach einer Bestätigung löschen (wie `Ausführen...`) |
 | `f` | einen anderen Ordner wählen: `Rechts` oder `Leertaste` öffnet einen Ordner, `Links` schließt ihn, `Enter` oder ein Doppelklick wählt; ein Pfad lässt sich auch eintippen |
 | `s` | Einstellungen: `Umschalt+Hoch`/`Umschalt+Runter` verschieben eine Region, `Entf` entfernt sie, `Strg+S` speichert, `Esc` bricht ab |
 | `r` oder `F5` | neu analysieren |
 | `c` | die Credits zeigen |
-| `i` | in einer Plattform der Sammlung: alles, was über das markierte Spiel bekannt ist (auch Doppelklick im Fenster); `Esc` oder `q` schließt |
+| `Enter` | in einer Plattform der Sammlung: alles, was über das markierte Spiel bekannt ist (auch Doppelklick im Fenster); `Enter`, `Esc` oder `q` schließt |
 | `n` | in einer Plattform der Sammlung: die markierten Dateien als `kein Spiel` kennzeichnen (etwa eine BIOS-Datei) oder das aufheben |
 | `g` | in einer Plattform der Sammlung: der Gamelist-Bericht der Plattform |
 | `e` | in der Spielansicht: die Informationen des Spiels bearbeiten; `Strg+S` speichert, `Esc` geht zurück |

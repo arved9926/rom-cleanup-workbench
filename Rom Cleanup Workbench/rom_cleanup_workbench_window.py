@@ -1458,7 +1458,7 @@ class ReviewWindow:
             "x": self.demote_selected, "k": self.promote_selected, "s": self.toggle_settings,
             "f": self.choose_directory, "r": self.reanalyze, "c": self.show_credits, "q": self._quit_key,
             "a": self._scan_all_key, "d": self._toggle_full_key, "h": self._hide_empty_key,
-            "n": self._no_games_key, "i": self.toggle_game_view, "g": self.toggle_report, "w": self._write_key,
+            "n": self._no_games_key, "g": self.toggle_report, "w": self._write_key,
             "e": self._edit_key,
         }
         for key, action in keys.items():
@@ -1466,8 +1466,10 @@ class ReviewWindow:
                 self.root.bind(f"<KeyPress-{variant}>", lambda _event, action=action: action())
         for number in range(len(_SCOPES)):
             self.root.bind(f"<KeyPress-{number + 1}>", lambda _event, number=number: self._choose_scope(number))
-        self.root.bind("<Return>", lambda _event: self.confirm_delete())
-        self.root.bind("<KP_Enter>", lambda _event: self.confirm_delete())
+        # Enter: the game view (2026-11-25, formerly i); the cleanup is on F12.
+        self.root.bind("<Return>", lambda _event: self._enter_key())
+        self.root.bind("<KP_Enter>", lambda _event: self._enter_key())
+        self.root.bind("<F12>", lambda _event: self.confirm_delete())
         self.root.bind("<slash>", lambda _event: self.focus_search())
         self.root.bind("<KP_Divide>", lambda _event: self.focus_search())
         self.root.bind("<F5>", lambda _event: self.reanalyze())
@@ -1687,6 +1689,15 @@ class ReviewWindow:
 
     def toggle_game_view(self) -> None:
         self._toggle_info("game")
+
+    def _enter_key(self) -> None:
+        """Enter in the list opens the game view, and in the game view closes it again."""
+        if self._questions or self.edit_panel is not None:
+            return
+        if self.info_panel is not None and self.info_panel.kind == "game":
+            self.close_info()
+        elif self.info_panel is None:
+            self.toggle_game_view()
 
     def _edit_key(self) -> None:
         """e in the game view: the form for the game's information."""

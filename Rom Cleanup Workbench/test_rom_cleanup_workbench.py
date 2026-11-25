@@ -1610,7 +1610,7 @@ class OverviewWindowTests(OverviewWindowBase):
         self.assertEqual(shown(window), ["Enter", "Open", "r", "Scan", "a", "Scan all", "F1 / ?", "Help: more keys"])
         window.overview_panel.open()
         self.wait(window)
-        self.assertEqual(shown(window), ["x", "Delete", "k", "Keep", "Enter", "Run the cleanup",
+        self.assertEqual(shown(window), ["x", "Delete", "k", "Keep", "Enter", "Game info", "F12", "Run the cleanup",
                                          "F1 / ?", "Help: more keys"])
         self.assertEqual(window.info.get(), "nes")
 
@@ -1631,8 +1631,8 @@ class OverviewWindowTests(OverviewWindowBase):
         self.assertTrue(window.overview_panel.frame.winfo_manager())
         window.overview_panel.open()
         self.wait(window)
-        window.toggle_keys()  # in the list: its keys, Enter runs the cleanup
-        self.assertIn(("Enter", "Run the cleanup"), window.keys_panel.key_labels)
+        window.toggle_keys()  # in the list: its keys, F12 runs the cleanup
+        self.assertIn(("F12", "Run the cleanup"), window.keys_panel.key_labels)
         self.assertIn(("q  Esc", "Back to the overview / close"), window.keys_panel.key_labels)
         self.assertTrue(window._list_locked())
         window.toggle_keys()
@@ -3538,7 +3538,7 @@ class ReviewWindowTests(RedundanzTestCase):
             self.assertTrue(translations.tr("window.no_folder").endswith("(f)"), language)
         translations.set_language("de")
         rows = dict(row for _title, section in workbench_keys.key_sections("list", True, False) for row in section)
-        self.assertEqual(rows["Enter"], "Bereinigung durchführen")
+        self.assertEqual(rows["F12"], "Bereinigung durchführen")
         translations.set_language("en")
 
     def test_number_keys_choose_the_view(self):
@@ -5957,7 +5957,7 @@ class TerminalVersionTests(unittest.IsolatedAsyncioTestCase):
             raise AssertionError("analyzed again")
         app.analyze = fail
 
-    async def proceed(self, app, pilot, key="enter", answer="yes"):
+    async def proceed(self, app, pilot, key="f12", answer="yes"):
         """Presses x (or Ctrl+L), answers the question and waits for the deletion and its message."""
         await pilot.press(key)
         await pilot.pause()
@@ -5970,7 +5970,7 @@ class TerminalVersionTests(unittest.IsolatedAsyncioTestCase):
         app = self.app_for({"Title (USA).bin": b"a", "Title (Japan).bin": b"b"})
         async with app.run_test() as pilot:
             await self.analyzed(app, pilot)
-            await pilot.press("enter")
+            await pilot.press("f12")
             await pilot.pause()
             self.assertIn("kind-warning", app.screen.classes)
             self.assertEqual(self.text(app.screen, "#question-text"), app.review.confirm_message(False, False, ""))
@@ -5987,7 +5987,7 @@ class TerminalVersionTests(unittest.IsolatedAsyncioTestCase):
         async with app.run_test() as pilot:
             await self.analyzed(app, pilot)
             self.no_new_analysis(app)
-            await self.proceed(app, pilot, key="enter")
+            await self.proceed(app, pilot, key="f12")
             self.assertEqual(self.names(app), ["Stays (USA).bin", "Title (USA).bin"])
             self.assertTrue(app.question_open())
             self.assertEqual(self.text(app.screen, "#question-title"), "Deleted")
@@ -6037,7 +6037,7 @@ class TerminalVersionTests(unittest.IsolatedAsyncioTestCase):
                     keys_pressed.wait(10)
                 return real_delete(report)
             app.review.delete = slow_delete
-            await pilot.press("enter", "left", "enter")
+            await pilot.press("f12", "left", "enter")
             await pilot.pause(0.05)
             self.assertTrue(app.deleting)
             self.assertTrue(app.query_one("#progress").display)
@@ -6133,13 +6133,13 @@ class TerminalVersionTests(unittest.IsolatedAsyncioTestCase):
         app = self.app_for({"Title (USA).sfc": b"x" * 1000, "Title.cht": b"x" * 100}, scope="problems")
         async with app.run_test() as pilot:
             await self.analyzed(app, pilot)
-            await pilot.press("enter")
+            await pilot.press("f12")
             await pilot.pause()
             self.assertIn("Confirm 1 suspected status or save file(s)", self.text(app.screen, "#question-text"))
             await pilot.press("enter")  # No
             await pilot.pause()
             self.assertEqual(self.titles(app), ["Title"])
-            await pilot.press("enter", "left", "enter")
+            await pilot.press("f12", "left", "enter")
             await pilot.pause()
             self.assertTrue(app.query_one("#nothing").display)
             self.assertEqual(len(list(app.directory.iterdir())), 2)
@@ -6148,7 +6148,7 @@ class TerminalVersionTests(unittest.IsolatedAsyncioTestCase):
         app = self.app_for({"Alpha (USA).bin": b"a"})
         async with app.run_test() as pilot:
             await self.analyzed(app, pilot)
-            await pilot.press("enter")
+            await pilot.press("f12")
             await pilot.pause()
             self.assertEqual(self.text(app.screen, "#question-title"), "Nothing to delete")
             self.assertEqual(self.buttons(app), ["OK"])
@@ -6161,7 +6161,7 @@ class TerminalVersionTests(unittest.IsolatedAsyncioTestCase):
         async with app.run_test() as pilot:
             await self.analyzed(app, pilot)
             await self.filter_for(app, pilot, *"two")
-            await pilot.press("enter")
+            await pilot.press("f12")
             await pilot.pause()
             self.assertIn("Not shown: 1 file(s)", self.text(app.screen, "#question-text"))
             await pilot.press("left", "enter")
@@ -6489,7 +6489,7 @@ class TerminalVersionTests(unittest.IsolatedAsyncioTestCase):
         app = self.app_for({"Title (USA).bin": b"a", "Title (Japan).bin": b"b"})
         async with app.run_test() as pilot:
             await self.analyzed(app, pilot)
-            await self.burst(app, pilot, "enter", "left", "enter")
+            await self.burst(app, pilot, "f12", "left", "enter")
             await app.workers.wait_for_complete()
             await pilot.pause()
             self.assertEqual(self.names(app), ["Title (USA).bin"])  # Yes was chosen
@@ -7238,7 +7238,7 @@ class TerminalVersionTests(unittest.IsolatedAsyncioTestCase):
         async with app.run_test(size=(110, 30)) as pilot:
             await self.analyzed(app, pilot)
             self.assertEqual(str(app.query_one("#short-keys").render()),
-                             "x Delete   k Keep   Enter Run the cleanup   F1 / ? Help: more keys")
+                             "x Delete   k Keep   Enter Game info   F12 Run the cleanup   F1 / ? Help: more keys")
             for key in ("f1", "question_mark"):
                 await pilot.press(key)
                 await pilot.pause()
@@ -7699,8 +7699,8 @@ class GameViewDataTests(OverviewWindowBase):
         def keys(collection):
             return [key for _title, rows in workbench_keys.key_sections("list", True, collection) for key, _ in rows]
 
-        self.assertTrue({"i", "n", "g"} <= set(keys(True)))
-        self.assertFalse({"i", "g"} & set(keys(False)))
+        self.assertTrue({"Enter", "n", "g"} <= set(keys(True)))
+        self.assertFalse({"Enter", "g"} & set(keys(False)))
 
 
 class GameViewWindowTests(GameViewDataTests):
@@ -7787,7 +7787,7 @@ class GameViewTerminalTests(OverviewTerminalBase):
             usa = self.row_key(app, "Title (USA).nes")
             self.assertIn("★ Title Fight", str(table.get_row(usa)[3]))
             app._place_cursor(usa, [usa])
-            await pilot.press("i")
+            await pilot.press("enter")
             await pilot.pause()
             self.assertIsInstance(app.screen, self.tui.InfoScreen)
             self.assertIn("A game.", app.screen.text().plain)
@@ -8223,7 +8223,7 @@ class EditGameTerminalTests(GameViewTerminalTests):
             await self.settle(app, pilot)
             usa = self.row_key(app, "Title (USA).nes")
             app._place_cursor(usa, [usa])
-            await pilot.press("i", "e")
+            await pilot.press("enter", "e")
             await pilot.pause()
             self.assertIsInstance(app.screen, self.tui.EditScreen)
             name = app.screen.query_one("#edit-name")
@@ -8248,3 +8248,23 @@ class EditGameTerminalTests(GameViewTerminalTests):
             await pilot.pause()
             self.assertIsInstance(app.screen, self.tui.InfoScreen)
 
+
+
+class EnterAndF12Tests(GameViewWindowTests):
+    """2026-11-25: Enter opens the game view (formerly i), F12 runs the cleanup (formerly Enter)."""
+
+    test_the_name_column = test_i_opens_the_game_view_and_esc_and_q_close_it = None
+    test_a_double_click_opens_it = test_n_marks_no_game_and_g_shows_the_report = None
+
+    def test_enter_opens_and_closes_the_game_view_and_f12_runs_the_cleanup(self):
+        window = self.opened()
+        row = self.row_of(window, "Title (USA).nes")
+        window.tree.selection_set(row)
+        window.tree.focus(row)
+        with mock.patch.object(window, "confirm_delete") as cleanup:
+            window._enter_key()
+            self.assertEqual(window.info_panel.kind, "game")
+            window._enter_key()
+            self.assertIsNone(window.info_panel)
+            cleanup.assert_not_called()
+        self.assertTrue(window.root.bind("<F12>"))  # Tk names no method here; key events need focus

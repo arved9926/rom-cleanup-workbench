@@ -32,7 +32,8 @@ def short_keys(context: str) -> list[tuple[str, str]]:
     if context == OVERVIEW:
         keys = [("Enter", "keys.short.open"), ("r", "keys.short.scan"), ("a", "keys.short.scan_all")]
     else:
-        keys = [("x", "keys.short.delete"), ("k", "keys.short.keep"), ("Enter", "keys.run_cleanup")]
+        keys = [("x", "keys.short.delete"), ("k", "keys.short.keep"), ("Enter", "keys.short.game_info"),
+                ("F12", "keys.run_cleanup")]
     return [(key, tr(text)) for key, text in keys] + [(ALL_KEYS, tr("keys.short.all"))]
 
 
@@ -58,13 +59,13 @@ def key_sections(context: str, window: bool, collection: bool, ascii: bool = Fal
         back = [("o", "keys.to_overview")] if collection and not window else []
         sections = [
             ("keys.section.decide", [("x", "keys.delete_file"), ("k", "keys.keep_file"),
-                                     ("Enter", "keys.run_cleanup")]),
+                                     ("F12", "keys.run_cleanup")]),
             ("keys.section.navigate", [(up_down, "keys.select_row"), (f"Shift+{up_down}", "keys.select_several"),
                                        ("Tab", "keys.next_game"), ("Shift+Tab", "keys.previous_game"),
                                        ("/", "keys.filter")]),
             ("keys.section.view", [("1", "window.scope.problems"), ("2", "window.scope.marked"),
                                    ("3", "window.scope.all"), *zoom]),
-            *([("keys.section.game", [("i", "keys.game_view_window" if window else "keys.game_view"),
+            *([("keys.section.game", [("Enter", "keys.game_view_window" if window else "keys.game_view"),
                                       ("e", "keys.edit_game"), ("n", "keys.no_game"), ("g", "keys.report"),
                                       ("w", "keys.write_gamelist")])] if collection else []),
             ("keys.section.program", [("r  F5", "keys.analyze_again"), ("f", "keys.folder"), ("s", "keys.settings"),
