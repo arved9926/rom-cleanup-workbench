@@ -7,12 +7,6 @@ Finds duplicate ROM files in a folder by game name, shows the decision for every
 
 The documentation is the user guide (PDF): [English](<Rom Cleanup Workbench/docs/Rom Cleanup Workbench - User Guide.pdf>) · [Deutsch](<Rom Cleanup Workbench/docs/Rom Cleanup Workbench - Benutzerhandbuch.pdf>) · [Italiano](<Rom Cleanup Workbench/docs/Rom Cleanup Workbench - Guida utente.pdf>) · [Español](<Rom Cleanup Workbench/docs/Rom Cleanup Workbench - Guía del usuario.pdf>) · [Français](<Rom Cleanup Workbench/docs/Rom Cleanup Workbench - Guide utilisateur.pdf>) · [日本語](<Rom Cleanup Workbench/docs/Rom Cleanup Workbench - ユーザーガイド.pdf>)
 
-## Video
-
-A short video shows how the program works:
-
-[![Rom Cleanup Workbench video](https://img.youtube.com/vi/D1yXZQXg-iM/hqdefault.jpg)](https://youtu.be/D1yXZQXg-iM)
-
 ## Quick start
 
 Install Python 3.10 or newer, then download this repository (**Code → Download ZIP**, unpack it and rename the folder `rom-cleanup-workbench-main` to `rom-cleanup-workbench`) or clone it with Git.

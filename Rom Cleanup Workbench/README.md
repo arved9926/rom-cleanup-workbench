@@ -4,7 +4,6 @@
 
 **User guide with screenshots:** [PDF](<docs/Rom Cleanup Workbench - User Guide.pdf>) · [Word](<docs/Rom Cleanup Workbench - User Guide.docx>)
 
-**Video:** [how the program works (YouTube)](https://youtu.be/D1yXZQXg-iM)
 
 Finds duplicate ROM files in a directory by game name and deletes them on request.
 Requires Python 3.10 or newer. The window needs no additional packages; the terminal version for Linux needs Textual (see [Terminal version (Linux)](#terminal-version-linux)).
@@ -148,7 +147,7 @@ cd "rom-cleanup-workbench\Rom Cleanup Workbench"
 python rom_cleanup_workbench.py "D:\Games"
 ```
 
-Without a folder, the window asks for it. If you want the terminal version, add `--tui`.
+Without a folder the program opens the folder chosen last again, a `roms` folder with its overview, any other directly; the first time the window asks for one. For the terminal version, add `--tui`.
 
 ### Linux
 
@@ -170,8 +169,8 @@ The program opens the analysis window and shows everything there; it prints noth
 
 | Option | Effect |
 | --- | --- |
-| `--review all` | open the window with `All deletion marks` for this start |
-| `--review problems` | open the window with `Problematic deletion marks` for this start |
+| `--review all` | opens the window with `To delete` for this start |
+| `--review problems` | opens the window with `To check` for this start |
 | `--priority USA Europe Japan none` | set the priority for this run |
 | `--delete-tag Hack Hacks Proto` | set the delete keywords for this run |
 | `--config file.json` | use a different configuration |
@@ -179,6 +178,7 @@ The program opens the analysis window and shows everything there; it prints noth
 | `--yes` | without window: delete marked files without asking |
 | `--scan-all` | without window: scan every platform folder of the given `roms` folder and save it in its database; deletes nothing |
 | `--deep-scan` | with `--scan-all`: deep scan, read every file again instead of only new and changed ones (`--full` still works) |
+| `--write-gamelists` | without a window: write the `gamelist.xml` of every platform of the given `roms` folder from its database; every previous file stays as a copy |
 | `--all` | with `--report-only`: also show games without marked files |
 | `--tui` | use the terminal version instead of the window (automatic on Linux without a graphical display) |
 | `--ascii` | terminal version with ASCII characters only (automatic on the Linux console); implies `--tui` |
@@ -189,11 +189,11 @@ The tests run with `python -m unittest`.
 
 ## The collection: many platforms and the database
 
-Usually the games lie in one common folder, separated by platform, for example `roms/nes`, `roms/snes`, `roms/n64`. If you choose this `roms` folder, the program shows the **overview** of all platforms. From then on it always starts with the overview of the `roms` folder used last. A folder counts as a `roms` folder if it already has a database, or if it holds no ROM files itself but subfolders. Side files such as `info.txt`, pictures or PDFs do not count as ROM files. Any other folder is analyzed on its own as before, without a database.
+Usually the games lie in one common folder, split by platform, for example `roms/nes`, `roms/snes`, `roms/n64`. If you choose this `roms` folder, the program shows the **overview** of all platforms. From then on it always starts with the folder chosen last, so with its overview for a `roms` folder. A folder counts as a `roms` folder if it already has a database, or if it holds no ROM files itself but has subfolders. Side files such as `info.txt`, pictures or PDFs do not count as ROM files here. Any other folder is analyzed on its own as before, without a database.
 
-**The database.** When it opens a `roms` folder for the first time, the program creates the hidden folder `.rom_cleanup_workbench` in it with an SQLite database. That is the only thing it writes into your collection. It stores the results of every scan: files, sizes, change times, the contents of the ZIPs with checksums. From these the program decides again in a moment whenever a platform opens, so changed settings take effect at once, without a new scan. It also holds the changes by hand (`k`/`x`), the confirmed status and save files and the settings of single platforms.
+**The database.** The first time, the program creates the hidden folder `.rom_cleanup_workbench` with an SQLite database in the `roms` folder. That is the only thing it writes into your collection. It stores the results of every scan: files, sizes, modification times, the content of the ZIPs with checksums. From these the program works out the decisions again in a moment when a platform is opened. Changed settings therefore take effect at once, without a new scan. It also holds the changes by hand (`k`/`x`), the confirmed status and save files and the own settings of single platforms. The folder is what counts: if a platform folder is gone, the overview deletes everything the database knew about it when it opens, own settings and `no games` included. A new folder of the same name then starts from scratch. If the `roms` folder itself cannot be reached, for example a network drive without a connection, nothing is deleted.
 
-**The overview** shows for each platform: files, games, files marked for deletion, problematic games, the last scan and the state (`not scanned`, `current` or `changed` if files were added, removed or changed since then), with the total below.
+**The overview** shows for each platform: files, games, files marked for deletion, problematic games, games removed completely (of which no file would be left), the last scan and the state (`not scanned`, `current` or `changed` if files were added, removed or changed since), with the total below. A line separates the total from the platforms; the state `changed` is shown in yellow (in the window the whole row). A click on the heading `Platform`, `Files`, `Games`, `To delete`, `Problematic`, `Removed completely`, `Info` or `Gamelist issues` sorts by it, a second click the other way round; an arrow shows the direction, the total stays at the bottom, platforms without numbers come last, and the choice is remembered.
 
 | Button | Key | Effect |
 | --- | --- | --- |
@@ -203,6 +203,9 @@ Usually the games lie in one common folder, separated by platform, for example `
 | `Deep Scan` | `d` | switch (red dot) for Scan and Scan all: read every file again instead of only new and changed ones |
 | `Hide empty` | `h` | switch (red dot): hide folders without a game file, for example `bios` or a folder with only `info.txt`; side files do not count as game files; the choice is remembered |
 | `Folder...` | `f` | choose another `roms` folder |
+| | `n` | mark the highlighted folder as `no games` or undo that (see below) |
+| | `w` | write the `gamelist.xml` of the highlighted platform from the database (after a question) |
+| | `m` | delete the unused media files of the highlighted platform (after a question, see below) |
 | | `q` or `Esc` | close the program |
 
 The keys are the same in the window and in the terminal version. The line above the table names the main ones; `F1` or `?` shows all.
@@ -210,6 +213,24 @@ The keys are the same in the window and in the terminal version. The line above 
 **Scanning.** A scan is normally quick: it reads only new and changed files (recognized by name, size and change time) and takes everything else from the database. With `Deep Scan` every file is read again. `F5` in the list scans the open platform quickly. Proceed records deleted and renamed files at once; no new scan is needed afterwards.
 
 **Back to the overview** leads `Esc`, `q` or the button `Overview` in the list, in the terminal version `o` as well. `Esc` or `q` in the overview ends the program; to get all the way out, press it twice.
+
+**The gamelist.xml.** If a platform folder holds a `gamelist.xml` (EmulationStation, RetroPie, Batocera, ES-DE, ARRM), the scan reads it and takes what can be checked into the database: name, description, rating, date, developer, publisher, genre, players, region, favorite, play time and the links to media such as pictures and videos, by category (`wheel` and `logo` stay apart even if they point to the same file). All other fields are carried along unchanged. The number in `<genreid>` (for example `1538`) comes from the genre list of Recalbox: main genre × 256 plus subgenre, so `1538` = `0x0602` = Sports, subgenre 2 “Sports simulation”; tools such as ARRM write it when scraping. The game view shows the number with its name, for example “1538 – Sports simulation (Sports)”. It has nothing to do with the genre numbers of ScreenScraper. If a platform has genre numbers, the list shows a column `Genre`. A click on its heading sorts the games by genre (in the order of the Recalbox list, games without a genre last, by name within a genre), a second click or a click on `File` by name again; the choice is remembered. In the edit form, `Genre (Recalbox list)` chooses the number from all Recalbox genres; the text field `Genre` stays free beside it. A number chosen by hand stays at a new import. Entries whose ROM is not in the platform folder and links to files that do not exist are not taken over and are counted as problems. Paths of another computer such as `/home/pi/RetroPie/roms/nes/…` are rewritten to the platform folder and counted as notes. The file is only read when it has changed; a changed `gamelist.xml` sets the state to `changed`. The file itself is not changed. The database is the store, not the `gamelist.xml`: if the file is deleted, the information stays; if a ROM or a medium disappears from the folder, it disappears from the database too, and a deleted ROM takes its information with it. The overview shows in `Info` how many ROMs have information and in `Gamelist issues` what was not taken over; after the platform name, gray text says how many entries were taken over. If the file is broken, nothing is taken over and the previous state stays.
+
+**gamelist.xml and media outside the platform folder.** If the platform folder has no `gamelist.xml` of its own, the Workbench looks where the frontends keep it, in this order: `~/ES-DE/gamelists/<platform>/` (ES-DE), `~/.emulationstation/gamelists/<platform>/` (EmulationStation, RetroPie) and on Linux `/etc/emulationstation/gamelists/<platform>/`. The name of the platform folder counts as the system name. Paths such as `%ROMPATH%/nes/…` are taken as relative to the platform folder. The gray line, the report and the question before writing name the place; writing goes to the same place, with the backup copy there. The Workbench also looks for media in `~/ES-DE/downloaded_media/<platform>/` (or the media folder chosen in the ES-DE settings) and in `~/.emulationstation/downloaded_media/` and `downloaded_images/`. Such media outside the collection are only shown and written into the `gamelist.xml`, but never deleted or renamed.
+
+**Media in the subfolders.** At every scan the Workbench also searches all subfolders of a platform for pictures, videos and manuals that the `gamelist.xml` does not already name. Only what the name says clearly is assigned: one folder per category with the name of the ROM (`wheel/10yard.png`, `marquees/10yard.png`) or ROM name, separator (`-`, `.` or `_`) and category in any folder (`downloaded_images/10yard-wheel.png`, `game.image.jpg`). If several ROMs fit, the longest name wins (`sf2ce-image.png` belongs to `sf2ce.zip`, not to `sf2.zip`); there is no matching by similarity. What is not clear stays without a ROM. Every game ROM without an entry in the `gamelist.xml` gets an empty entry with the name before the first bracket; BIOS files (`BIOS` in a bracket or known names such as `neogeo`, `pgm`, `skns`) count as no game and get no media. After the platform name, gray text says how many media are assigned and how many stayed without a ROM; `Info` also counts empty entries for which media were found.
+
+**Deleting unused media files.** `m` (in the platform, or in the overview for the highlighted platform) looks for pictures, videos and manuals that nothing uses any more: no ROM of the folder is named like them and no `gamelist.xml` links them, for example the pictures of a ROM that was deleted outside the Workbench. Only media folders inside the platform folder are searched, that is folders whose name is a category (`images`, `videos`, `marquees`, `wheel`, `manuals` …) or `media`, `downloaded_images`, `downloaded_media`, `artwork`, `boxart`, `covers`. Files directly in the platform folder, in other subfolders (for example in a game's own folder) and in the media folders of ES-DE or RetroPie outside the collection are never touched. First the Workbench reads the folder and a changed `gamelist.xml` again; if the `gamelist.xml` cannot be read, it deletes nothing. The question names the number, the size and the first files; deleted files do not go to the recycle bin. Which media have no ROM, the report with `g` shows beforehand.
+
+**Game view, name and report.** The name from the `gamelist.xml` belongs to the whole game, not to one file: the heading of a game shows the name of the kept file and our title in brackets after it, for example `10-Yard Fight (10yard)`; if both are the same or there is none, only our title is shown. In the row with a game's name, the column `Note` shows, after any problems, the rating, players and release year, for example `★ 4.5 · 1-2 players · 1991` (with `--ascii` `* 4.5 - 1-2 players - 1991`); they come from the kept file or, if it has none, from another file of the game. BIOS files and files marked with `n` show `no game` in the column `Note`. `Enter` (in the window also a double click on a file) shows, in place of the list, everything that is known about the game: its files with their decision, the fields such as description, rating (as x / 5), date, developer, play time and favorite, the other fields of the `gamelist.xml` and the media by category; there are no preview pictures on purpose. `g` shows the gamelist report: what was not taken over and why, the notes, ROMs without information, media without a ROM and the files that are no game. `n` marks the selected files as `no game` or undoes that; a later `gamelist.xml` does not change it. Whether a file is kept or deleted is still decided by the rules. The summary of `gamelist.xml` and media is shown in gray on a line of its own below the platform line.
+
+**Deleting and renaming take the media along.** When `Proceed...` deletes a ROM, its media are deleted with it, pictures, videos and manuals from the `gamelist.xml` as well as from the subfolders; the question before deleting names their number. A medium that a remaining ROM also uses stays. A deleted ROM also takes its information with it, favorite and play time included. When `Proceed...` removes the number in front of a name, media whose name begins with the old ROM name are renamed with it (`01 - Alpha (USA)-image.png` becomes `Alpha (USA)-image.png`). The `gamelist.xml` itself is not changed.
+
+**Editing game information.** In the game view, `e` opens a form for the file: name, sort name, description, rating (0 to 5 stars, also 3.5), release date (`YYYY`, `YYYY-MM` or `YYYY-MM-DD`), developer, publisher, genre, players, region, languages as well as favorite, hidden and for children. Play time, play count and the id stay as the frontend and the scraper keep them. `Ctrl+S` or `Save` saves, `Esc` or `Cancel` returns to the game view without saving; a wrong value is named and the form stays open. Changed fields carry a `✎` in the game view; a new import of the `gamelist.xml` leaves them as they are. Editing turns an empty entry into a real one. When the `gamelist.xml` is written, the changes go into it.
+
+**Writing the gamelist.xml.** Only on request does the Workbench write the `gamelist.xml` of a platform anew from its database: with `w` in the platform or in the overview for the highlighted platform, with `--write-gamelists` for all. After a cleanup that deleted files, it offers to do so if the platform has a `gamelist.xml`. First the previous file is saved as `gamelist.xml.<date_time>.bak`; the last three copies stay, older ones are deleted. The new file is first written under another name and then replaces the old one in one step, so that no half file is ever left behind. It holds all games, also those with an empty entry, but no BIOS files and other non-games; besides all known fields, the media per category (a file in two categories is listed twice), the id and all other fields as they were read. Values that match the default are left out, as EmulationStation does. The `<provider>` block names `RCW` (Rom Cleanup Workbench) as the software, with our GitHub page; the system stays. Afterwards the file counts as read.
+
+**Folders without games.** A folder such as `bios` or `saves` holds no games. `n` marks the highlighted folder as `no games`: it is neither scanned (not by `Scan all` and `--scan-all` either) nor opened, does not count in the total, and `Hide empty` hides it. What the database knew about it is deleted. A second `n` undoes that; the folder is then `not scanned`. There is no button for it on purpose.
 
 **Changes by hand** (`k`/`x`) stay saved, also after closing, until you proceed or scan the platform again. If a file changes, its change by hand is dropped.
 
@@ -227,15 +248,18 @@ With `--deep-scan` every file is read again. Nothing is ever deleted that way.
 
 Since the ZIP files have to be unpacked to get the size, SHA-256 checksum and name of their contents, it can take a moment after choosing a directory until the results are shown.
 
-The green row at the top says `Rom Cleanup Workbench` on the left and names the folder on the right; below it `Platform:` in green with the name of the open folder. To the right are the main keys of the view, in the list `x Delete`, `k Keep`, `Enter Run the cleanup` and `F1 / ? Help: more keys`. `F1` or `?` shows all keys in place of the list, grouped by topic; `Esc`, `F1` or `?` closes them again. In the overview both show the keys of the overview and below them, under `Good to know`, what the states, scanning and deep scan mean. The priority in effect is shown in the settings. In the overview the word `Collection` is green as well. The green second-to-last row shows the status, during the analysis for example `Analyzing: 120 of 2007 files`. A progress bar also appears in the middle during that time. The window also shows errors, for example in the configuration, and nothing can be deleted as long as the analysis fails. While deleting, the progress bar appears in the middle and the green row shows for example `Deleting: 120 of 500 files`; the window accepts no input until the deletion is finished. After deleting, it reports the result and removes the deleted files from the list without analyzing the folder again; files that could not be deleted stay marked. `F5` analyzes the folder again when you want that.
+The green row at the top says `Rom Cleanup Workbench` on the left and names the folder on the right; below it `Platform:` in green with the name of the open folder in bold, followed by `*` as in the overview if the platform has its own settings; then comes an empty line. To the right are the main keys of the view, in the list `x Delete`, `k Keep`, `Enter Game info`, `F12 Run the cleanup` and `F1 / ? Help: more keys`. `F1` or `?` shows all keys, sorted by topic, in place of the list; `Esc`, `F1` or `?` closes them again. In the overview both show the keys of the overview and below them, under `Good to know`, what the states, scanning and Deep Scan mean. The settings show the priority in force. In the overview the word `Collection` is also green. The green second-to-last row shows the status, during the analysis for example `Analyzing: 120 of 2007 files`. Meanwhile a progress bar appears in the middle as well. The window also shows errors, for example in the configuration, and as long as the analysis fails, nothing can be deleted. While deleting, the progress bar appears in the middle and the green row shows for example `Deleting: 120 of 500 files`; the window takes no input until the deletion is finished. Then it reports the result and removes the deleted files from the list without analyzing the folder again; files that could not be deleted stay marked. `F5` analyzes the folder again if you want that.
 
 If nothing is marked in the whole folder and no file is suspected to be a status or save file, `Nothing to do.` blinks in the middle of the window.
 
-The three radio buttons determine what the list shows:
+The four option buttons set what the list shows:
 
-- `Problematic deletion marks`: only games with a marked file that count as problematic (default on first start)
-- `All deletion marks`: all games with a marked file
-- `All ROM files`: all games. Their files can then also be marked with `x`, and problematic cases without a marked file, such as an unreadable ZIP, appear too.
+- `To check`: only games with a marked file that count as problematic, that is where something may get lost unintentionally (the default at the first start)
+- `To delete`: all games with a marked file
+- `Removed completely`: the games of which no file would be left, mostly because delete keywords hit all their files (for example `Ikaruga (Japan).cdi` with the delete keyword `Japan`). It is worth a look whether the delete keywords catch too much. The confirmation names these games separately: those removed by delete keywords, as requested, and the others.
+- `All games`: all games, for example to look through the game information or to sort by genre. Their files can then also be marked with `x`, and problematic cases without a marked file, such as an unreadable ZIP, appear as well.
+
+**Only game names.** The switch `Only game names` (in the window beside the views, in the terminal to the right of the filter field) or `z` folds the list to the rows with the game names, without dividing lines: so you see at a glance which games the platform has, with rating, players and year in the column `Note`. The filter, the views and sorting by genre still apply. `Tab` jumps from game to game, `Enter` shows the game view of the kept file. `x` and `k` only act on files; in the window a double click or the right arrow opens a single game. A second `z` shows the files again; the choice is remembered.
 
 The window remembers the most recently chosen view and the confirmed status or save files (rule 9) in `rom_cleanup_workbench_settings.json` next to the program.
 
@@ -245,20 +269,27 @@ The window remembers the most recently chosen view and the confirmed status or s
 | `Tab` / `Shift+Tab` | go to the next / previous game; the first file of the game is selected |
 | `x` | mark the file for deletion; it moves to the end of its game |
 | `k` | keep the file; it moves to the position the rules give it |
-| `1` `2` `3` | the views `Problematic deletion marks`, `All deletion marks`, `All ROM files` |
+| `1` `2` `3` `4` | the views `To check`, `To delete`, `Removed completely`, `All games` |
+| `z` | show only the game names or the files again (like the switch `Only game names`) |
 | `Ctrl` + mouse wheel | enlarge or shrink the font (8 to 32 pt, applies until the window is closed) |
 | `s` | same as the button `Settings...`: show or hide the settings for language, priority, delete keywords and ZIP or plain file (see [Settings](#settings)) |
 | `/` | go to the filter field |
-| `Enter` | same as the button `Proceed...`: delete after a confirmation, remove the number in front of the kept file names (rule 10) and confirm the suspected status or save files (rule 9) |
+| `F12` | same as the button `Proceed...`: delete after a confirmation, remove the number in front of the kept file names (rule 10) and confirm the suspected status or save files (rule 9) |
 | `f` | choose another folder, inside the window in place of the list: open folders with the arrow, choose one at once with a double click, or type a path into `Path`, then `Select` or `Enter`; `Cancel` or `Esc` keep the current folder |
 | `r` or `F5` | analyze again, also reads the configuration again |
 | `c` | show the credits |
+| `Enter` | in a platform of the collection: everything that is known about the highlighted game (also a double click in the window); `Enter`, `Esc` or `q` closes |
+| `n` | in a platform of the collection: mark the selected files as `no game` (for example a BIOS file) or undo that |
+| `g` | in a platform of the collection: the gamelist report of the platform |
+| `e` | in the game view: edit the information of the game; `Ctrl+S` saves, `Esc` goes back |
+| `w` | in a platform of the collection: write its `gamelist.xml` from the database (after a question) |
+| `m` | in a platform of the collection: delete its unused media files (after a question) |
 | `F1` or `?` | show or hide all keys |
 | `q` or `Esc` | close without deleting anything; in a platform of a collection both first go back to the overview; after changes by hand the program asks first |
 
 Horizontal lines separate the games, and every second game has a dark gray background. The column `Size` shows the size of every file in KB, rounded up as in Windows Explorer (`1,234 KB`); `?` means the size could not be read. The size is read during the analysis. Kept files are shown in bold green under `Keep:`, files to be deleted in red under `Marked for deletion`. The window shows white text in Lucida Sans Typewriter 11 pt on a black background. If the font is not installed, Windows silently picks a substitute. Files moved by hand have a brown background and carry the note `By hand`; while the row is selected, it appears blue. The program's notes stay unchanged, even if they refer to a file you have moved.
 
-`Problematic deletion marks` hides the unproblematic games. **Their marked files are still deleted when you delete**; the confirmation states their number. Games you have changed by hand always stay visible, unless the filter hides them.
+`To check` hides the unproblematic games, `Removed completely` all games of which something is left. **Their marked files are deleted nevertheless when you delete**; the confirmation names their number. Games you changed by hand always stay visible, unless the filter hides them.
 
 ### Filter
 
@@ -274,25 +305,28 @@ The filter field on the left of the bottom row narrows the current view to games
 
 ### Settings
 
-The button `Settings...` in the bottom row, or `s`, shows the most frequent changes to `redundanz_config.json` in the main window, in place of the file list. `Save` or `Cancel`, `Esc`, `Ctrl+E` or another click on `Settings...` bring the list back. Meanwhile the filter, the views, `Proceed...`, `Analyze again` and `Folder...` are locked, and `x`, `k` and `Enter` do nothing, so that nothing can change in the hidden list.
+The button `Settings...` in the bottom row, or `s`, shows the most frequent changes to `redundanz_config.json` in the main window, in place of the file list. `Save` or `Cancel`, `Esc`, `Ctrl+E` or another click on `Settings...` bring the list back. Meanwhile the filter, the views, `Proceed...`, `Analyze again` and `Folder...` are locked, and `x`, `k`, `Enter` and `F12` do nothing, so that nothing can change in the hidden list.
 
 - **Language:** sets the language of the user interface. Choose one of the six languages. A new language applies from the next start of the program.
 - **Priority:** sets which regional versions take precedence over others. The best region at the top; extra info such as `Beta` or `Proto` goes after `none`, so that such files come last (rule 6). Select an entry and move it with `Up` and `Down`, remove it with `Remove` or the `Delete` key, and add a new one with the field below the list and `Add` (or `Enter`).
 - **Delete keywords:** set which versions of a game are always deleted. Separated by commas, for example `Hack, Hacks`. Files with them are marked for deletion (rule 2).
 - **Same game as a plain file and as a ZIP file:** sets which of the two remains when both are of the same version. `Keep the plain file` (default) marks the ZIP file, `Keep the ZIP file` marks the plain files (see [ZIP files](#zip-files)).
+- **Favorites and played games (gamelist.xml):** `Only a note in the list` (the default) lets the rules decide; a file that is to be deleted and is a favorite or has play time according to the `gamelist.xml` gets the note `Favorite or played – it will be deleted`. `Prefer to keep them` keeps, within a game, the file that is a favorite, otherwise the one with the most play time; if the rules had kept another single file, that one gives way, and the save files follow the kept file. Applies in general or per platform (`prefer_played` in the configuration).
 
 `Save` writes the file and analyzes the folder again if the priority, the tags or the choice between plain file and ZIP file have changed; if you have changed marks by hand, the program asks first, because these changes are lost. All other entries of the file stay as they are. Wrong values, such as an empty region list or the same region twice, are reported, nothing is written, and the settings stay open. If the file cannot be read, the settings do not open, so that they cannot overwrite entries they do not know. With `--config`, the settings edit that file; with `--priority`, the priority given there still applies to this run.
 
-A game counts as problematic if
+Only what may get lost unintentionally is problematic. What the delete keywords ask for is intended, and a file whose content is in a kept file (`Content identical to …`) does not get lost. A game counts as problematic if
 
-- none of its files would be kept,
+- none of its files would be kept without delete keywords asking for it (a game that goes entirely because of delete keywords or as a save file without a ROM is shown in `Removed completely`, but is not problematic),
 - the content of a marked ZIP does not appear anywhere else (`Game content deviates from the kept version`),
 - a ZIP is defective, encrypted or unreadable,
 - a file is kept as a suspected status or save file (rule 9),
-- the rules only decided through a `Tie`,
+- the rules only decided by a `Tie` and the marked file has a different content,
 - several ZIPs of the same version have different content,
-- the file names spell the game differently (`Title 1-2` and `Title 12`),
-- a marked file has a different file type than the kept ones (`.nes` and `.sfc`).
+- the file names spell the game differently (`Title 1-2` and `Title 12`) and a marked file of a spelling other than every kept one has a different content,
+- a marked file has a different file type than the kept ones (`.nes` and `.sfc`) and its content is in no kept file.
+
+If a delete keyword marks a file, it makes the game problematic in none of these cases.
 
 The window uses `tkinter`, which is part of the usual Python installation on Windows. If it is missing, the program reports this and deletes nothing.
 
@@ -308,7 +342,7 @@ It starts by itself on Linux when there is no graphical display (neither `DISPLA
 
 It needs [Textual](https://textual.textualize.io/) (tested with 8.2.8). How to install it and start the program is described under [Installation](#installation) and [Usage](#usage).
 
-Without Textual, the program says so and deletes nothing. The screen has the rows of the window from top to bottom: the green title row with the folder, the platform with the main keys, the list, the filter field, the three views and the green status row. In the list, each game starts with its name in bold, followed by dashes up to the right edge; a note such as `Different spellings of the name` stands in that line. In a narrow terminal, such as PuTTY's 80 columns, long file names and notes wrap in their column instead of leaving the screen. `Nothing to do.` blinks with the terminal's own blinking; in PuTTY, blinking text may have to be switched on first. Questions and messages appear in a frame over the list, with buttons in the program's language; `No` is preselected.
+Without Textual the program says so and deletes nothing. The screen has the rows of the window from top to bottom: the green title row with the folder, the platform with the main keys, the list, the filter field with the switch `Only game names`, the four views and the green status row. In the list every game begins with its name in bold, followed by dashes to the right edge; a note such as `Different spellings of the name` stands in this row. In a narrow terminal, for example the 80 columns of PuTTY, long file names and notes wrap in their column instead of leaving the screen. `Nothing to do.` blinks with the terminal's own blinking; in PuTTY blinking text may have to be switched on first. Questions and messages appear in a frame above the list, with buttons in the language of the program; `No` is preselected.
 
 To the right of the platform are the main keys; `F1` or `?` shows all, grouped by topic. The window and the terminal version have the same keys.
 
@@ -317,13 +351,20 @@ To the right of the platform are the main keys; `F1` or `?` shows all, grouped b
 | Arrow keys | select a row, with Shift several |
 | `Tab` / `Shift+Tab` | next / previous game; its first file is selected |
 | `x` / `k` | mark the selected files for deletion / keep them |
-| `1` `2` `3` | the views `Problematic deletion marks`, `All deletion marks`, `All ROM files` |
+| `1` `2` `3` `4` | the views `To check`, `To delete`, `Removed completely`, `All games` |
+| `z` | show only the game names or the files again (like the switch `Only game names`) |
 | `/` | go to the filter field (`Enter`, `Tab` or the down arrow return, `Esc` clears) |
-| `Enter` | execute: delete after a confirmation (as `Proceed...`) |
+| `F12` | execute: delete after a confirmation (as `Proceed...`) |
 | `f` | choose another folder: `Right` or `Space` opens a folder, `Left` closes it, `Enter` or a double click chooses; a path can also be typed |
 | `s` | settings: `Shift+Up`/`Shift+Down` move a region, `Delete` removes it, `Ctrl+S` saves, `Esc` cancels |
 | `r` or `F5` | analyze again |
 | `c` | show the credits |
+| `Enter` | in a platform of the collection: everything that is known about the highlighted game (also a double click in the window); `Enter`, `Esc` or `q` closes |
+| `n` | in a platform of the collection: mark the selected files as `no game` (for example a BIOS file) or undo that |
+| `g` | in a platform of the collection: the gamelist report of the platform |
+| `e` | in the game view: edit the information of the game; `Ctrl+S` saves, `Esc` goes back |
+| `w` | in a platform of the collection: write its `gamelist.xml` from the database (after a question) |
+| `m` | in a platform of the collection: delete its unused media files (after a question) |
 | `F1` or `?` | show or hide all keys (`?` too, because some terminals keep `F1` for their own help) |
 | `q` or `Esc` | close without deleting anything; in a platform of a collection both first go back to the overview; after changes by hand the program asks first |
 | In a question | `Left`/`Right` choose a button, `Enter` presses it, `Esc` answers `No` |
@@ -376,21 +417,21 @@ For Japanese, Windows shows the characters in a substitute font, because Lucida 
 
 ## Rules
 
-The program ignores some files completely: they appear nowhere and are never deleted.
+Some files the program skips entirely: they appear nowhere and are never deleted. Brackets are `( )`, `[ ]` and `{ }`, the same everywhere: for the game name, the priority, the versions and the delete keywords.
 
 - Files whose name starts with `gamelist`, regardless of case. They are no ROM files.
 - Hidden files: names starting with a dot, such as `.xxx` or `.DS_Store`, and files with the Windows attribute "hidden".
 
-1. Files belong together if the text before the first bracket is the same. Case, spaces, hyphens and underscores do not count, so `Pac-Man` = `Pac Man` = `Pac_Man` = `PacMan`. This also means `Title 1-2` = `Title 12`. In addition, `und` = `and` = `&` = `&&`, `Sullivan's` = ``Sullivan`s`` = `Sullivan´s` = `Sullivans` (apostrophes do not count), the roman numerals `I` to `IX` as whole words = `1` to `9` (`Final Fantasy VII` = `Final Fantasy 7`; from `X` on they stay as they are, because `Mega Man X` and `Mega Man 10` are two games) as well as `The Title` = `Title The` = `Title, The` = `Title` count as equal. A `The` in the middle of the name does count. Likewise `vs` = `vs.` = `versus`. A number in front of the name, for example from a numbered collection, does not count: `057 Robocop vs Terminator` = `057 - Robocop vs Terminator` = `Robocop vs Terminator`. If the name is only the number (`1942`) or the number is attached to the word (`2Fast`), it stays part of the name; `4 in 1` and `3 in 1` stay different games. Because the names then only match through the comparison, the game counts as problematic (`Different spellings of the name`).
-2. Files with a delete keyword (`delete_tags`, none by default, for example `Hack` and `Hacks`) are always marked, even if it is the only file of the game. `k` keeps such a file anyway.
+1. Files belong together if the text before the first bracket is the same. Case, spaces, hyphens and underscores do not count, so `Pac-Man` = `Pac Man` = `Pac_Man` = `PacMan`. So `Title 1-2` = `Title 12` as well. Also `und` = `and` = `&` = `&&`, `Sullivan's` = ``Sullivan`s`` = `Sullivan´s` = `Sullivans` (apostrophes do not count), the Roman numerals `I` to `IX` as a whole word equal to `1` to `9` (`Final Fantasy VII` = `Final Fantasy 7`; from `X` on they stay as they are, because `Mega Man X` and `Mega Man 10` are two games) and `The Title` = `Title The` = `Title, The` = `Title` count as the same. A `The` in the middle of the name does count, however. Likewise `vs` = `vs.` = `versus`. A number in front of the name, for example from a numbered collection, does not count: `057 Robocop vs Terminator` = `057 - Robocop vs Terminator` = `Robocop vs Terminator`. If the name consists only of the number (`1942`) or the number is attached to the word (`2Fast`), it stays part of the name; `4 in 1` and `3 in 1` stay different games. Because the names then match only through the comparison, the game counts as problematic (`Different spellings of the name`) if a marked file of the other spelling has a different content than the kept ones.
+2. Files with a delete keyword (`delete_tags`, none by default, for example `Hack` and `Hacks`) are always marked, even if it is the only file of the game. `k` keeps such a file nevertheless. The note then says `Deleted according to delete keyword (Hack) - as requested`; there is no warning about the content for such files, since their content is meant to go. Exception: if a bracket names several regions and one of them is exactly the delete keyword, but another is a region from your priority list, the delete keyword does not apply to that bracket. `(Japan, USA)` is also the USA version: with the delete keyword `Japan` and `USA` in the list it stays and is sorted in as the USA version; `(Japan)` alone is still marked.
 3. Of the remaining files, the one with the best entry in `region_priority` is kept. Within one bracket the best entry counts: with `(USA, Japan)`, the better of the two. Across brackets the worst counts: `(USA) (Beta)` counts as `Beta` (rule 6).
 4. All files of the same version are kept together, for example `(Disc 1)` and `(Disc 2)` or `.cue` and `.bin`. Everything else is marked. Exception: if only some of these files have a number in front of the name (`073 Batman (USA).sfc` and `Batman (USA).sfc`), those with the number are kept and the others are marked (`Name with number preferred`).
 5. A region that is not in `region_priority` counts as `none`. This also applies to information such as `(Rev 1)`.
 6. Extra info such as `Beta`, `Proto` or `Alpha` is written into `region_priority` after `none`. Files with it come after all others, even after files without a region, and in the order of the list: with `none, Beta, Proto`, a Beta comes before a Proto. They are only kept if there is no better file of the game. Among themselves, the region counts again, then the version from rule 7, then the number after the extra info: `Beta 2` wins over `Beta 1`, and `Beta 1` over `Beta` without a number. The numbers are compared numerically (`Beta 10` before `Beta 9`). The losing file gets the note `Older beta`.
 7. With equal priority, the highest version number wins, compared numerically (`v1.10` before `v1.9`). Recognized in brackets are `v1.1`, `Ver 1.1`, `Version 1.1`, `Rev 1` and `Rev A`; in the game name only the form `Title v1.1`, also with `-` or `_` instead of a space. A file without a version loses to one with a version. The region counts before the version.
 8. After that, the file with a number in front of the name wins (`073 Batman` before `Batman`), then the one with less extra information, then a file without ZIP (with `prefer_zip`: a ZIP file), then the alphabet. The report then shows `Tie`.
-9. A file that is smaller than 1/4 of the largest file of the game is set aside before rules 3 to 8 and kept: it may be a status or save file. It therefore can neither be deleted nor push out the real ROM, for example `1941.state` the file `1941.zip`. The note column then says `Suspected status or save file`, and the game counts as problematic. Such a game appears in all three views, even if none of its files is marked. When you delete, the program confirms all suspected files that remain as legitimate: they stay where they are, are still never deleted, and no longer show up in `Problematic deletion marks` and `All deletion marks`, also after `F5` or a new start. The confirmation names their number. The program remembers them with path and size in `rom_cleanup_workbench_settings.json`; if the size changes, the file is suspected again. If nothing is marked, `Enter` offers to confirm them without deleting anything. ZIPs count with their unpacked size. This does not apply to a small plain file next to a large plain file of its own version, such as a `.cue` next to its `.bin`, nor to a file with the same extension as the largest file (a small `.nes` next to a large `.nes` is a ROM that rules 3 to 8 decide on), nor to files marked because of `delete_tags` or a defective ZIP. With `x` you can still mark the file by hand.
-10. When you proceed, the program removes the number in front of the name of every kept file after deleting, together with the spaces, dots, hyphens or underscores after it: `073 Batman (USA).sfc` becomes `Batman (USA).sfc`, `057 - Robocop.md` becomes `Robocop.md`. The confirmation names their number and an example first; if nothing is marked, `Enter` only asks about renaming. The number stays if the game has a `.cue`, `.gdi`, `.m3u`, `.mds`, `.toc` or `.ccd` file (it names the file names in its content) or if the name without number is already taken; the confirmation names that number too. The content of ZIPs is not renamed. The title row of a game shows the name in the spelling of the first kept file (`Street Fighter II` or `Street Fighter 2`), always without number; if you move files with `k` or `x`, the title follows.
+9. A file that is smaller than 1/4 of the largest file of the game is set aside before rules 3 to 8 and kept: it may be a status or save file. It therefore can neither be deleted nor push out the real ROM, for example `1941.state` the file `1941.zip`. The note column then shows `Suspected status or save file`, and the game counts as problematic. Such a game appears in `To check`, `To delete` and `All games`, even if none of its files is marked. When deleting, the program confirms all other suspected files as legitimate: they stay where they are, are still never deleted and no longer appear in `To check` and `To delete`, also after `F5` or a restart. The confirmation names their number. The program remembers them with path and size in `rom_cleanup_workbench_settings.json`; if the size changes, the file is suspected again. If nothing is marked, `F12` offers to confirm them without deleting anything. ZIPs count with their unpacked size. This does not apply to a small normal file next to a large normal file of its own version, for example a `.cue` next to its `.bin`, not to a file with the same extension as the largest file (a small `.nes` next to a large `.nes` is a ROM that rules 3 to 8 decide on) and not to files marked because of `delete_tags` or a defective ZIP. With `x` you can still mark the file by hand. Save files with a typical extension (`.srm`, `.sav`, `.eep`, `.mpk`, `.fla`, `.sra`, `.rtc`, `.dsv`, `.mcr`, `.state`, `.state1` …, `.state.auto`, `.st0` …, `.ss0` …) do not fall under this rule: an emulator loads a save file only if it is named exactly like the ROM (without extension). A save file is therefore only kept if a kept file has exactly this name, for example `Mario Kart 64 (USA).srm` next to `Mario Kart 64 (USA).n64`. Every other one is marked, also one of another region or another version such as `Mario Kart 64 (U) [!].mpk`, with the note `Save file without a ROM file of the same name`. Delete keywords apply to save files too.
+10. When you proceed, the program removes the number in front of the name of every kept file after deleting, together with the spaces, dots, hyphens or underscores after it: `073 Batman (USA).sfc` becomes `Batman (USA).sfc`, `057 - Robocop.md` becomes `Robocop.md`. The confirmation names the number of files and an example beforehand; if nothing is marked, `F12` only asks about the renaming. The number stays if a `.cue`, `.gdi`, `.m3u`, `.mds`, `.toc` or `.ccd` file belongs to the game (it names the file names in its content) or if the name without the number is already taken; the confirmation names this number too. The content of ZIPs is not renamed. The title row of a game shows the name as the first kept file spells it (`Street Fighter II` or `Street Fighter 2`), always without the number; if you move files with `k` or `x`, the title adapts. A number counts as a list number only when that is clear: with a leading zero (`057`), with a separator after it (`057 - `, `283. `) or if the same game is also there without a number (`283 Dynamite Bowl` next to `Dynamite Bowl (J)`); if one number of a game is clear, all its numbers count as list numbers. Otherwise the number belongs to the title and stays, in the file name as in the title row: `1080 Snowboarding`, `720 Degrees`.
 
 ## ZIP files
 
