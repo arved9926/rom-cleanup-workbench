@@ -426,13 +426,20 @@ class Collection:
         moment = (when or datetime.now()).isoformat(timespec="seconds")
         with self._db:
             if not gamelist.unreadable:
-                edited = {rom: set(json.loads(value or "[]")) for rom, value in self._db.execute(
-                    "SELECT rom, edited_json FROM game_info WHERE platform_id = ?", (platform_id,))}
+                edited, old_extra = {}, {}
+                for rom, value, extra_json in self._db.execute(
+                        "SELECT rom, edited_json, extra_json FROM game_info WHERE platform_id = ?", (platform_id,)):
+                    edited[rom] = set(json.loads(value or "[]"))
+                    old_extra[rom] = json.loads(extra_json or "[]")
                 for entry in gamelist.entries:
                     keep = edited.get(entry.rom, set())
                     values = {column: entry.values.get(column) for column in COLUMNS if column not in keep}
+                    extra = list(entry.extra)
+                    if "genreid" in keep:  # a genre number set by hand stays
+                        extra = [item for item in extra if item[0] != "genreid"]
+                        extra += [item for item in old_extra.get(entry.rom, []) if item[0] == "genreid"]
                     values.update(xml_id=entry.xml_id, created=0,
-                                  extra_json=json.dumps(entry.extra, ensure_ascii=False) if entry.extra else None)
+                                  extra_json=json.dumps(extra, ensure_ascii=False) if extra else None)
                     if "kind" not in keep:  # "no game" set by hand (n) stays
                         values["kind"] = entry.kind
                     names = ", ".join(values)
@@ -624,6 +631,8 @@ class Collection:
         from workbench_gamelist import title_of
 
         platform_id = self._platform_id(folder)
+        values = dict(values)
+        genre = values.pop("genreid", ...)  # a further field (extra), not a column
         row = self._db.execute("SELECT edited_json FROM game_info WHERE platform_id = ? AND rom = ?",
                                (platform_id, rom)).fetchone()
         with self._db:
@@ -635,13 +644,26 @@ class Collection:
                                        (platform_id, rom)).fetchone()
             changed = [column for column, old in zip(values, current) if values[column] != old
                        and not (values[column] in (0, None) and old in (0, None))]
+            extra = json.loads(self._db.execute("SELECT extra_json FROM game_info WHERE platform_id = ? AND rom = ?",
+                                                (platform_id, rom)).fetchone()[0] or "[]")
+            if genre is not ...:
+                old = next((str(text).strip() for tag, text, _attributes in extra if tag == "genreid"), None)
+                new = None if genre is None else str(int(genre))
+                if old != new:
+                    extra = [item for item in extra if item[0] != "genreid"]
+                    if new is not None:
+                        extra.append(["genreid", new, {}])
+                    changed.append("genreid")
             if not changed:
                 return []
             edited = set(json.loads(row[0] or "[]")) | set(changed)
-            assignments = ", ".join(f"{column} = ?" for column in changed)
-            self._db.execute(f"UPDATE game_info SET {assignments}, edited_json = ?, created = 0 "
+            columns = [column for column in changed if column != "genreid"]
+            assignments = "".join(f"{column} = ?, " for column in columns)
+            self._db.execute(f"UPDATE game_info SET {assignments}extra_json = ?, edited_json = ?, created = 0 "
                              "WHERE platform_id = ? AND rom = ?",
-                             (*(values[column] for column in changed), json.dumps(sorted(edited)), platform_id, rom))
+                             (*(values[column] for column in columns),
+                              json.dumps(extra, ensure_ascii=False) if extra else None, json.dumps(sorted(edited)),
+                              platform_id, rom))
         return changed
 
     def gamelist_media_paths(self, folder: str) -> set[str]:

@@ -77,3 +77,41 @@ def describe(value) -> str:
     number = int(value)
     parent = main_genre(number) if number & 0xFF else None
     return f"{number} – {name}" + (f" ({parent})" if parent else "")
+
+
+def short_name(number: int) -> str:
+    """A main genre without "(all)": "Sports" for 0x0600."""
+    name = genre_name(number) or str(number)
+    return name.split(" (")[0].split("（")[0]
+
+
+def list_label(value) -> str:
+    """The genre column of the list: the sub genre's name, or the main genre's; empty if unknown."""
+    try:
+        number = int(value)
+    except (TypeError, ValueError):
+        return ""
+    if number not in GENRES or number == 0:
+        return ""
+    return genre_name(number) if number & 0xFF else short_name(number)
+
+
+def choices() -> list[tuple[int, str]]:
+    """The form's choices, in Recalbox's order: (number, "Sports" / "Sports / Sports simulation")."""
+    result = []
+    for number in GENRES:
+        if number == 0:
+            continue
+        label = short_name(number) if not number & 0xFF else f"{short_name(number & 0xFF00)} / {genre_name(number)}"
+        result.append((number, label))
+    return result
+
+
+def sort_key(value) -> tuple:
+    """Games sorted by genre: by number (main genre, then sub genre); games without one come last."""
+    try:
+        number = int(value)
+    except (TypeError, ValueError):
+        return (1, 0)
+    return (0, number) if number in GENRES and number else (1, 0)
+

@@ -8452,3 +8452,110 @@ class GenreIdTests(unittest.TestCase):
                                "media": {}, "created": False, "edited": set()}}
         _title, _name, blocks = workbench_view.game_blocks(result, entry, info, lambda item: "")
         self.assertIn(("field", "genreid", "1538 – Sports simulation (Sports)"), blocks)
+
+
+GENRE_GAMELIST = """<gameList>
+  <game><path>./Zeta (USA).nes</path><name>Zeta</name><genreid>257</genreid></game>
+  <game><path>./Alpha (USA).nes</path><name>Alpha</name><genreid>1538</genreid></game>
+  <game><path>./Mid (USA).nes</path><name>Mid</name><genreid>256</genreid></game>
+</gameList>
+"""
+
+
+class GenreSortAndEditTests(OverviewWindowBase):
+    """The genre column, sorting by a click on its heading, and the genre choice of the form."""
+
+    def setUp(self):
+        super().setUp()
+        for name in ("Zeta (USA).nes", "Alpha (USA).nes", "Mid (USA).nes", "None (USA).nes"):
+            self.write("nes", name, name.encode())
+        (self.roms / "nes" / "gamelist.xml").write_text(GENRE_GAMELIST, encoding="utf-8")
+        import workbench_db
+
+        workbench_db.scan_all(self.roms)
+
+    def opened(self):
+        window = self.make_window(self.roms / "nes", settings=self.roms.parent / "list.json")
+        window.open_folder(self.roms / "nes")
+        self.wait(window)
+        return window
+
+    def titles(self, window):
+        return [window.tree.item(row, "text") for row in window.tree.get_children() if not row.endswith("s")
+                and window.tree.item(row, "text").strip("─ ")]
+
+    def test_the_window_sorts_by_genre_and_back(self):
+        window = self.opened()
+        self.assertIn("genre", window.tree["displaycolumns"])
+        self.assertEqual(self.titles(window), ["Alpha", "Mid", "None", "Zeta"])
+        self.assertEqual(window.tree.set("g0", "genre"), "Sports simulation")
+        window.toggle_genre_sort()
+        self.assertEqual(self.titles(window), ["Mid", "Zeta", "Alpha", "None"])  # 256, 257, 1538, none last
+        self.assertIn("▲", window.tree.heading("genre", "text"))
+        again = self.opened()  # remembered
+        self.assertEqual(self.titles(again), ["Mid", "Zeta", "Alpha", "None"])
+        again.sort_list("name")
+        self.assertEqual(self.titles(again), ["Alpha", "Mid", "None", "Zeta"])
+
+    def test_the_genre_is_chosen_in_the_form_and_kept_against_an_import(self):
+        import os
+
+        import workbench_db
+
+        window = self.opened()
+        row = next(row for row, (_r, entry) in window._files.items() if entry.path.name == "None (USA).nes")
+        window.tree.selection_set(row)
+        window.tree.focus(row)
+        window.toggle_game_view()
+        window._edit_key()
+        panel = window.edit_panel
+        label = next(label for number, label in zip(panel.genre_numbers, panel.genre_labels) if number == 0x0B00)
+        panel.fields["genreid"].set(label)
+        window.save_edit()
+        self.assertIn("2816 – Puzzle & logic", window.info_panel.plain_text())
+        gamelist = self.roms / "nes" / "gamelist.xml"
+        gamelist.write_text(GENRE_GAMELIST.replace("<genreid>1538</genreid>", "<genreid>1537</genreid>")
+                            + "<!-- -->", encoding="utf-8")
+        stat = gamelist.stat()
+        os.utime(gamelist, ns=(stat.st_atime_ns, stat.st_mtime_ns + 9_000_000_000))
+        workbench_db.scan_all(self.roms)
+        info = workbench_db.load_game_info(self.roms / "nes")
+        import workbench_view
+
+        self.assertEqual(workbench_view.genre_of(info["None (USA).nes"]), "2816")
+        self.assertEqual(workbench_view.genre_of(info["Alpha (USA).nes"]), "1537")  # not edited: the import wins
+        workbench_db.edit_game(self.roms / "nes", "None (USA).nes",
+                               dict(workbench_view.form_values(info["None (USA).nes"]), genreid=None))
+        self.assertIsNone(workbench_view.genre_of(workbench_db.load_game_info(self.roms / "nes")["None (USA).nes"]))
+
+
+class GenreTerminalTests(OverviewTerminalBase):
+    """The genre column and its sorting in the terminal version."""
+
+    def setUp(self):
+        super().setUp()
+        for name in ("Zeta (USA).nes", "Alpha (USA).nes", "Mid (USA).nes"):
+            (self.roms / "nes" / name).write_bytes(name.encode())
+        (self.roms / "nes" / "gamelist.xml").write_text(GENRE_GAMELIST, encoding="utf-8")
+        import workbench_db
+
+        workbench_db.scan_all(self.roms)
+
+    async def test_genre_column_and_sorting(self):
+        app = self.app(self.roms / "nes")
+        async with app.run_test(size=(180, 50)) as pilot:
+            await self.settle(app, pilot)
+            table = app.query_one("#games")
+            self.assertEqual([column.key.value for column in table.ordered_columns],
+                             ["file", "size", "note", "title", "genre"])
+            self.assertEqual([result.title for result in app._visible][:3], ["Alpha", "Mid", "Title"])
+            app.sort_list("genre")
+            await pilot.pause()
+            self.assertEqual([result.title for result in app._visible], ["Mid", "Zeta", "Alpha", "Title"])
+            from textual.widgets.data_table import ColumnKey
+
+            self.assertIn("▲", str(table.columns[ColumnKey("genre")].label))
+            app.sort_list("name")
+            await pilot.pause()
+            self.assertEqual([result.title for result in app._visible][0], "Alpha")
+

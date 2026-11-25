@@ -141,13 +141,30 @@ def report_blocks(report: dict) -> list:
 
 # Stage 6: editing the game information ------------------------------------------------------------
 
+
+def genre_of(info: dict | None):
+    """The <genreid> of a ROM's information (a further field), or None."""
+    for tag, text, _attributes in (info or {}).get("extra") or []:
+        if tag == "genreid":
+            return str(text).strip()
+    return None
+
+
+def game_genre(result, info_by_rom: dict):
+    """A game's genre number: that of its first kept file with one, else of any of its files."""
+    for entry in result.keep + result.marked:
+        value = genre_of(info_by_rom.get(entry.path.name))
+        if value:
+            return value
+    return None
+
 # The fields the form edits, in its order: (column, kind). The statistics (play count, play time,
 # last played) and the id stay as the frontend and the scraper keep them.
 EDIT_FIELDS = [
     ("name", "text"), ("sortname", "text"), ("description", "multiline"), ("rating", "stars"),
     ("release_date", "date"), ("developer", "text"), ("publisher", "text"), ("genre", "text"),
-    ("players", "text"), ("region", "text"), ("lang", "text"), ("favorite", "flag"), ("hidden", "flag"),
-    ("kidgame", "flag"),
+    ("genreid", "genre"), ("players", "text"), ("region", "text"), ("lang", "text"), ("favorite", "flag"),
+    ("hidden", "flag"), ("kidgame", "flag"),
 ]
 _DATE_FORMS = (r"^(\d{4})$", r"^(\d{4})-(\d{1,2})$", r"^(\d{4})-(\d{1,2})-(\d{1,2})$")
 
@@ -158,6 +175,8 @@ def edit_label(column: str) -> str:
         return tr("game.edit.rating")
     if column == "release_date":
         return tr("game.edit.release_date")
+    if column == "genreid":
+        return tr("game.edit.genreid")
     return tr(dict(FIELD_LABELS)[column])
 
 
@@ -167,7 +186,10 @@ def form_values(info: dict | None) -> dict:
     values = {}
     for column, kind in EDIT_FIELDS:
         value = info.get(column)
-        if kind == "flag":
+        if kind == "genre":
+            number = genre_of(info)
+            values[column] = int(number) if number and number.isdigit() else None
+        elif kind == "flag":
             values[column] = bool(value)
         elif kind == "stars":
             values[column] = "" if value is None else f"{value * 5:g}"
@@ -191,6 +213,9 @@ def parse_form(values: dict) -> dict:
         value = values.get(column)
         if kind == "flag":
             result[column] = 1 if value else 0
+            continue
+        if kind == "genre":  # a number of Recalbox's list, or none
+            result[column] = int(value) if value not in (None, "") else None
             continue
         text = " ".join(str(value or "").split()) if kind != "multiline" else str(value or "").strip()
         if not text:

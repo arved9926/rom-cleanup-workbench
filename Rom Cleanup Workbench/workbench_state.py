@@ -32,6 +32,7 @@ _SCOPE_KEY = "scope"
 _CONFIRMED_KEY = "confirmed_save_files"
 _COLLECTION_KEY = "last_collection"
 _HIDE_EMPTY_KEY = "hide_empty_folders"
+_LIST_SORT_KEY = "list_sort"
 _SORT_KEY = "overview_sort"
 SCOPE_PROBLEMS = "problems"
 SCOPE_MARKED = "marked"
@@ -110,6 +111,15 @@ def load_overview_sort(path: Path) -> tuple[str, bool]:
 
 def save_overview_sort(path: Path, column: str, descending: bool) -> None:
     _save_settings(path, **{_SORT_KEY: {"column": column, "descending": bool(descending)}})
+
+
+def load_list_sort(path: Path) -> str:
+    """The order of the games in the list: "name" (the rules' order) or "genre"."""
+    return "genre" if _load_settings(path).get(_LIST_SORT_KEY) == "genre" else "name"
+
+
+def save_list_sort(path: Path, order: str) -> None:
+    _save_settings(path, **{_LIST_SORT_KEY: "genre" if order == "genre" else "name"})
 
 
 def load_hide_empty(path: Path) -> bool:

@@ -42,15 +42,16 @@ from textual.renderables.bar import Bar as BarRenderable
 from textual.screen import ModalScreen, Screen
 from textual.scrollbar import ScrollBar, ScrollBarRender
 from textual.widgets import (
-    Button, Checkbox, DataTable, Input, OptionList, ProgressBar, RadioButton, RadioSet, Static, TextArea, Tree,
+    Button, Checkbox, DataTable, Input, OptionList, ProgressBar, RadioButton, RadioSet, Select, Static, TextArea,
+    Tree,
 )
 from textual.widgets.data_table import ColumnKey
 
 from translations import LANGUAGE_NAMES, current_language, tr
 from workbench_state import (
     SCOPES, SETTINGS_PATH, add_confirmed_saves, drives, format_kb, load_confirmed_saves, load_hide_empty,
-    load_last_collection, load_overview_sort, load_scope, save_hide_empty, save_last_collection, save_overview_sort,
-    save_scope,
+    load_last_collection, load_list_sort, load_overview_sort, load_scope, save_hide_empty, save_last_collection,
+    save_list_sort, save_overview_sort, save_scope,
     scope_flags, subfolders,
 )
 
@@ -253,7 +254,8 @@ class GameTable(DataTable):
         self.selected: set[str] = set()
         self.moved: set[str] = set()
         self.natural = (0, 0, 0)  # the widths file, size and note would need without wrapping
-        self.title_width = 0  # the name column from the gamelist.xml at the right edge; 0 if not shown
+        self.title_width = 0  # the columns at the right edge (name, genre from the gamelist.xml) together
+        self.extra_widths: dict[str, int] = {}  # their widths, by column key
         self.columns_layout = None  # (file, size, note, wrap) as the rows were added
 
     def available_width(self) -> int:
@@ -282,7 +284,7 @@ class GameTable(DataTable):
 
     def apply_layout(self, layout: tuple[int, int, int, bool]) -> None:
         """Sets the column widths before rows are added: their heights depend on them."""
-        for key, width in zip(("file", "size", "note", "title"), (*layout[:3], self.title_width)):
+        for key, width in (*zip(("file", "size", "note"), layout[:3]), *self.extra_widths.items()):
             column = self.columns.get(ColumnKey(key))
             if column is not None:
                 column.auto_width = False
@@ -1030,6 +1032,16 @@ class EditScreen(Screen):
                     switch = DotSwitch(edit_label(column), values[column], id=f"edit-{column}", compact=True)
                     yield _plain_radio(switch) if getattr(self.app, "ascii", False) else switch
                     continue
+                if kind == "genre":  # Recalbox's genres; the number is stored
+                    from workbench_genres import choices
+
+                    with Horizontal(classes="edit-row"):
+                        yield Static(edit_label(column), classes="edit-label", markup=False)
+                        options = [(label, number) for number, label in choices()]
+                        known = values[column] in {number for _label, number in options}
+                        yield Select(options, value=values[column] if known else Select.NULL, allow_blank=True,
+                                     prompt=tr("game.edit.no_genre"), id=f"edit-{column}", compact=True)
+                    continue
                 # Label and field on one line, compact, so that the whole form fits in 80 x 24.
                 with Horizontal(classes="edit-row"):
                     yield Static(edit_label(column), classes="edit-label", markup=False)
@@ -1052,7 +1064,10 @@ class EditScreen(Screen):
         result = {}
         for column, kind in EDIT_FIELDS:
             widget = self.query_one(f"#edit-{column}")
-            result[column] = widget.text if isinstance(widget, TextArea) else widget.value
+            if isinstance(widget, Select):
+                result[column] = None if widget.value in (Select.NULL, Select.BLANK) else widget.value
+            else:
+                result[column] = widget.text if isinstance(widget, TextArea) else widget.value
         return result
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
@@ -1342,6 +1357,7 @@ class WorkbenchApp(App):
     .edit-row { height: auto; }
     .edit-row > Input { width: 1fr; background: #222222; }
     .edit-row > TextArea { width: 1fr; height: 4; background: #222222; }
+    .edit-row > Select { width: 1fr; }
     .edit-label { width: 29; color: #aaaaaa; }
     #edit-body > DotSwitch { margin-left: 29; }
     #edit-body > Checkbox { margin-left: 29; }
@@ -1574,6 +1590,7 @@ class WorkbenchApp(App):
         self.scope = scope or load_scope(settings_path)
         self.review = None
         self.game_info = {}  # rom -> what the database knows about it (gamelist.xml, media)
+        self.list_sort = load_list_sort(settings_path)  # "name" or "genre" (a click on the heading)
         self.files = {}  # row key -> (game, file)
         self._analysis = 0  # Counts analyses, so that a replaced one cannot overwrite the newer result.
         self._visible = []  # the games shown, in the order of the list
@@ -1733,6 +1750,11 @@ class WorkbenchApp(App):
             return
         self._show_nothing_to_do(False)
         self._visible = [result for result in review.results if review.is_visible(result, *flags)]
+        if self.list_sort == "genre" and self.game_info:  # by genre, a click on its heading; names stay in order
+            from workbench_genres import sort_key
+            from workbench_view import game_genre
+
+            self._visible.sort(key=lambda result: sort_key(game_genre(result, self.game_info)))
         self._fill_table()
         keys = set(self._keys())
         previous = [key for key in previous if key in keys]
@@ -1742,22 +1764,63 @@ class WorkbenchApp(App):
             self._select_first_file()
         self._update_status()
 
-    def _show_title_column(self, shown: bool) -> None:
+    def _show_extra_columns(self, keys: list[str]) -> None:
+        """The columns at the right edge: name and genre, each only where the platform has some."""
         table = self.query_one("#games", GameTable)
-        present = ColumnKey("title") in table.columns
-        if shown and not present:
-            table.add_column(_cell(tr("window.column.title")), key="title")
-        elif not shown and present:
-            table.remove_column(ColumnKey("title"))
-            table.title_width = 0
+        present = [column.key.value for column in table.ordered_columns][3:]
+        if present != keys:
+            for key in present:
+                table.remove_column(ColumnKey(key))
+            for key in keys:
+                table.add_column(_cell(tr(f"window.column.{key}")), key=key)
+        self._show_sort_arrow()
+        if not keys:
+            table.title_width, table.extra_widths = 0, {}
+
+    def _sorted_by_genre(self) -> bool:
+        return self.list_sort == "genre" and ColumnKey("genre") in self.query_one("#games", GameTable).columns
+
+    def _show_sort_arrow(self) -> None:
+        table = self.query_one("#games", GameTable)
+        arrow = " ^" if self.ascii else " ▲"
+        genre = ColumnKey("genre") in table.columns
+        if genre:
+            table.columns[ColumnKey("genre")].label = _cell(tr("window.column.genre") + (arrow if self._sorted_by_genre() else ""))
+        table.columns[ColumnKey("file")].label = _cell(tr("window.column.file")
+                                                       + (arrow if genre and not self._sorted_by_genre() else ""))
+
+    def on_data_table_header_selected(self, event: DataTable.HeaderSelected) -> None:
+        """A click on "Genre" sorts the games by genre, a second one (or a click on "File") by name again."""
+        if event.data_table.id != "games":
+            return
+        event.stop()
+        key = event.column_key.value
+        if key == "genre":
+            self.sort_list("name" if self.list_sort == "genre" else "genre")
+        elif key == "file":
+            self.sort_list("name")
+
+    def sort_list(self, order: str) -> None:
+        table = self.query_one("#games", GameTable)
+        if self.review is None or self.deleting or ColumnKey("genre") not in table.columns:
+            return
+        self.list_sort = order
+        save_list_sort(self.settings_path, order)
+        self.show_games(keep_selection=True)
+        self._set_status(tr("window.sorted_by_genre" if order == "genre" else "window.sorted_by_name"))
 
     def _fill_table(self) -> None:
-        from workbench_view import list_title
+        from workbench_genres import list_label
+        from workbench_view import game_genre, genre_of, list_title
 
         table = self.query_one("#games", GameTable)
         table.clear()
         titled = any(list_title(info) for info in self.game_info.values())
-        self._show_title_column(titled)
+        genred = any(list_label(genre_of(info)) for info in self.game_info.values())
+        extras = [key for key, shown in (("title", titled), ("genre", genred)) if shown]
+        self._show_extra_columns(extras)
+        blank = ("",) * len(extras)
+        titled = bool(extras)  # the name cell is written when either column is shown
         self.files = {}
         moved = set()
         rows = []  # (cells, key); collected first, so that the column widths are known before adding
@@ -1765,11 +1828,13 @@ class WorkbenchApp(App):
             game_index = self._game_numbers[id(result)]
             if place:
                 # An empty row between the games: a drawn line would widen the file column to its length.
-                rows.append((("", "", "", "")[:4 if titled else 3], f"s{game_index}"))
+                rows.append((("", "", "") + blank, f"s{game_index}"))
             # The title row: bold, and dashes up to the right edge, so that a new game stands out.
             problems = "; ".join(result.problems)
             cells = (DashLine(f" {result.title} "), DashLine(), DashLine(f" {problems} " if problems else ""))
-            rows.append((cells + ((DashLine(),) if titled else ()), f"g{game_index}"))
+            genre = list_label(game_genre(result, self.game_info))
+            more = tuple(DashLine(f" {genre} " if key == "genre" and genre else "") for key in extras)
+            rows.append((cells + more, f"g{game_index}"))
             # Kept files green, marked files red, as in the window; with 16 colors the ANSI ones.
             keep_color, marked_color = ("#00aa00", "#ff5555") if self.colors16 else ("#3fb950", "#ff6b6b")
             entries = [("k", "window.section.keep", "+", f"bold {keep_color}", "window.by_hand_keep", result.keep),
@@ -1777,7 +1842,7 @@ class WorkbenchApp(App):
             for suffix, label, sign, color_style, moved_note, group in entries:
                 if not group:
                     continue
-                rows.append(((_cell("  " + tr(label)), "", "", "")[:4 if titled else 3], f"g{game_index}{suffix}"))
+                rows.append(((_cell("  " + tr(label)), "", "") + blank, f"g{game_index}{suffix}"))
                 for entry in group:
                     key = self._file_keys[id(entry)]
                     self.files[key] = (result, entry)
@@ -1793,8 +1858,8 @@ class WorkbenchApp(App):
                         _cell(format_kb(entry.size()), justify="right", style=style),
                         _cell("; ".join(notes), style="italic") if notes else "",
                     )
-                    if titled:
-                        title = list_title(self.game_info.get(entry.path.name), ascii=self.ascii)
+                    for column in extras:  # not "key": that is the row's key
+                        title = list_title(self.game_info.get(entry.path.name), ascii=self.ascii) if column == "title" else ""
                         cells += (_cell(title, style=style) if title else "",)
                     rows.append((cells, key))
         widths = [0] * len(table.ordered_columns)
@@ -1803,7 +1868,8 @@ class WorkbenchApp(App):
                 text = cell.text if isinstance(cell, DashLine) else str(cell)
                 widths[index] = max(widths[index], cell_len(text))
         table.natural = tuple(widths[:3])
-        table.title_width = min(widths[3], 40) if titled else 0
+        table.extra_widths = {key: min(widths[3 + index], 40) for index, key in enumerate(extras)}
+        table.title_width = sum(table.extra_widths.values())
         layout = table.column_layout()
         table.apply_layout(layout)
         # Wrapping rows take as many lines as they need; otherwise every row has one line.

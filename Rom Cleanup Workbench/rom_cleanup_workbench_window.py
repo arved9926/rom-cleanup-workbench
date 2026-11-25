@@ -36,8 +36,8 @@ from translations import LANGUAGE_NAMES, current_language, tr
 # The settings file, the views, sizes and folders are shared with the terminal version.
 from workbench_state import (  # noqa: F401  (SETTINGS_PATH and the scope names belong to this module's interface)
     DEFAULT_SCOPE, SCOPE_ALL_FILES, SCOPE_MARKED, SCOPE_PROBLEMS, SETTINGS_PATH, add_confirmed_saves,
-    format_kb, load_confirmed_saves, load_hide_empty, load_last_collection, load_overview_sort, load_scope,
-    save_hide_empty, save_last_collection, save_overview_sort, save_scope,
+    format_kb, load_confirmed_saves, load_hide_empty, load_last_collection, load_list_sort, load_overview_sort,
+    load_scope, save_hide_empty, save_last_collection, save_list_sort, save_overview_sort, save_scope,
 )
 from workbench_state import SCOPES as _SCOPES
 from workbench_state import drives as _drives
@@ -590,6 +590,20 @@ class EditPanel:
                 widget = ttk.Checkbutton(frame, text=edit_label(column), variable=variable, style=_DOT_STYLE)
                 widget.grid(row=row, column=1, sticky="w", pady=2)
                 self.fields[column] = variable
+            elif kind == "genre":  # Recalbox's genres; the number is stored
+                from workbench_genres import choices
+
+                ttk.Label(frame, text=edit_label(column)).grid(row=row, column=0, sticky="nw", padx=(0, 16), pady=3)
+                options = [(None, tr("game.edit.no_genre"))] + choices()
+                self.genre_numbers = [number for number, _label in options]
+                current = values[column] if values[column] in self.genre_numbers else None
+                variable = tk.StringVar(frame, options[self.genre_numbers.index(current)][1])
+                widget = ttk.Combobox(frame, textvariable=variable, values=[label for _number, label in options],
+                                      state="readonly", height=20,
+                                      width=max(len(label) for _number, label in options) + 2)
+                widget.grid(row=row, column=1, sticky="w", pady=3)
+                self.genre_labels = [label for _number, label in options]
+                self.fields[column] = variable
             else:
                 ttk.Label(frame, text=edit_label(column)).grid(row=row, column=0, sticky="nw", padx=(0, 16), pady=3)
                 if kind == "multiline":
@@ -619,6 +633,9 @@ class EditPanel:
         for column, field in self.fields.items():
             if isinstance(field, tk.Text):
                 result[column] = field.get("1.0", "end")
+            elif column == "genreid":
+                label = field.get()
+                result[column] = self.genre_numbers[self.genre_labels.index(label)] if label in self.genre_labels else None
             else:
                 result[column] = field.get()
         return result
@@ -840,6 +857,7 @@ class ReviewWindow:
         self.info_panel = None  # the game view (i) or the gamelist report (g)
         self.edit_panel = None  # the form for a game's information (e in the game view)
         self._game_info = {}  # rom -> what the database knows about it (gamelist.xml, media)
+        self.list_sort = load_list_sort(settings_path)  # "name" or "genre" (a click on the heading)
         self.overview_panel = None
         self._batch = None  # the running scan of all platforms: (queue, cancel flag)
         # The roms folder of the collection; None while a folder is open on its own.
@@ -1421,7 +1439,7 @@ class ReviewWindow:
         # "hint" stays the first value of every row; only the display puts the size before it.
         # "title" (the name from the gamelist.xml) is shown only where a platform has information.
         self.tree = ttk.Treeview(
-            self.list_frame, columns=("hint", "size", "title"), displaycolumns=("size", "hint"),
+            self.list_frame, columns=("hint", "size", "title", "genre"), displaycolumns=("size", "hint"),
             selectmode="extended",
         )
         self.tree.heading("#0", text=tr("window.column.file"), anchor="w")
@@ -1429,6 +1447,10 @@ class ReviewWindow:
         self.tree.heading("hint", text=tr("window.column.note"), anchor="w")
         self.tree.heading("title", text=tr("window.column.title"), anchor="w")
         self.tree.column("title", width=240, stretch=False)
+        # A click on "Genre" sorts the games by genre, a second one (or a click on "File") by name again.
+        self.tree.heading("genre", text=tr("window.column.genre"), anchor="w", command=self.toggle_genre_sort)
+        self.tree.heading("#0", command=lambda: self.sort_list("name"))
+        self.tree.column("genre", width=200, stretch=False)
         self.tree.column("#0", width=560, stretch=True)
         self.tree.column("size", anchor="e", stretch=False)
         self.tree.column("hint", width=500, stretch=True)
@@ -1856,18 +1878,23 @@ class ReviewWindow:
             self._show_nothing_to_do()
             return
         visible = [result for result in self.review.results if self.review.is_visible(result, *self._scope_flags())]
+        if self._sorted_by_genre():
+            from workbench_genres import sort_key
+            from workbench_view import game_genre
+
+            visible.sort(key=lambda result: sort_key(game_genre(result, self._game_info)))  # stable: names stay in order
         for index, result in enumerate(visible):
             group_id = self._group_ids[id(result)]
             if index % 2:
                 self._striped.add(group_id)
             if index:
                 self.tree.insert(
-                    "", "end", group_id + _SEPARATOR_SUFFIX, text=_LINE_TEXT, values=(_LINE_TEXT,) * 3,
+                    "", "end", group_id + _SEPARATOR_SUFFIX, text=_LINE_TEXT, values=(_LINE_TEXT,) * 4,
                     tags=("separator",),
                 )
             self.tree.insert(
                 "", "end", group_id, text=result.title, open=True,
-                values=("; ".join(result.problems),),
+                values=("; ".join(result.problems), "", "", self._genre_label(result)),
                 tags=self._tags(group_id, "problem" if result.problems else "game"),
             )
             self._fill_group(result)
@@ -1932,7 +1959,7 @@ class ReviewWindow:
         tags = (tag, "moved") if entry.moved else (tag,)
         self.tree.insert(
             parent, "end", self._file_ids[id(entry)], text=f"{sign} {entry.path.name}",
-            values=("; ".join(notes), format_kb(entry.size()) + _CELL_GAP, self._title_of(entry)),
+            values=("; ".join(notes), format_kb(entry.size()) + _CELL_GAP, self._title_of(entry), ""),
             tags=self._tags(group_id, *tags),
         )
 
@@ -1942,19 +1969,57 @@ class ReviewWindow:
         return list_title(self._game_info.get(entry.path.name))
 
     def _show_name_column(self) -> None:
-        """The name column appears when the platform has information, as wide as its longest name."""
-        from workbench_view import list_title
+        """The name and genre columns appear when the platform has information, as wide as their texts."""
+        from workbench_genres import list_label
+        from workbench_view import genre_of, list_title
 
         titles = [list_title(info) for info in self._game_info.values()]
         titles = [title for title in titles if title]
-        if not titles:
-            self.tree.configure(displaycolumns=("size", "hint"))
-            return
+        genres = [list_label(genre_of(info)) for info in self._game_info.values()]
+        genres = [genre for genre in genres if genre]
         font = tkfont.nametofont("TkDefaultFont")
-        width = min(max(font.measure(text) for text in titles + [tr("window.column.title")]) + 24, 420)
-        self.tree.column("title", width=width, minwidth=width // 2)
+        shown = ["size"]
+        if titles:
+            width = min(max(font.measure(text) for text in titles + [tr("window.column.title")]) + 24, 420)
+            self.tree.column("title", width=width, minwidth=width // 2)
+            shown.append("title")
+        if genres:
+            width = min(max(font.measure(text) for text in genres + [tr("window.column.genre") + " ▲"]) + 24, 320)
+            self.tree.column("genre", width=width, minwidth=width // 2)
+            shown.append("genre")
         # Before the notes: long notes run past the right edge here (the terminal version wraps them instead).
-        self.tree.configure(displaycolumns=("size", "title", "hint"))
+        self.tree.configure(displaycolumns=(*shown, "hint"))
+        self._show_sort_arrow()
+
+    def _genre_shown(self) -> bool:
+        return "genre" in self.tree["displaycolumns"]
+
+    def _sorted_by_genre(self) -> bool:
+        return self.list_sort == "genre" and self._genre_shown()
+
+    def _genre_label(self, result) -> str:
+        from workbench_genres import list_label
+        from workbench_view import game_genre
+
+        return list_label(game_genre(result, self._game_info))
+
+    def _show_sort_arrow(self) -> None:
+        genre = self._sorted_by_genre()
+        self.tree.heading("genre", text=tr("window.column.genre") + (" ▲" if genre else ""))
+        self.tree.heading("#0", text=tr("window.column.file") + ("" if genre or not self._genre_shown() else " ▲"))
+
+    def toggle_genre_sort(self) -> None:
+        self.sort_list("name" if self.list_sort == "genre" else "genre")
+
+    def sort_list(self, order: str) -> None:
+        """Games by name (the rules' order) or by genre; remembered for the next start."""
+        if self.review is None or self._list_locked() or not self._genre_shown():
+            return
+        self.list_sort = order
+        save_list_sort(self.settings_path, order)
+        self._show_sort_arrow()
+        self._show_all_groups()
+        self.status.set(tr("window.sorted_by_genre" if order == "genre" else "window.sorted_by_name"))
 
     @staticmethod
     def _is_separator(row: str) -> bool:
