@@ -146,7 +146,7 @@ cd "rom-cleanup-workbench\Rom Cleanup Workbench"
 python rom_cleanup_workbench.py "D:\Games"
 ```
 
-Ohne Ordner fragt das Fenster danach. Wer die Terminal-Version will, hängt `--tui` an.
+Ohne Ordner öffnet das Programm den zuletzt gewählten Ordner wieder, einen `roms`-Ordner mit seiner Übersicht, jeden anderen direkt; beim ersten Mal fragt das Fenster danach. Wer die Terminal-Version will, hängt `--tui` an.
 
 ### Linux
 
@@ -187,11 +187,11 @@ Die Tests laufen mit `python -m unittest`.
 
 ## Die Sammlung: viele Plattformen und die Datenbank
 
-Meist liegen die Spiele nach Plattformen getrennt in einem gemeinsamen Ordner, etwa `roms/nes`, `roms/snes`, `roms/n64`. Wählst du diesen `roms`-Ordner, zeigt das Programm die **Übersicht** aller Plattformen. Ab dann startet es immer mit der Übersicht des zuletzt benutzten `roms`-Ordners. Als `roms`-Ordner gilt ein Ordner, der schon eine Datenbank hat oder selbst keine ROM-Dateien, aber Unterordner enthält. Beipack-Dateien wie `info.txt`, Bilder oder PDFs zählen dabei nicht als ROM-Dateien. Jeder andere Ordner wird wie bisher allein analysiert, ohne Datenbank.
+Meist liegen die Spiele nach Plattformen getrennt in einem gemeinsamen Ordner, etwa `roms/nes`, `roms/snes`, `roms/n64`. Wählst du diesen `roms`-Ordner, zeigt das Programm die **Übersicht** aller Plattformen. Ab dann startet es immer mit dem zuletzt gewählten Ordner, bei einem `roms`-Ordner also mit seiner Übersicht. Als `roms`-Ordner gilt ein Ordner, der schon eine Datenbank hat oder selbst keine ROM-Dateien, aber Unterordner enthält. Beipack-Dateien wie `info.txt`, Bilder oder PDFs zählen dabei nicht als ROM-Dateien. Jeder andere Ordner wird wie bisher allein analysiert, ohne Datenbank.
 
 **Die Datenbank.** Beim ersten Öffnen legt das Programm im `roms`-Ordner den versteckten Ordner `.rom_cleanup_workbench` mit einer SQLite-Datenbank an. Das ist das Einzige, was es in deine Sammlung schreibt. Gespeichert werden die Ergebnisse jedes Scans: Dateien, Größen, Änderungszeiten, der Inhalt der ZIPs mit Prüfsummen. Die Entscheidungen rechnet das Programm daraus beim Öffnen in einem Augenblick neu. Geänderte Einstellungen wirken deshalb sofort, ohne neuen Scan. Außerdem stehen dort die Änderungen von Hand (`k`/`x`), die bestätigten Status- und Spielstanddateien und die eigenen Einstellungen einzelner Plattformen.
 
-**Die Übersicht** zeigt je Plattform: Dateien, Spiele, zum Löschen markierte Dateien, problematische Spiele, den letzten Scan und den Stand (`nicht gescannt`, `aktuell` oder `geändert`, wenn seitdem Dateien hinzukamen, wegfielen oder sich geändert haben), darunter die Summe.
+**Die Übersicht** zeigt je Plattform: Dateien, Spiele, zum Löschen markierte Dateien, problematische Spiele, den letzten Scan und den Stand (`nicht gescannt`, `aktuell` oder `geändert`, wenn seitdem Dateien hinzukamen, wegfielen oder sich geändert haben), darunter die Summe. Ein Strich trennt die Summe von den Plattformen; der Stand `geändert` steht in Gelb (im Fenster die ganze Zeile). Ein Klick auf die Überschrift `Plattform`, `Dateien`, `Spiele`, `Zum Löschen` oder `Problematisch` sortiert danach, ein zweiter Klick andersherum; ein Pfeil zeigt die Richtung, die Summe bleibt unten, Plattformen ohne Zahlen kommen zuletzt, und die Wahl bleibt gespeichert.
 
 | Knopf | Taste | Wirkung |
 | --- | --- | --- |
@@ -201,6 +201,7 @@ Meist liegen die Spiele nach Plattformen getrennt in einem gemeinsamen Ordner, e
 | `Tiefenscan` | `d` | Schalter (roter Punkt) für Scannen und Alle scannen: jede Datei neu lesen statt nur neue und geänderte |
 | `Leere ausblenden` | `h` | Schalter (roter Punkt): Ordner ohne Spieldatei ausblenden, etwa `bios` oder einen Ordner nur mit `info.txt`; Beipack-Dateien zählen nicht als Spieldatei; die Wahl bleibt gespeichert |
 | `Ordner...` | `f` | einen anderen `roms`-Ordner wählen |
+| | `n` | den markierten Ordner als `keine Spiele` kennzeichnen oder das wieder aufheben (siehe unten) |
 | | `q` oder `Esc` | das Programm schließen |
 
 Die Tasten gelten im Fenster und in der Terminal-Version gleich. Die Zeile über der Tabelle nennt die wichtigsten, `F1` oder `?` zeigt alle.
@@ -208,6 +209,8 @@ Die Tasten gelten im Fenster und in der Terminal-Version gleich. Die Zeile über
 **Scannen.** Ein Scan ist normalerweise schnell: Er liest nur neue und geänderte Dateien (erkannt an Name, Größe und Änderungszeit) und übernimmt alles andere aus der Datenbank. Mit `Tiefenscan` wird jede Datei neu gelesen. `F5` in der Liste scannt die geöffnete Plattform schnell. Ausführen trägt gelöschte und umbenannte Dateien sofort ein, ein neuer Scan ist danach nicht nötig.
 
 **Zurück zur Übersicht** führt in der Liste `Esc`, `q` oder der Knopf `Übersicht`, in der Terminal-Version auch `o`. `Esc` oder `q` in der Übersicht beendet das Programm; wer ganz hinaus will, drückt also zweimal.
+
+**Ordner ohne Spiele.** Ein Ordner wie `bios` oder `saves` enthält keine Spiele. `n` kennzeichnet den markierten Ordner als `keine Spiele`: Er wird weder gescannt (auch nicht von `Alle scannen` und `--scan-all`) noch geöffnet, zählt nicht in der Summe, und `Leere ausblenden` blendet ihn aus. Was die Datenbank über ihn wusste, wird gelöscht. Ein zweites `n` hebt das wieder auf; der Ordner ist dann `nicht gescannt`. Einen Knopf dafür gibt es bewusst nicht.
 
 **Änderungen von Hand** (`k`/`x`) bleiben gespeichert, auch nach dem Schließen, bis du ausführst oder die Plattform neu scannst. Ändert sich eine Datei, verfällt ihre Änderung von Hand.
 
@@ -225,7 +228,7 @@ Mit `--deep-scan` wird jede Datei neu gelesen (Tiefenscan). Gelöscht wird dabei
 
 Da die ZIP-Dateien entpackt werden müssen, um Größe, SHA-256-Prüfsumme und Namen ihres Inhalts zu erhalten, kann es nach der Auswahl eines Verzeichnisses einen Moment dauern, bis die Ergebnisse angezeigt werden.
 
-Die grüne Zeile oben zeigt links `Rom Cleanup Workbench` und rechts den Ordner; darunter steht in Grün `Plattform:` mit dem Namen des geöffneten Ordners. Rechts daneben stehen die wichtigsten Tasten der Ansicht, in der Liste `x Löschen`, `k Behalten`, `Enter Bereinigung durchführen` und `F1 / ? Hilfe: weitere Tasten`. `F1` oder `?` zeigt an der Stelle der Liste alle Tasten, nach Themen geordnet; `Esc`, `F1` oder `?` schließt sie wieder. In der Übersicht zeigen beide die Tasten der Übersicht und darunter unter `Gut zu wissen`, was die Stände, Scannen und Tiefenscan bedeuten. Die geltende Priorität zeigen die Einstellungen. In der Übersicht steht das Wort `Sammlung` ebenfalls in Grün. Die grüne vorletzte Zeile zeigt den Status, während der Analyse zum Beispiel `Analysiere: 120 von 2007 Dateien`. Solange erscheint auch ein Fortschrittsbalken in der Mitte. Das Fenster zeigt auch Fehler, etwa in der Konfiguration, und solange die Analyse scheitert, lässt sich nichts löschen. Beim Löschen erscheint der Fortschrittsbalken in der Mitte, und die grüne Zeile zeigt zum Beispiel `Lösche: 120 von 500 Dateien`; das Fenster nimmt keine Eingaben an, bis das Löschen fertig ist. Danach meldet es das Ergebnis und entfernt die gelöschten Dateien aus der Liste, ohne den Ordner neu zu analysieren; Dateien, die sich nicht löschen ließen, bleiben markiert. `F5` analysiert den Ordner neu, wenn du das willst.
+Die grüne Zeile oben zeigt links `Rom Cleanup Workbench` und rechts den Ordner; darunter steht in Grün `Plattform:` mit dem Namen des geöffneten Ordners in Fett, bei eigenen Einstellungen der Plattform mit `*` dahinter wie in der Übersicht; danach folgt eine Leerzeile. Rechts daneben stehen die wichtigsten Tasten der Ansicht, in der Liste `x Löschen`, `k Behalten`, `Enter Bereinigung durchführen` und `F1 / ? Hilfe: weitere Tasten`. `F1` oder `?` zeigt an der Stelle der Liste alle Tasten, nach Themen geordnet; `Esc`, `F1` oder `?` schließt sie wieder. In der Übersicht zeigen beide die Tasten der Übersicht und darunter unter `Gut zu wissen`, was die Stände, Scannen und Tiefenscan bedeuten. Die geltende Priorität zeigen die Einstellungen. In der Übersicht steht das Wort `Sammlung` ebenfalls in Grün. Die grüne vorletzte Zeile zeigt den Status, während der Analyse zum Beispiel `Analysiere: 120 von 2007 Dateien`. Solange erscheint auch ein Fortschrittsbalken in der Mitte. Das Fenster zeigt auch Fehler, etwa in der Konfiguration, und solange die Analyse scheitert, lässt sich nichts löschen. Beim Löschen erscheint der Fortschrittsbalken in der Mitte, und die grüne Zeile zeigt zum Beispiel `Lösche: 120 von 500 Dateien`; das Fenster nimmt keine Eingaben an, bis das Löschen fertig ist. Danach meldet es das Ergebnis und entfernt die gelöschten Dateien aus der Liste, ohne den Ordner neu zu analysieren; Dateien, die sich nicht löschen ließen, bleiben markiert. `F5` analysiert den Ordner neu, wenn du das willst.
 
 Ist im ganzen Ordner nichts markiert und keine Datei als Status- oder Spielstanddatei verdächtig, blinkt `Nichts zu tun.` in der Mitte des Fensters.
 
@@ -374,7 +377,7 @@ Für Japanisch zeigt Windows die Zeichen in einer Ersatzschrift, weil Lucida San
 
 ## Regeln
 
-Manche Dateien übergeht das Programm ganz: Sie erscheinen nirgends und werden nie gelöscht.
+Manche Dateien übergeht das Programm ganz: Sie erscheinen nirgends und werden nie gelöscht. Als Klammern zählen `( )`, `[ ]` und `{ }`, überall gleich: für den Spielnamen, die Priorität, die Versionen und die Löschwörter.
 
 - Dateien, deren Name mit `gamelist` beginnt, unabhängig von Groß- und Kleinschreibung. Sie sind keine ROM-Dateien.
 - Versteckte Dateien: Namen, die mit einem Punkt beginnen, etwa `.xxx` oder `.DS_Store`, und Dateien mit dem Windows-Attribut „Versteckt“.
