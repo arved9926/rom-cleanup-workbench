@@ -1243,6 +1243,7 @@ class Review:
         renames, _skipped = rename_plan(self.results)
         to_delete = marked_paths(self.results)
         deleted, errors = delete_files(to_delete, progress)
+        self.deleted_count = deleted
         self._forget_deleted_files()
         self.renamed = self.media_deleted = self.media_renamed = 0
         done_renames = []
@@ -1506,6 +1507,9 @@ def build_parser() -> argparse.ArgumentParser:
     mode.add_argument("--yes", action="store_true", help="without window: delete marked files without asking")
     mode.add_argument("--scan-all", action="store_true",
                       help="without window: scan every platform folder of the roms folder into its database")
+    mode.add_argument("--write-gamelists", action="store_true",
+                      help="without window: write the gamelist.xml of every platform of the roms folder from its "
+                           "database (each old file is kept as gamelist.xml.<date>.bak)")
     mode.add_argument(
         "--review", choices=[REVIEW_ALL, REVIEW_PROBLEMS],
         help="open the window with all marked or only the problematic games",
@@ -1581,6 +1585,26 @@ def _scan_all_in_terminal(args: argparse.Namespace, parser: argparse.ArgumentPar
     return 0
 
 
+def _write_gamelists_in_terminal(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
+    """--write-gamelists: the gamelist.xml of every platform with information, from the database."""
+    from workbench_db import is_collection, write_all_gamelists
+
+    if args.directory is None:
+        parser.error("--write-gamelists needs the roms folder")
+    if not args.directory.is_dir() or not is_collection(args.directory):
+        print(tr("terminal.not_collection", directory=args.directory), file=sys.stderr)
+        return 1
+    try:
+        written = write_all_gamelists(args.directory)
+    except (OSError, ValueError) as error:
+        print(tr("gamelist.write_failed", error=error), file=sys.stderr)
+        return 1
+    for platform, count, _backup in written:
+        print(tr("terminal.gamelist_written", platform=platform, count=count))
+    print(tr("terminal.gamelists_done", count=len(written)))
+    return 0
+
+
 def _config_path(args: argparse.Namespace) -> Path | None:
     if args.config is not None:
         return args.config
@@ -1644,6 +1668,8 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.scan_all:
         return _scan_all_in_terminal(args, parser)
+    if args.write_gamelists:
+        return _write_gamelists_in_terminal(args, parser)
 
     if args.report_only or args.yes:
         return _run_in_terminal(args, parser, analyze)

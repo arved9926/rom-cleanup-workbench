@@ -455,3 +455,86 @@ def title_of(name: str) -> str:
     title = _BRACKETS.split(stem, maxsplit=1)[0].strip() if _BRACKETS.search(stem) else stem
     return title or stem
 
+
+# Stage 5: writing the gamelist.xml ----------------------------------------------------------------
+
+SOFTWARE = "RCW"  # our short name in the <provider> block
+WEB = "https://github.com/arved9926/rom-cleanup-workbench"
+_TAGS = {column: tag for tag, column in FIELDS.items()}
+
+
+def _xml_text(column: str, value) -> str | None:
+    """A column's value as the gamelist writes it; None for a default, which is left out."""
+    if value is None or value == "":
+        return None
+    if column in ("favorite", "hidden", "kidgame"):
+        return "true" if value else None
+    if column in ("playcount", "playtime"):
+        return str(int(value)) if value else None
+    if column == "rating":
+        return f"{float(value):g}"
+    if column == "release_date" and re.match(r"^\d{4}-\d{2}-\d{2}$", str(value)):
+        return str(value).replace("-", "") + "T000000"
+    return str(value)
+
+
+def _link(path: str) -> str:
+    return path if Path(path).is_absolute() else "./" + path
+
+
+def build_gamelist(entries: list[dict], provider: list | None, system: str) -> str:
+    """The text of a gamelist.xml: every game and folder of entries (workbench_db.game_info values).
+
+    The <provider> block names RCW and our GitHub page; its other lines stay. Known fields, media
+    by category (a file serving two categories is written twice), the id and every further field
+    as they were read. Values that are the default are left out, as EmulationStation does.
+    """
+    root = ET.Element("gameList")
+    lines = [list(item) for item in (provider or [])]
+    tags = [tag for tag, _text in lines]
+    for tag, text in (("system", system), ("software", SOFTWARE), ("web", WEB)):
+        if tag in tags:
+            if tag != "system":
+                lines[tags.index(tag)][1] = text
+        else:
+            lines.append([tag, text])
+    order = {"system": 0, "software": 1, "web": 2}
+    block = ET.SubElement(root, "provider")
+    for tag, text in sorted(lines, key=lambda line: order.get(line[0], 3)):
+        ET.SubElement(block, tag).text = text
+    for entry in sorted(entries, key=lambda item: (item["kind"] != "folder", item["rom"].casefold())):
+        if entry["kind"] not in ("game", "folder"):
+            continue
+        element = ET.SubElement(root, entry["kind"])
+        if entry.get("xml_id"):
+            element.set("id", str(entry["xml_id"]))
+        extra = entry.get("extra") or []
+        for tag, text, _attributes in extra:
+            if tag.startswith("@"):
+                element.set(tag[1:], text)
+        ET.SubElement(element, "path").text = _link(entry["rom"])
+        for column in COLUMNS:
+            text = _xml_text(column, entry.get(column))
+            if text is not None:
+                ET.SubElement(element, _TAGS[column]).text = text
+        for category in sorted(entry.get("media") or {}):
+            for path in entry["media"][category]:
+                ET.SubElement(element, category).text = _link(path)
+        for tag, text, attributes in extra:
+            if tag.startswith("@"):
+                continue
+            if text.startswith("<" + tag):
+                try:
+                    element.append(ET.fromstring(text))
+                    continue
+                except ET.ParseError:
+                    pass
+            child = ET.SubElement(element, tag, attributes or {})
+            child.text = text
+    ET.indent(root, "  ")
+    return '<?xml version="1.0" encoding="utf-8"?>\n' + ET.tostring(root, encoding="unicode") + "\n"
+
+
+BACKUP_RE = re.compile(r"^gamelist\.xml\.\d{4}-\d{2}-\d{2}_\d{6}\.bak$")
+BACKUPS_KEPT = 3
+

@@ -513,6 +513,11 @@ class KeysPanel:
                     wraplength=max(event.width, 1)))
 
 
+def deleted_files(review) -> int:
+    """How many files the last Proceed deleted (0 before any)."""
+    return getattr(review, "deleted_count", 0)
+
+
 class InfoPanel:
     """The game view (i) or the gamelist report (g) in place of the list: blocks of workbench_view."""
 
@@ -1392,7 +1397,7 @@ class ReviewWindow:
             "x": self.demote_selected, "k": self.promote_selected, "s": self.toggle_settings,
             "f": self.choose_directory, "r": self.reanalyze, "c": self.show_credits, "q": self._quit_key,
             "a": self._scan_all_key, "d": self._toggle_full_key, "h": self._hide_empty_key,
-            "n": self._no_games_key, "i": self.toggle_game_view, "g": self.toggle_report,
+            "n": self._no_games_key, "i": self.toggle_game_view, "g": self.toggle_report, "w": self._write_key,
         }
         for key, action in keys.items():
             for variant in (key, key.upper()):
@@ -1571,6 +1576,50 @@ class ReviewWindow:
         self.tree.focus(row)
         self.open_info("game")
         return "break"
+
+    def _write_key(self) -> None:
+        """w: the gamelist.xml of the highlighted platform (overview) or of the open one (list)."""
+        if self._overview_keys_work():
+            folder = self.overview_panel.selected()
+            if folder is not None and self._batch is None:
+                self.write_gamelist(self.collection_root / folder)
+        elif self.review is not None and not self._list_locked():
+            self.write_gamelist(self.directory)
+
+    def write_gamelist(self, directory, after_cleanup: bool = False) -> bool:
+        """Asks, then writes the platform's gamelist.xml from the database. Returns whether it was written."""
+        from workbench_db import collection_root, platform_row, writable_entries, write_gamelist
+        from workbench_gamelist import GAMELIST_NAME
+
+        directory = Path(directory)
+        if collection_root(directory) is None:
+            self.status.set(tr("game.only_collection"))
+            return False
+        count = writable_entries(directory)
+        if not count:
+            if not after_cleanup:
+                messagebox.showinfo(tr("gamelist.write_title"), tr("gamelist.nothing_to_write",
+                                                                   platform=directory.name), parent=self.root)
+            return False
+        question = tr("gamelist.offer_after_cleanup" if after_cleanup else "gamelist.write_question",
+                      platform=directory.name, count=count)
+        if (directory / GAMELIST_NAME).exists():
+            question += "\n\n" + tr("gamelist.backup_note")
+        if not messagebox.askyesno(tr("gamelist.write_title"), question, parent=self.root):
+            return False
+        try:
+            written, _backup = write_gamelist(directory)
+        except (OSError, ValueError) as error:
+            messagebox.showerror(tr("gamelist.write_title"), tr("gamelist.write_failed", error=error), parent=self.root)
+            return False
+        self.status.set(tr("gamelist.written", platform=directory.name, count=written))
+        if self.overview_panel is not None and self.collection_root is not None:
+            self.overview_panel.set_row(platform_row(self.collection_root, directory.name, self.config_loader()))
+        elif self.review is not None:
+            from workbench_db import platform_label
+
+            self._show_directory(platform_label(self.directory) or None)
+        return True
 
     def toggle_game_view(self) -> None:
         self._toggle_info("game")
@@ -1914,6 +1963,16 @@ class ReviewWindow:
             messagebox.showinfo(tr("window.deleted_title"), self.review.done_message(deleted), parent=self.root)
         # The Review object has dropped the deleted files; the folder is not analyzed again.
         self.show_review(self.review)
+        self._offer_gamelist()
+
+    def _offer_gamelist(self) -> None:
+        """After a cleanup: a gamelist.xml that names deleted files may be written anew."""
+        from workbench_db import collection_root
+        from workbench_gamelist import GAMELIST_NAME
+
+        if (self.directory is not None and deleted_files(self.review)
+                and collection_root(self.directory) is not None and (self.directory / GAMELIST_NAME).exists()):
+            self.write_gamelist(self.directory, after_cleanup=True)
 
     def toggle_settings(self) -> str:
         """Settings... and s open the settings in place of the list, and a second time close them."""

@@ -448,6 +448,19 @@ class Collection:
                  json.dumps([item.as_dict() for item in gamelist.problems], ensure_ascii=False),
                  json.dumps([item.as_dict() for item in gamelist.notes], ensure_ascii=False)))
 
+    def mark_gamelist_written(self, folder: str, stamp: tuple, sha256: str, entries: int, provider: list) -> None:
+        """The gamelist.xml was written from the database: it counts as read, without problems."""
+        platform_id = self._platform_id(folder)
+        moment = datetime.now().isoformat(timespec="seconds")
+        with self._db:
+            self._db.execute(
+                "INSERT INTO gamelist_files (platform_id, size, mtime_ns, sha256, imported_at, provider_json, entries, "
+                "problems_json, notes_json) VALUES (?, ?, ?, ?, ?, ?, ?, '[]', '[]') ON CONFLICT (platform_id) DO UPDATE "
+                "SET size = excluded.size, mtime_ns = excluded.mtime_ns, sha256 = excluded.sha256, "
+                "imported_at = excluded.imported_at, provider_json = excluded.provider_json, entries = excluded.entries, "
+                "problems_json = '[]', notes_json = '[]'",
+                (platform_id, stamp[0], stamp[1], sha256, moment, json.dumps(provider, ensure_ascii=False), entries))
+
     def touch_gamelist(self, folder: str, stamp: tuple) -> None:
         """The gamelist.xml has a new change time but the same content: only the stamp is new."""
         platform_id = self._platform_id(folder)
@@ -1292,3 +1305,84 @@ def gamelist_report(directory: Path | None) -> dict | None:
         "unassigned": [tuple(row) for row in unassigned],
         "no_games": sorted((rom for rom, item in info.items() if item["kind"] == "no_game"), key=str.casefold),
     }
+
+
+# Stage 5: writing the gamelist.xml ------------------------------------------------------------------
+
+def writable_entries(directory: Path) -> int:
+    """How many games and folders a written gamelist.xml would hold (BIOS files and no games not)."""
+    return sum(1 for item in load_game_info(directory).values() if item["kind"] in ("game", "folder"))
+
+
+def write_gamelist(directory: Path, when: datetime | None = None) -> tuple[int, str | None]:
+    """Writes the platform's gamelist.xml from the database; only when the user asks for it.
+
+    The file there is first copied to gamelist.xml.<date_time>.bak (the last three copies stay).
+    The new file is written under another name and then put in place, so that a break never leaves
+    half a gamelist.xml. Afterwards it counts as read. Returns (entries written, backup name or None).
+    """
+    import shutil
+
+    from workbench_gamelist import BACKUP_RE, BACKUPS_KEPT, GAMELIST_NAME, build_gamelist
+
+    directory = Path(directory)
+    root = collection_root(directory)
+    if root is None:
+        from translations import tr
+
+        raise ValueError(tr("game.only_collection"))
+    name = directory.name
+    with Collection(root) as collection:
+        entries = [item for item in collection.game_info(name).values() if item["kind"] in ("game", "folder")]
+        if not entries:
+            return 0, None
+        record = collection.gamelist_record(name)
+        provider = (record or {}).get("provider")
+        text = build_gamelist(entries, provider, name)
+        path = directory / GAMELIST_NAME
+        backup = None
+        if path.exists():
+            backup = f"{GAMELIST_NAME}.{(when or datetime.now()).strftime('%Y-%m-%d_%H%M%S')}.bak"
+            shutil.copy2(path, directory / backup)
+        temporary = directory / (GAMELIST_NAME + ".tmp")
+        temporary.write_bytes(text.encode("utf-8"))
+        os.replace(temporary, path)
+        backups = sorted(item for item in os.listdir(directory) if BACKUP_RE.match(item))
+        for old in backups[:-BACKUPS_KEPT]:
+            try:
+                (directory / old).unlink()
+            except OSError:
+                pass
+        stat = path.stat()
+        from workbench_gamelist import SOFTWARE, WEB
+
+        lines = [list(item) for item in (provider or [])]
+        tags = [tag for tag, _text in lines]
+        for tag, value in (("system", name), ("software", SOFTWARE), ("web", WEB)):
+            if tag in tags:
+                if tag != "system":
+                    lines[tags.index(tag)][1] = value
+            else:
+                lines.append([tag, value])
+        collection.mark_gamelist_written(name, (stat.st_size, stat.st_mtime_ns),
+                                         hashlib.sha256(text.encode("utf-8")).hexdigest(), len(entries), lines)
+    return len(entries), backup
+
+
+def platform_row(root: Path, folder: str, config: Config) -> OverviewRow:
+    """One platform's overview row, as it is now."""
+    with Collection(root) as collection:
+        return _overview_row(collection, Path(root) / folder, config)
+
+
+def write_all_gamelists(root: Path) -> list[tuple[str, int, str | None]]:
+    """--write-gamelists: every platform with information; (platform, entries, backup) for each written."""
+    written = []
+    with Collection(root) as collection:
+        folders = [directory for directory in collection.platform_folders() if not collection.is_no_games(directory.name)]
+    for directory in folders:
+        count, backup = write_gamelist(directory)
+        if count:
+            written.append((directory.name, count, backup))
+    return written
+

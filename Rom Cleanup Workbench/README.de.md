@@ -177,6 +177,7 @@ Das Programm öffnet das Analysefenster und zeigt dort alles an; im Terminal gib
 | `--yes` | ohne Fenster: markierte Dateien ohne Nachfrage löschen |
 | `--scan-all` | ohne Fenster: alle Plattform-Ordner des angegebenen `roms`-Ordners scannen und in seiner Datenbank speichern; löscht nichts |
 | `--deep-scan` | mit `--scan-all`: Tiefenscan, jede Datei neu lesen statt nur neue und geänderte (früher `--full`, das weiter geht) |
+| `--write-gamelists` | ohne Fenster: die `gamelist.xml` jeder Plattform des angegebenen `roms`-Ordners aus seiner Datenbank schreiben; jede bisherige Datei bleibt als Kopie |
 | `--all` | mit `--report-only`: auch Spiele ohne markierte Dateien zeigen |
 | `--tui` | die Terminal-Version statt des Fensters verwenden (automatisch unter Linux ohne grafische Anzeige) |
 | `--ascii` | Terminal-Version nur mit ASCII-Zeichen (automatisch auf der Linux-Konsole); schließt `--tui` ein |
@@ -202,6 +203,7 @@ Meist liegen die Spiele nach Plattformen getrennt in einem gemeinsamen Ordner, e
 | `Leere ausblenden` | `h` | Schalter (roter Punkt): Ordner ohne Spieldatei ausblenden, etwa `bios` oder einen Ordner nur mit `info.txt`; Beipack-Dateien zählen nicht als Spieldatei; die Wahl bleibt gespeichert |
 | `Ordner...` | `f` | einen anderen `roms`-Ordner wählen |
 | | `n` | den markierten Ordner als `keine Spiele` kennzeichnen oder das wieder aufheben (siehe unten) |
+| | `w` | die `gamelist.xml` der markierten Plattform aus der Datenbank schreiben (nach einer Frage) |
 | | `q` oder `Esc` | das Programm schließen |
 
 Die Tasten gelten im Fenster und in der Terminal-Version gleich. Die Zeile über der Tabelle nennt die wichtigsten, `F1` oder `?` zeigt alle.
@@ -217,6 +219,8 @@ Die Tasten gelten im Fenster und in der Terminal-Version gleich. Die Zeile über
 **Spielansicht, Namensspalte und Bericht.** Hat eine Plattform Informationen, zeigt die Liste eine Spalte `Name` mit dem Namen aus der `gamelist.xml`, mit `★` bei Favoriten und `kein Spiel` bei BIOS-Dateien. `i` (im Fenster auch ein Doppelklick auf eine Datei) zeigt an Stelle der Liste alles, was über das Spiel bekannt ist: seine Dateien mit ihrer Entscheidung, die Felder wie Beschreibung, Bewertung (als x / 5), Datum, Entwickler, Spielzeit und Favorit, die übrigen Felder der `gamelist.xml` und die Medien nach Kategorie; Vorschaubilder gibt es bewusst nicht. `g` zeigt den Gamelist-Bericht: was nicht übernommen wurde und warum, die Hinweise, ROMs ohne Informationen, Medien ohne ROM und die Dateien, die kein Spiel sind. `n` kennzeichnet die markierten Dateien als `kein Spiel` oder hebt das auf; eine spätere `gamelist.xml` ändert daran nichts. Ob eine Datei behalten oder gelöscht wird, entscheiden weiter die Regeln. Die Zusammenfassung von `gamelist.xml` und Medien steht grau in einer eigenen Zeile unter der Plattformzeile.
 
 **Löschen und Umbenennen nehmen die Medien mit.** Löscht `Ausführen...` ein ROM, werden seine Medien mit gelöscht, Bilder, Videos und Handbücher aus der `gamelist.xml` wie aus den Unterordnern; die Frage vor dem Löschen nennt ihre Zahl. Ein Medium, das auch ein verbleibendes ROM nutzt, bleibt. Mit einem gelöschten ROM gehen auch seine Informationen, Favorit und Spielzeit eingeschlossen. Entfernt `Ausführen...` die Nummer vor einem Namen, werden Medien, deren Name mit dem alten ROM-Namen beginnt, mit umbenannt (`01 - Alpha (USA)-image.png` wird `Alpha (USA)-image.png`). Die `gamelist.xml` selbst wird dabei nicht geändert.
+
+**Die gamelist.xml schreiben.** Nur auf Wunsch schreibt der Workbench die `gamelist.xml` einer Plattform aus seiner Datenbank neu: mit `w` in der Plattform oder in der Übersicht für die markierte Plattform, mit `--write-gamelists` für alle. Nach einer Bereinigung, die Dateien gelöscht hat, bietet er es an, wenn die Plattform eine `gamelist.xml` hat. Vorher wird die bisherige Datei als `gamelist.xml.<Datum_Uhrzeit>.bak` gesichert; die letzten drei Kopien bleiben, ältere werden gelöscht. Die neue Datei entsteht erst unter einem anderen Namen und ersetzt die alte dann in einem Schritt, sodass nie eine halbe Datei liegen bleibt. Sie enthält alle Spiele, auch die mit leerem Eintrag, aber keine BIOS-Dateien und anderen Nicht-Spiele; dazu alle bekannten Felder, die Medien je Kategorie (eine Datei in zwei Kategorien steht zweimal da), die Kennung und alle übrigen Felder, wie sie gelesen wurden. Werte, die dem Standard entsprechen, fehlen wie bei EmulationStation. Im `<provider>`-Block steht als Software `RCW` (Rom Cleanup Workbench) mit unserer GitHub-Seite; das System bleibt. Danach gilt die Datei als eingelesen.
 
 **Ordner ohne Spiele.** Ein Ordner wie `bios` oder `saves` enthält keine Spiele. `n` kennzeichnet den markierten Ordner als `keine Spiele`: Er wird weder gescannt (auch nicht von `Alle scannen` und `--scan-all`) noch geöffnet, zählt nicht in der Summe, und `Leere ausblenden` blendet ihn aus. Was die Datenbank über ihn wusste, wird gelöscht. Ein zweites `n` hebt das wieder auf; der Ordner ist dann `nicht gescannt`. Einen Knopf dafür gibt es bewusst nicht.
 
@@ -265,6 +269,7 @@ Das Fenster merkt sich die zuletzt gewählte Ansicht und die bestätigten Status
 | `i` | in einer Plattform der Sammlung: alles, was über das markierte Spiel bekannt ist (auch Doppelklick im Fenster); `Esc` oder `q` schließt |
 | `n` | in einer Plattform der Sammlung: die markierten Dateien als `kein Spiel` kennzeichnen (etwa eine BIOS-Datei) oder das aufheben |
 | `g` | in einer Plattform der Sammlung: der Gamelist-Bericht der Plattform |
+| `w` | in einer Plattform der Sammlung: ihre `gamelist.xml` aus der Datenbank schreiben (nach einer Frage) |
 | `F1` oder `?` | alle Tasten zeigen oder wieder ausblenden |
 | `q` oder `Esc` | schließen, ohne etwas zu löschen; in einer Plattform der Sammlung führen beide erst zurück zur Übersicht; nach Änderungen von Hand fragt das Programm vorher |
 
@@ -340,6 +345,7 @@ Rechts neben der Plattform stehen die wichtigsten Tasten, `F1` oder `?` zeigt al
 | `i` | in einer Plattform der Sammlung: alles, was über das markierte Spiel bekannt ist (auch Doppelklick im Fenster); `Esc` oder `q` schließt |
 | `n` | in einer Plattform der Sammlung: die markierten Dateien als `kein Spiel` kennzeichnen (etwa eine BIOS-Datei) oder das aufheben |
 | `g` | in einer Plattform der Sammlung: der Gamelist-Bericht der Plattform |
+| `w` | in einer Plattform der Sammlung: ihre `gamelist.xml` aus der Datenbank schreiben (nach einer Frage) |
 | `F1` oder `?` | alle Tasten zeigen oder wieder ausblenden (auch `?`, weil manche Terminals `F1` für ihre eigene Hilfe behalten) |
 | `q` oder `Esc` | schließen, ohne etwas zu löschen; in einer Plattform der Sammlung führen beide erst zurück zur Übersicht; nach Änderungen von Hand fragt das Programm vorher |
 | In einer Frage | `Links`/`Rechts` wählen eine Schaltfläche, `Enter` drückt sie, `Esc` antwortet `Nein` |

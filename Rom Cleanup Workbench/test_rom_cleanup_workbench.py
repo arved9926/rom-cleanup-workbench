@@ -7927,3 +7927,164 @@ class PlayedSettingTests(OverviewWindowBase):
         self.assertFalse(values["prefer_played"])
         self.assertTrue(config_file.read()["prefer_played"])  # the general setting stays
 
+
+WRITE_GAMELIST = """<?xml version="1.0" encoding="utf-8"?>
+<gameList>
+  <provider><system>arcade</system><software>ARRM</software><web>https://example.org</web></provider>
+  <game id="39870" source="ss">
+    <path>./10yard.zip</path>
+    <name>10-Yard Fight</name>
+    <desc>Football &amp; more.</desc>
+    <rating>0.3</rating>
+    <releasedate>19840101T000000</releasedate>
+    <players>1-2</players>
+    <favorite>true</favorite>
+    <playcount>0</playcount>
+    <genreid>1538</genreid>
+    <scrap name="ScreenScraper" date="20261108"/>
+    <wheel>./images/10yard-wheel.png</wheel>
+    <logo>./images/10yard-wheel.png</logo>
+  </game>
+</gameList>
+"""
+
+
+class WriteGamelistTests(OverviewWindowBase):
+    """Stage 5: the gamelist.xml written from the database, on request, with backups."""
+
+    def setUp(self):
+        super().setUp()
+        nes = self.nes = self.roms / "nes"
+        (nes / "images").mkdir()
+        for name in ("10yard.zip", "1941.zip", "neogeo.zip"):
+            self.write("nes", name, name.encode())
+        for name in ("10yard-wheel.png", "1941-image.png"):
+            self.write("nes", "images/" + name, b"png")
+        (nes / "gamelist.xml").write_text(WRITE_GAMELIST, encoding="utf-8")
+        import workbench_db
+
+        workbench_db.scan_all(self.roms)
+
+    def written(self, when=None):
+        import workbench_db
+
+        return workbench_db.write_gamelist(self.nes, when)
+
+    def test_what_is_written_reads_back_the_same(self):
+        import workbench_db
+        import workbench_gamelist
+
+        before = workbench_db.load_game_info(self.nes)
+        count, backup = self.written()
+        self.assertEqual(count, 2)  # 10yard and the empty entry of 1941; neogeo is no game
+        self.assertTrue(backup.startswith("gamelist.xml.") and (self.nes / backup).exists())
+        self.assertEqual((self.nes / backup).read_text(encoding="utf-8"), WRITE_GAMELIST)
+        text = (self.nes / "gamelist.xml").read_text(encoding="utf-8")
+        self.assertIn("<software>RCW</software>", text)
+        self.assertIn("<web>https://github.com/arved9926/rom-cleanup-workbench</web>", text)
+        self.assertIn("<system>arcade</system>", text)
+        self.assertIn('<game id="39870" source="ss">', text)
+        self.assertIn('<scrap name="ScreenScraper" date="20261108"', text)
+        self.assertNotIn("playcount", text)  # a default is left out
+        self.assertNotIn("neogeo", text)
+        self.assertEqual(text.count("./images/10yard-wheel.png"), 2)  # wheel and logo
+        names = [path.name for path in rf.rom_files(self.nes)]
+        gamelist = workbench_gamelist.read_gamelist(self.nes / "gamelist.xml", self.nes, names)
+        self.assertEqual((gamelist.problems, gamelist.notes), ([], []))
+        entry = next(item for item in gamelist.entries if item.rom == "10yard.zip")
+        self.assertEqual(entry.values, {key: value for key, value in before["10yard.zip"].items()
+                                        if key in workbench_gamelist.COLUMNS and value not in (None, 0)})
+        self.assertEqual(sorted(entry.media), [("logo", "images/10yard-wheel.png"), ("wheel", "images/10yard-wheel.png")])
+        self.assertEqual([tag for tag, _text, _attributes in entry.extra], ["@source", "genreid", "scrap"])
+        empty = next(item for item in gamelist.entries if item.rom == "1941.zip")
+        self.assertEqual((empty.values, empty.media), ({"name": "1941"}, [("image", "images/1941-image.png")]))
+        with workbench_db.Collection(self.roms) as collection:
+            self.assertEqual(collection.state(self.nes), "current")  # counts as read
+
+    def test_only_the_last_three_backups_stay(self):
+        from datetime import datetime
+
+        for day in range(1, 6):
+            self.written(datetime(2026, 11, day, 12, 0, 0))
+        backups = sorted(path.name for path in self.nes.iterdir() if path.name.endswith(".bak"))
+        self.assertEqual(backups, [f"gamelist.xml.2026-11-0{day}_120000.bak" for day in (3, 4, 5)])
+        self.assertNotIn("gamelist.xml.tmp", [path.name for path in self.nes.iterdir()])
+
+    def test_without_a_gamelist_a_new_one_is_written_without_backup(self):
+        (self.nes / "gamelist.xml").unlink()
+        count, backup = self.written()
+        self.assertEqual((count, backup), (2, None))
+        self.assertTrue((self.nes / "gamelist.xml").exists())
+
+    def test_the_command_line_writes_every_platform(self):
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            code = rf.main(["--write-gamelists", str(self.roms)])
+        self.assertEqual(code, 0)
+        self.assertIn("nes: gamelist.xml with 2 games", output.getvalue())
+        self.assertIn("1 gamelist.xml written.", output.getvalue())  # snes holds no game: nothing to write
+
+    def test_w_in_the_window_asks_first(self):
+        window = self.make_window(self.nes)
+        window.open_folder(self.nes)
+        self.wait(window)
+        import rom_cleanup_workbench_window as wm
+
+        with mock.patch.object(wm.messagebox, "askyesno", return_value=False) as ask:
+            window._write_key()
+        self.assertIn("2 games", ask.call_args[0][1])
+        self.assertIn(".bak", ask.call_args[0][1])
+        self.assertEqual((self.nes / "gamelist.xml").read_text(encoding="utf-8"), WRITE_GAMELIST)
+        with mock.patch.object(wm.messagebox, "askyesno", return_value=True):
+            window._write_key()
+        self.assertIn("RCW", (self.nes / "gamelist.xml").read_text(encoding="utf-8"))
+        self.assertIn("written: 2 games", window.status.get())
+
+    def test_after_a_cleanup_the_window_offers_it(self):
+        window = self.make_window(self.nes)
+        window.open_folder(self.nes)
+        self.wait(window)
+        import rom_cleanup_workbench_window as wm
+
+        window.review.deleted_count = 1
+        with mock.patch.object(wm.messagebox, "askyesno", return_value=False) as ask:
+            window._offer_gamelist()
+        self.assertIn("still names the deleted files", ask.call_args[0][1])
+        window.review.deleted_count = 0
+        with mock.patch.object(wm.messagebox, "askyesno") as ask:
+            window._offer_gamelist()
+        ask.assert_not_called()
+
+
+class WriteGamelistTerminalTests(OverviewTerminalBase):
+    """w in the terminal version, in the list and in the overview."""
+
+    def setUp(self):
+        super().setUp()
+        (self.roms / "nes" / "gamelist.xml").write_text(
+            "<gameList><game><path>./Title (USA).nes</path><name>Title</name></game></gameList>", encoding="utf-8")
+        import workbench_db
+
+        workbench_db.scan_all(self.roms)
+
+    async def test_w_in_the_list_and_in_the_overview(self):
+        app = self.app(self.roms)
+        async with app.run_test(size=(160, 40)) as pilot:
+            await self.settle(app, pilot)
+            await pilot.press("w")  # the overview's highlighted platform: nes
+            await pilot.pause()
+            self.assertIsInstance(app.screen, self.tui.QuestionScreen)
+            app.screen.dismiss(True)
+            await pilot.pause()
+            await pilot.pause()
+            self.assertIn("RCW", (self.roms / "nes" / "gamelist.xml").read_text(encoding="utf-8"))
+            self.assertIn("written", str(app.screen.query_one("#overview-status").render()))
+            await pilot.press("enter")
+            await self.settle(app, pilot)
+            await pilot.press("w")
+            await pilot.pause()
+            self.assertIsInstance(app.screen, self.tui.QuestionScreen)
+            app.screen.dismiss(False)
+            await pilot.pause()
+            self.assertEqual(len([path for path in (self.roms / "nes").iterdir() if path.name.endswith(".bak")]), 1)
+

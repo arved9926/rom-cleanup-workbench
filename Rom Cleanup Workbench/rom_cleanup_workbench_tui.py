@@ -63,6 +63,7 @@ OK = (("dialog.ok", None),)
 _LIST_ACTIONS = {
     "move_cursor", "move_game", "demote", "promote", "choose_view", "focus_filter", "leave_filter", "proceed",
     "choose_folder", "open_settings", "reanalyze", "credits", "game_view", "toggle_no_game", "report",
+    "write_gamelist",
 }
 # As in the window: Redrawing after every deleted file would slow down large deletions.
 DELETE_REDRAW = 0.05
@@ -642,6 +643,7 @@ class OverviewScreen(Screen):
         Binding("d,D", "toggle_full", show=False),
         Binding("h,H", "toggle_hide_empty", show=False),
         Binding("n,N", "toggle_no_games", show=False),
+        Binding("w,W", "write_gamelist", show=False),
         Binding("f,F", "folder", show=False),
     ]
     TOTAL = "*total*"
@@ -812,6 +814,20 @@ class OverviewScreen(Screen):
             self.show_status(tr("overview.no_games_locked", platform=platform))
             return
         self.dismiss((platform, rescan, self._full() if rescan else False))
+
+    def action_write_gamelist(self) -> None:
+        """w: the gamelist.xml of the highlighted platform."""
+        from workbench_db import platform_row
+
+        platform = self.selected()
+        if platform is None or self.scanning:
+            return
+
+        def written() -> None:
+            self.rows[platform] = platform_row(self.root_folder, platform, self.app.config_loader())
+            self._fill()
+
+        self.app.write_gamelist(self.root_folder / platform, then=written)
 
     def action_toggle_no_games(self) -> None:
         """n: the highlighted folder holds no games (or does again)."""
@@ -1436,6 +1452,7 @@ class WorkbenchApp(App):
         Binding("i,I", "game_view", show=False),
         Binding("n,N", "toggle_no_game", show=False),
         Binding("g,G", "report", show=False),
+        Binding("w,W", "write_gamelist", show=False),
         Binding("1", "choose_view(0)", show=False),
         Binding("2", "choose_view(1)", show=False),
         Binding("3", "choose_view(2)", show=False),
@@ -1890,6 +1907,13 @@ class WorkbenchApp(App):
         # The Review object has dropped the deleted files; the folder is not analyzed again.
         self.show_review(review)
         self._apply_filter()  # A filter typed just before deleting.
+        # The offer to write the gamelist.xml anew lies below the message, so it comes after it.
+        from workbench_db import collection_root
+        from workbench_gamelist import GAMELIST_NAME
+
+        if (deleted and self.directory is not None and collection_root(self.directory) is not None
+                and (self.directory / GAMELIST_NAME).exists()):
+            self.write_gamelist(self.directory, after_cleanup=True)
         if errors:
             self.had_errors = True
             self.show_message("warning", tr("window.partly_deleted_title"),
@@ -2288,6 +2312,50 @@ class WorkbenchApp(App):
             blocks = report_blocks(gamelist_report(self.directory))
         self.push_screen(InfoScreen(kind, title, subtitle, blocks),
                          lambda _result: self._focus_now(self.query_one("#games", GameTable)))
+
+    def action_write_gamelist(self) -> None:
+        if self.review is not None and self.directory is not None:
+            self.write_gamelist(self.directory)
+
+    def write_gamelist(self, directory, after_cleanup: bool = False, then=None) -> None:
+        """Asks, then writes the platform's gamelist.xml from the database; then() after writing."""
+        from workbench_db import collection_root, writable_entries, write_gamelist
+        from workbench_gamelist import GAMELIST_NAME
+
+        directory = Path(directory)
+        if collection_root(directory) is None:
+            self._set_status(tr("game.only_collection"))
+            return
+        count = writable_entries(directory)
+        if not count:
+            if not after_cleanup:
+                self.show_message("info", tr("gamelist.write_title"), tr("gamelist.nothing_to_write",
+                                                                         platform=directory.name))
+            return
+        question = tr("gamelist.offer_after_cleanup" if after_cleanup else "gamelist.write_question",
+                      platform=directory.name, count=count)
+        if (directory / GAMELIST_NAME).exists():
+            question += "\n\n" + tr("gamelist.backup_note")
+
+        def answered(yes) -> None:
+            if not yes:
+                return
+            try:
+                written, _backup = write_gamelist(directory)
+            except (OSError, ValueError) as error:
+                self.show_message("error", tr("gamelist.write_title"), tr("gamelist.write_failed", error=error))
+                return
+            if then is not None:  # first: refilling the overview would replace the message
+                then()
+            text = tr("gamelist.written", platform=directory.name, count=written)
+            if self.overview_open():
+                self.screen.show_status(text)
+            else:
+                if self.review is not None:
+                    self.show_review(self.review)  # the gray line below the platform
+                self._set_status(text)
+
+        self.ask("question", tr("gamelist.write_title"), question, then=answered)
 
     def action_toggle_no_game(self) -> None:
         """n: the selected files are no game (BIOS files, say), or games again."""
