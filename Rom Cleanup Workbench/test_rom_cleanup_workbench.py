@@ -8415,3 +8415,40 @@ class GameViewKeysTerminalTests(GameViewTerminalTests):
             await pilot.press("escape")
             await pilot.pause()
             self.assertIsInstance(app.screen, self.tui.InfoScreen)
+
+
+class GenreIdTests(unittest.TestCase):
+    """The numeric <genreid> of a gamelist.xml: Recalbox's genre list (main x 256 + sub)."""
+
+    def setUp(self):
+        translations.set_language("en")
+        self.addCleanup(translations.set_language, "en")
+
+    def test_numbers_and_names(self):
+        import workbench_genres
+
+        self.assertEqual(workbench_genres.describe("1538"), "1538 – Sports simulation (Sports)")
+        self.assertEqual(workbench_genres.describe(257), "257 – Platform (Action)")
+        self.assertEqual(workbench_genres.describe(0x0600), "1536 – Sports (all)")
+        self.assertEqual(workbench_genres.describe("9999"), "9999")  # unknown: the number alone
+        self.assertIsNone(workbench_genres.genre_name("abc"))
+
+    def test_every_genre_has_a_name_in_every_language(self):
+        import workbench_genres
+
+        for language in translations.LANGUAGES:
+            translations.set_language(language)
+            for number in workbench_genres.GENRES:
+                name = workbench_genres.genre_name(number)
+                self.assertTrue(name and not name.startswith("genre."), (language, number))
+
+    def test_the_game_view_names_the_genre(self):
+        import workbench_view
+
+        entry = mock.Mock()
+        entry.path = Path("10yard.zip")
+        result = mock.Mock(keep=[entry], marked=[], title="10yard")
+        info = {"10yard.zip": {"kind": "game", "name": "10-Yard Fight", "extra": [["genreid", "1538", {}]],
+                               "media": {}, "created": False, "edited": set()}}
+        _title, _name, blocks = workbench_view.game_blocks(result, entry, info, lambda item: "")
+        self.assertIn(("field", "genreid", "1538 – Sports simulation (Sports)"), blocks)

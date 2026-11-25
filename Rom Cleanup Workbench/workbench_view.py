@@ -100,8 +100,11 @@ def game_blocks(result, entry, info_by_rom: dict, size_text) -> tuple[str, str, 
     extra = (info or {}).get("extra") or []
     if extra:
         blocks.append(("heading", tr("game.section.extra")))
+        from workbench_genres import describe
+
         for tag, text, _attributes in extra:
-            blocks.append(("field", tag, " ".join(str(text).split())))
+            value = " ".join(str(text).split())
+            blocks.append(("field", tag, describe(value) if tag == "genreid" else value))
     blocks.append(("heading", tr("game.section.media")))
     media = (info or {}).get("media") or {}
     if not media:
