@@ -963,7 +963,8 @@ class InfoScreen(Screen):
             head.append("   " + self._plain(self.subtitle), style="#888888")
         with Horizontal(id="keys-head"):
             yield Static(head, id="keys-title")
-            yield Static(tr("game.close_hint"), id="keys-hint", markup=False)
+            yield Static(tr("game.close_hint" if self.kind == "game" else "report.close_hint"), id="keys-hint",
+                         markup=False)
         with VerticalScroll(id="info-body"):
             yield Static(self.text(green), id="info-text")
 

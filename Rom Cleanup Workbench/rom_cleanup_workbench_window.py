@@ -531,7 +531,8 @@ class InfoPanel:
         ttk.Label(heading, text=title, font=window.bold_font, foreground=_KEEP_TEXT).pack(side="left")
         if subtitle:
             ttk.Label(heading, text=subtitle, foreground=_LINE_COLOR).pack(side="left", padx=(16, 0))
-        ttk.Label(heading, text=tr("game.close_hint"), foreground=_LIGHT_GRAY).pack(side="right")
+        ttk.Label(heading, text=tr("game.close_hint" if kind == "game" else "report.close_hint"),
+                  foreground=_LIGHT_GRAY).pack(side="right")
         body = ttk.Frame(frame)
         body.pack(fill="both", expand=True)
         text = self.text = tk.Text(body, wrap="word", background=_BLACK, foreground=_WHITE, borderwidth=0,
